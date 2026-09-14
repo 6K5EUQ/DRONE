@@ -87,11 +87,20 @@ SD 카드 조사(2026-09-14) 결과, **이 보드는 새것이 아니다.**
 
 ## 다음에 할 일
 
-1. 🔴 **스택 결정** — ArduCopter 유지 / 최신화 / PX4 전환 ([셋업 A항](docs/procedures/02-fc-setup.md))
-2. 🔴 **프레임·프롭 실물 확인** — 모델명, 휠베이스, 사이즈, 중량
-3. 🔴 **PM/BEC 실물 확인** — ESC 가 No BEC 라 5 V 공급원이 필요하다
-4. [계산서 §6 중량 예산](docs/design/01-thrust-weight.md)을 실측으로 채운다
-5. [조립](docs/procedures/01-assembly.md) → [FC 셋업](docs/procedures/02-fc-setup.md)
+🔴 **진행 현황·미해결 문제·작업 수칙은 [절차 00 진행 현황](docs/procedures/00-progress.md) 에 있다.
+새 세션은 그것부터 읽는다.**
+
+가장 시급한 순서:
+
+1. 🔴 **송신기 바인딩** — 여기서 막혀 있다. RC·ESC 캘리브레이션의 전제
+2. 🔴 **MAIN4 모터가 "QGC All" 에서만 안 도는 문제** — FC 신호는 정상 확인됨.
+   ESC·전원 구간 문제 ([지상시험 A항](docs/procedures/03-ground-test.md))
+3. 🔴 **배터리 failsafe 수정** — `BATT_LOW_VOLT` 14.4→14.0, `BATT_CRT_VOLT` 14.0→13.2
+4. 🔴 **스택 결정** — ArduCopter 유지 / 최신화 / PX4 전환 ([셋업 A항](docs/procedures/02-fc-setup.md))
+5. 🔴 **프레임·프롭 실물 확인** — 모델명, 휠베이스, 사이즈, 중량
+6. 🔴 **PM/BEC 실물 확인** — ESC 가 No BEC 라 5 V 공급원이 필요하다
+7. [계산서 §6 중량 예산](docs/design/01-thrust-weight.md)을 실측으로 채운다
+8. [조립](docs/procedures/01-assembly.md) → [FC 셋업](docs/procedures/02-fc-setup.md)
    → [지상 시험](docs/procedures/03-ground-test.md) → [첫 비행](docs/procedures/04-first-flight.md)
 
 ---
