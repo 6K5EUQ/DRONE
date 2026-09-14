@@ -41,9 +41,14 @@ SD 카드에 로그 10개가 있으나 **전부 실내 지상시험**이다
 ### 4. SHADE01 과 USB 포트를 공유한다
 
 같은 PC(`rim3`)에 SHADE01 FC 와 DRONE FC 를 번갈아 꽂는다.
-🔴 **`shade-bridge.service` 가 `/dev/ttyACM0` 를 자동으로 잡는다.**
-어느 기체가 꽂혀 있든 SHADE01 텔레메트리로 중계한다.
-→ 대응은 아래 [작업 수칙](#-작업-수칙--usb-포트-공유) 참조
+**`shade-bridge.service` 가 `/dev/ttyACM0` 를 자동으로 잡아 live 로 중계한다.**
+
+⚠️ 이것은 **의도된 동작이다** (2026-09-14 확인). 어느 FC 를 꽂든 중계된다.
+따라서 live 대시보드에는 두 기체 데이터가 시간에 따라 섞인다.
+화면에서 구분하려면 `mav_type` 을 본다 — **2 = 쿼드(DRONE)**, **22 = VTOL(SHADE01)**.
+
+🔴 **단, 포트는 하나다.** 브리지가 열어둔 상태에서는 다른 도구가 FC 에 붙지 못한다.
+→ 아래 [작업 수칙](#-작업-수칙--usb-포트-공유) 참조
 
 ---
 
@@ -211,25 +216,41 @@ low 와 critical 간격이 0.4 V 뿐이라 사실상 동시에 터진다.
 
 이 PC(`rim3`)는 SHADE01 과 DRONE 의 FC 를 번갈아 꽂는다.
 
-🔴 **`shade-bridge.service` 는 `/dev/ttyACM0` 를 무조건 잡는다.**
-어느 기체가 꽂혀 있든 SHADE01 텔레메트리로 중계하므로,
-DRONE FC 를 꽂아둔 채로 두면 **SHADE01 대시보드에 이 기체 데이터가 섞인다.**
+**`shade-bridge.service` 는 `/dev/ttyACM0` 를 잡아 live 로 중계한다.**
+기체를 가리지 않는다 — [`pc_bridge.sh`](../../../SHADE01/shade-bridge/pc_bridge.sh) 가
+`ttyACM0` → `ttyACM1` → `ttyUSB0` 순으로 먼저 잡히는 것을 쓴다.
 
-### DRONE FC 작업 전
+✅ **이대로 두는 것이 의도된 구성이다** (2026-09-14 결정).
+어느 FC 를 꽂든 `localhost:4400` 에서 실시간으로 볼 수 있다.
+
+### 🔴 다만 포트는 하나다
+
+브리지가 시리얼을 열어둔 동안에는 **다른 도구가 FC 에 붙지 못한다.**
+`pymavlink` 스크립트나 QGC 로 직접 조회하려면 브리지를 잠시 내린다.
 
 ```bash
-systemctl --user stop shade-bridge.service
+systemctl --user stop  shade-bridge.service    # 작업 전
+# ... 조회·설정 작업 ...
+systemctl --user start shade-bridge.service    # 작업 후 반드시 복구
+systemctl --user is-active shade-bridge.service
 ```
 
-### 작업 후 반드시 복구
+⚠️ 이 서비스는 `enabled` + `Restart=always` 다. **정지해도 재부팅·재로그인 시 다시 뜬다.**
+포트가 안 열리면 `fuser -v /dev/ttyACM0` 로 누가 쥐고 있는지 먼저 본다
+(QGC 가 쥐고 있는 경우도 있다).
+
+### live 화면에서 기체 구분
+
+두 기체 데이터가 시간에 따라 섞이므로 `mav_type` 으로 구분한다.
+
+| `mav_type` | 기체 |
+|---|---|
+| **2** | **DRONE** (쿼드콥터) |
+| **22** | **SHADE01** (VTOL 고정익) |
 
 ```bash
-systemctl --user start shade-bridge.service
-systemctl --user is-active shade-bridge.service   # active 확인
+curl -s http://localhost:4400/api/state | grep -o '"mav_type":[0-9]*'
 ```
-
-⚠️ 이 서비스는 `enabled` 라서 **정지해도 재부팅·재로그인 시 자동으로 다시 뜬다.**
-멈춘 줄 알았는데 포트를 다시 잡고 있을 수 있으니, 작업 전 `fuser -v /dev/ttyACM0` 로 확인한다.
 
 ### 어느 FC 가 꽂혔는지 구분
 
@@ -242,8 +263,9 @@ ls /dev/serial/by-id/
 | `usb-3D_Robotics_PX4_FMU_v2.x_*` (`26ac:0011`) | **DRONE** (Pixhawk 2.4.8) |
 | `usb-Auterion_PX4_FMU_v6C.x_*` (`3185:0038`) | **SHADE01** (Pixhawk 6C Mini) |
 
-🔶 **개선 과제:** 브리지가 USB VID/PID 로 기체를 구분해 SHADE01 FC 일 때만
-중계하도록 고치는 것이 맞다. 지금은 사람이 기억해야 한다.
+🔶 **나중에 불편해지면:** live 화면에 기체 이름을 표시하는 정도로 해결한다.
+브리지가 기체를 가려서 중계하도록 만드는 것은 **하지 않기로 했다** — 어느 FC 든
+바로 볼 수 있는 편이 낫다는 판단이다.
 
 ---
 
