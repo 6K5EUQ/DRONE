@@ -1,0 +1,4 @@
+# 로그 바이너리는 크다 — sd-recovered 는 예외로 보존한다
+*.ulg
+.venv/
+__pycache__/
