@@ -155,6 +155,25 @@ FC 의 상태를 바꾸는 모든 작업을 남긴다.
   `docs/procedures/03-ground-test.md` — 09-14 서술은 지우지 않고
   잘못이었음을 표시한 뒤 정정 값을 병기했다
 
+### 2026-09-17 — PX4 전환 준비 문서 작성 (FC 접근 없음)
+
+- 작업 PC: rim3
+- 경로: **없음 — FC 에 연결하지 않았다**
+- 대상: 문서 작업만. **조회·쓰기·삭제 일절 안 함**
+- 근거 자료: `params/params_20260914-1900_live-usb.param`(09-14 실측 838개)와
+  PX4 공식 문서
+- 작성: [docs/procedures/06-px4-migration.md](docs/procedures/06-px4-migration.md)
+  — 값 대응표, 전환 시 잃는 것, 실행 점검표
+- 정정한 것:
+  🔶 09-14 에 "PX4 는 FMUv3 지원을 v1.14 에서 중단" 이라고 적었는데 **틀렸다.**
+  PX4 공식 문서(Discontinued Autopilots) 확인 결과 **v1.15~v1.16** 이 마지막이다.
+  `components/fc/pixhawk-2.4.8/README.md`, `docs/procedures/02-fc-setup.md` 정정.
+  다만 *더 새 버전이 없다* 는 결론은 그대로다.
+- ⚠️ 작업 당시 USB 에 꽂혀 있던 것은 **SHADE01**(`3185:0038` Auterion v6C.x)이었다.
+  DRONE FC 가 아니다. 그래서 더더욱 아무것도 건드리지 않았다.
+
+---
+
 ---
 
 ## 🔶 아직 기록되지 않은 것 — 이 보드의 과거

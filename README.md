@@ -93,6 +93,7 @@ SD 카드 조사(2026-09-14) 결과, **이 보드는 새것이 아니다.**
 | [docs/procedures/03-ground-test.md](docs/procedures/03-ground-test.md) | 지상 시험 · GO/NO-GO | |
 | [docs/procedures/04-first-flight.md](docs/procedures/04-first-flight.md) | 첫 비행 단계별 확장 | |
 | [docs/procedures/05-log-retrieval.md](docs/procedures/05-log-retrieval.md) | 로그 회수·재생 — FC 에서 받아 브라우저로 본다 | |
+| [docs/procedures/06-px4-migration.md](docs/procedures/06-px4-migration.md) | PX4 전환 준비 — 값 대응표·잃는 것·점검표 | 🔶 미실행 |
 | [components/fc/pixhawk-2.4.8/](components/fc/pixhawk-2.4.8/README.md) | FC 실물 상태 · 복원된 설정 | 🔴 |
 | [components/motors/gt-drone-3508-380kv/](components/motors/gt-drone-3508-380kv/README.md) | 모터 | |
 | [components/esc/gt-drone-ec-x3-30a/](components/esc/gt-drone-ec-x3-30a/README.md) | ESC | |
