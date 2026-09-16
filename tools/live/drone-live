@@ -83,7 +83,10 @@ cmd_on() {
 
   case "$who" in
     none)
-      echo "FC 가 안 꽂혀 있다. USB 를 확인해라." >&2; exit 1 ;;
+      # 🔴 FC 가 없어도 로그 재생은 된다 — 파일만 읽으면 되기 때문이다.
+      #    예전에는 여기서 멈춰 「FC 를 뽑으면 지난 비행도 못 본다」였다
+      #    (2026-09-17). 라이브 계기는 링크가 붙을 때까지 비어 있을 뿐이다.
+      echo "FC 가 안 꽂혀 있다 — 라이브 없이 켠다 (로그 재생은 된다)." ;;
     shade01)
       echo "🔴 지금 꽂힌 것은 SHADE01 (VTOL) 이다. 이 화면은 DRONE 전용이다." >&2
       echo "   SHADE01 은 기존 live 를 써라:  http://localhost:4400" >&2
@@ -100,8 +103,14 @@ cmd_on() {
     echo "이미 켜져 있다. http://localhost:$PORT"; exit 0
   fi
 
+  # 🔴 FC 가 없어도 켠다 (2026-09-17). 로그 재생은 파일만 있으면 되는데
+  #    예전에는 여기서 멈춰 「FC 를 뽑으면 지난 비행도 못 본다」였다.
+  #    라이브 계기는 링크가 붙을 때까지 비어 있을 뿐이다.
   local dev; dev="$(serial_path)"
-  [[ -n "$dev" ]] || { echo "시리얼 경로를 못 찾았다." >&2; exit 1; }
+  if [[ -z "$dev" ]]; then
+    echo "FC 가 안 꽂혀 있다 — 라이브 없이 켠다 (로그 재생은 된다)."
+    dev="/dev/ttyACM0"     # 나중에 꽂히면 drone_live.py 가 알아서 붙는다
+  fi
 
   # 포트는 하나다. 브리지가 잡고 있으면 비켜 달라고 한다.
   if systemctl --user is-active --quiet shade-bridge.service; then

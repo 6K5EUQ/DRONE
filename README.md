@@ -78,7 +78,7 @@ SD 카드 조사(2026-09-14) 결과, **이 보드는 새것이 아니다.**
 | `components/` | 부품별 사양·배선 문서 (`<카테고리>/<벤더-모델>/README.md`) |
 | `flights/` | 비행별 분석 기록 (`YYYY-MM-DD-<slug>.md`) |
 | `params/` | FC 파라미터 스냅샷 (`params_YYYYMMDD-HHMMSS.params`) |
-| `tools/` | 스크립트 (현재 비어 있음) |
+| `tools/` | 로그 회수(`loglist.py`·`logdl.py`), 라이브·재생 화면(`live/`), 정적 뷰어(`logview/`) |
 | `FC_CHANGELOG.md` | FC 상태를 바꾼 모든 작업의 이력 — **바꾸기 전에 읽고, 바꾼 뒤에 쓴다** |
 
 ### 문서 지도
@@ -92,6 +92,7 @@ SD 카드 조사(2026-09-14) 결과, **이 보드는 새것이 아니다.**
 | [docs/procedures/02-fc-setup.md](docs/procedures/02-fc-setup.md) | FC 셋업·캘리브레이션 | |
 | [docs/procedures/03-ground-test.md](docs/procedures/03-ground-test.md) | 지상 시험 · GO/NO-GO | |
 | [docs/procedures/04-first-flight.md](docs/procedures/04-first-flight.md) | 첫 비행 단계별 확장 | |
+| [docs/procedures/05-log-retrieval.md](docs/procedures/05-log-retrieval.md) | 로그 회수·재생 — FC 에서 받아 브라우저로 본다 | |
 | [components/fc/pixhawk-2.4.8/](components/fc/pixhawk-2.4.8/README.md) | FC 실물 상태 · 복원된 설정 | 🔴 |
 | [components/motors/gt-drone-3508-380kv/](components/motors/gt-drone-3508-380kv/README.md) | 모터 | |
 | [components/esc/gt-drone-ec-x3-30a/](components/esc/gt-drone-ec-x3-30a/README.md) | ESC | |

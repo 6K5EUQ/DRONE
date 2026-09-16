@@ -42,6 +42,30 @@ class LogUnreadable(Exception):
     pass
 
 
+# 이 기체의 배터리 용량(mAh). FC 파라미터 BATT_CAPACITY 와 같은 값이다
+# (2900 — 2026-09-14 실기 조회, 보유 4S 2900mAh 와 일치).
+BATT_CAPACITY_MAH = 2900.0
+
+
+def _pct_from_mah(used_mah):
+    """소모 mAh 에서 잔량(%)을 낸다.
+
+    🔴 .BIN 에는 SYS_STATUS.battery_remaining 이 없다 (2026-09-17 확인).
+       라이브는 FC 가 계산해 준 값을 그대로 쓰지만 로그에는 없어서 여기서
+       만든다. **전압으로는 추정하지 않는다** — 실측해 보니 같은 비행에서
+       무부하 14.56V(37%) → 호버 13.65V(12%) → 착륙 14.44V(34%) 로
+       출렁여 쓸 수 없었다. 실제 소모는 20.3mAh, 즉 거의 만충이었다.
+       BAT.CurrTot(누적 소모 mAh)가 FC 가 적분한 값이라 훨씬 곧다.
+
+    ⚠️ 시작 시점을 만충으로 가정한다. 쓰던 배터리를 꽂고 날았다면 실제보다
+       높게 나온다. 로그에 시작 잔량이 없어 알 길이 없다.
+    """
+    if used_mah is None:
+        return None
+    pct = (1.0 - used_mah / BATT_CAPACITY_MAH) * 100.0
+    return int(max(0.0, min(100.0, pct)))
+
+
 def load_flight(path):
     """.BIN 하나를 5Hz 프레임으로 굽는다."""
     try:
@@ -54,6 +78,7 @@ def load_flight(path):
     gps = []    # (t, fix, sats, lat, lon, alt)
     bat = []    # (t, volt, curr)
     rcou = []   # (t, {pin: pwm})
+    ctun = []   # (t, alt_m, crt_cms, thr_out)
     mode = []   # (t, name)
     events = []  # {'t', 'text'}
     ev_arm = []  # (t, id)  — EV.Id: 10=ARMED, 11=DISARMED
@@ -75,12 +100,17 @@ def load_flight(path):
         if t == 'ATT':
             att.append((ts, msg.Roll, msg.Pitch, (msg.Yaw + 360) % 360))
         elif t == 'GPS':
-            gps.append((ts, msg.Status, msg.NSats, msg.Lat, msg.Lng, msg.Alt))
+            gps.append((ts, msg.Status, msg.NSats, msg.Lat, msg.Lng, msg.Alt,
+                        getattr(msg, 'Spd', None)))
         elif t == 'BAT':
-            bat.append((ts, msg.Volt, msg.Curr))
+            bat.append((ts, msg.Volt, msg.Curr, getattr(msg, 'CurrTot', None)))
         elif t == 'RCOU':
             pins = {p: getattr(msg, 'C%d' % p, 0) for _, p in MOTOR_PINS}
             rcou.append((ts, pins))
+        elif t == 'CTUN':
+            # Alt = 상대고도(m), CRt = 상승률(cm/s), ThO = 스로틀 출력(0~1)
+            ctun.append((ts, msg.Alt, getattr(msg, 'CRt', None),
+                         getattr(msg, 'ThO', None)))
         elif t == 'MODE':
             mode.append((ts, COPTER_MODE.get(int(msg.Mode), 'MODE_%d' % msg.Mode)))
         elif t == 'EV':
@@ -143,7 +173,7 @@ def load_flight(path):
                     best = rows[i]
         return best
 
-    att.sort(); gps.sort(); bat.sort(); rcou.sort()
+    att.sort(); gps.sort(); bat.sort(); rcou.sort(); ctun.sort()
 
     n_frames = max(1, int(dur * FRAME_HZ) + 1)
     frames = []
@@ -168,6 +198,8 @@ def load_flight(path):
             d['fix'] = fix
             d['fix_s'] = FIX.get(fix, str(fix))
             d['sats'] = int(g[2])
+            if g[6] is not None:
+                d['groundspeed'] = round(g[6], 2)
             if g[3] and g[4] and (abs(g[3]) > 1e-6 or abs(g[4]) > 1e-6):
                 d['lat'], d['lon'] = g[3], g[4]
                 d['alt'] = round(g[5], 2)
@@ -179,6 +211,12 @@ def load_flight(path):
         if b:
             d['volt'] = round(b[1], 2)
             d['cur'] = round(b[2], 2)
+            if b[3] is not None:
+                d['mah'] = round(b[3], 1)
+                pct = _pct_from_mah(b[3])
+                if pct is not None:
+                    d['batt_pct'] = pct
+                    d['batt_pct_est'] = True   # FC 가 준 값이 아니라 계산한 값
 
         r = nearest(rcou, ts)
         if r:
@@ -193,6 +231,17 @@ def load_flight(path):
             if any(v is not None for v in out.values()):
                 d['motors'] = out
                 d['motors_pwm'] = pwm
+
+        c = nearest(ctun, ts)
+        if c:
+            # GPS 고정이 없으면 위에서 alt 가 안 채워진다. 실내 로그가 그렇다 —
+            # CTUN.Alt(기압계 기준 상대고도)를 쓴다.
+            if d.get('alt') is None and c[1] is not None:
+                d['alt'] = round(c[1], 2)
+            if c[2] is not None:
+                d['climb'] = round(c[2] / 100.0, 2)   # cm/s → m/s
+            if c[3] is not None:
+                d['thr'] = round(c[3] * 100.0)        # 0~1 → %
 
         d['armed'] = armed_at(ts)
 

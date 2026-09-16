@@ -189,13 +189,16 @@ class LogPlayback:
                 return None
             frames = self.fl['frames']
             cols = {k: [] for k in ('roll', 'pitch', 'yaw', 'volt', 'cur',
-                                    'sats', 'alt')}
+                                    'sats', 'alt', 'climb', 'spd')}
             modes = []
             last_mode = None
             for fr in frames:
                 d = fr['d']
                 for k in cols:
-                    cols[k].append(d.get(k))
+                    # 화면 채널 이름과 d 의 키가 다른 것 하나: spd ← groundspeed
+                    # (라이브 pushSample 이 쓰는 규칙과 같게 맞춘다)
+                    cols[k].append(d.get('groundspeed') if k == 'spd'
+                                   else d.get(k))
                 m = d.get('mode')
                 if m and m != last_mode:
                     modes.append({'t': fr['t'], 'name': m})
