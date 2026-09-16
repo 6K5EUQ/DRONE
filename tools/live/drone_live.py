@@ -78,15 +78,151 @@ FIX = {0: 'NO_GPS', 1: 'NO_FIX', 2: '2D', 3: '3D', 4: 'DGPS',
 
 # 🔴 이 기체의 모터 배치. MAIN1~4 = servo1~4_raw 다.
 #    `SERVO_OUTPUT_RAW` 의 필드는 servo1_raw 부터라 **1 부터 센다**.
-#    위치·회전은 2026-09-16 실측으로 정정된 값이다 (커밋 f3ee0e8):
-#      MAIN1=우전(CW)  MAIN2=좌후(CW)  MAIN3=좌전(CCW)  MAIN4=우후(CCW)
+#    위치·회전은 2026-09-16 실측값이다 (커밋 f3ee0e8, FC_CHANGELOG 09-16 항목):
+#      MAIN1=우전/CCW  MAIN2=우후/CW  MAIN3=좌후/CCW  MAIN4=좌전/CW
+#    🔴 이 상수는 그동안 옛(틀린) 매핑을 들고 있었다 — f3ee0e8 정정이
+#       여기 반영이 안 됐었다. 2026-09-17 에 바로잡았다.
 #    화면 라벨은 SHADE01 과 같은 이름(RF/RB/LF/LB)을 쓴다 — 프론트가 그 키를
 #    기대하기 때문이다. 핀 번호만 이 기체 것으로 바꾼 것이다.
-MOTOR_PINS = (('RF', 1), ('LB', 2), ('LF', 3), ('RB', 4))
+MOTOR_PINS = (('RF', 1), ('RB', 2), ('LB', 3), ('LF', 4))
 
 
 def dumps_json(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
+
+
+# 재생할 .BIN 이 있는 곳. flights/sd-recovered-* 를 전부 훑는다.
+LOG_DIRS = [os.path.expanduser('~/DRONE/flights')]
+
+
+def list_logs():
+    """재생 가능한 .BIN 목록. 최신(파일명 역순)이 먼저."""
+    out = []
+    for root in LOG_DIRS:
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _, names in os.walk(root):
+            for name in names:
+                if name.lower().endswith('.bin'):
+                    full = os.path.join(dirpath, name)
+                    try:
+                        size = os.path.getsize(full)
+                    except OSError:
+                        continue
+                    out.append({'name': name, 'path': full, 'size': size})
+    out.sort(key=lambda e: e['name'], reverse=True)
+    return out
+
+
+class LogPlayback:
+    """열어 둔 로그 하나. SHADE01 의 Playback 클래스와 같은 역할이다
+    (mav_live.py) — 이 기체(.BIN)에 맞게 bin_playback 을 쓸 뿐이다.
+
+    서버가 시간을 흘리지 않는다 — 재생 시각은 브라우저가 정하고,
+    서버는 「이 시각의 프레임을 달라」에 답할 뿐이다 (SHADE01 과 동일 원칙).
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.fl = None
+        self.err = None
+        self.loading = None
+
+    def open(self, name):
+        import bin_playback
+        matches = [e for e in list_logs() if e['name'] == name]
+        if not matches:
+            with self.lock:
+                self.err = '그런 로그가 없다'
+                self.loading = None
+            return
+        path = matches[0]['path']
+        with self.lock:
+            self.loading = name
+            self.err = None
+            self.fl = None
+        try:
+            fl = bin_playback.load_flight(path)
+        except Exception as exc:
+            with self.lock:
+                self.err = str(exc)
+                self.loading = None
+            return
+        with self.lock:
+            self.fl = fl
+            self.loading = None
+
+    def close(self):
+        with self.lock:
+            self.fl = None
+            self.err = None
+            self.loading = None
+
+    def info(self):
+        with self.lock:
+            if self.loading:
+                return {'state': 'loading', 'name': self.loading}
+            if self.err:
+                return {'state': 'error', 'error': self.err}
+            if not self.fl:
+                return {'state': 'idle'}
+            f = self.fl
+            return {'state': 'ready', 'name': f['name'], 'dur': f['dur'],
+                    'utc': f['utc'], 'hz': f['hz'], 'frames': len(f['frames']),
+                    'repaired': f['repaired'], 'home': f['home'],
+                    'track_n': len(f['track']), 'messages_n': len(f['messages'])}
+
+    def series(self):
+        """차트용 전량 시계열. drone_live 의 핵심 채널만 낸다
+        (자세·모터출력·배터리·GPS — 2026-09-16 범위 결정)."""
+        with self.lock:
+            if not self.fl:
+                return None
+            frames = self.fl['frames']
+            cols = {k: [] for k in ('roll', 'pitch', 'yaw', 'volt', 'cur',
+                                    'sats', 'alt')}
+            motor_cols = {n: [] for n, _ in MOTOR_PINS}
+            modes = []
+            last_mode = None
+            for fr in frames:
+                d = fr['d']
+                for k in cols:
+                    cols[k].append(d.get(k))
+                mo = d.get('motors') or {}
+                for n in motor_cols:
+                    motor_cols[n].append(mo.get(n))
+                m = d.get('mode')
+                if m and m != last_mode:
+                    modes.append({'t': fr['t'], 'name': m})
+                    last_mode = m
+            cols['motors'] = motor_cols
+            return {'hz': self.fl['hz'], 'n': len(frames), 'dur': self.fl['dur'],
+                    'cols': cols, 'modes': modes, 'messages': self.fl['messages']}
+
+    def at(self, ts):
+        """재생 시각 ts(초) 의 상태를 라이브와 같은 모양(/api/state)으로."""
+        with self.lock:
+            if not self.fl:
+                return None
+            f = self.fl
+            frames = f['frames']
+            if not frames:
+                return None
+            i = int(round(ts * f['hz']))
+            i = max(0, min(len(frames) - 1, i))
+            fr = frames[i]
+            msgs = [m for m in f['messages'] if m['t'] <= fr['t']][-40:]
+            trk = [p for p in f['track'] if len(p) > 3 and p[3] <= fr['t']]
+            return {
+                'live': True, 'playback': True, 'name': f['name'],
+                'dur': f['dur'], 'utc': f['utc'], 'pos': fr['t'], 'i': i,
+                'n': len(frames), 'seq': i, 'age': 0, 'packets': i,
+                'link': 'LOG', 'src': f['name'], 'sysid': 1,
+                'uptime': round(fr['t']), 'd': fr['d'], 'home': f['home'],
+                'vehicle': 'DRONE', 'mission': [],
+                'track': [[p[0], p[1], p[2]] for p in trk],
+                'messages': msgs,
+            }
 
 
 class State:
@@ -362,6 +498,7 @@ def _qs(query, key):
 class Handler(BaseHTTPRequestHandler):
     st = None
     public = None
+    pb = None
 
     def log_message(self, fmt, *args):
         pass                                        # 접속 로그는 끈다
@@ -399,22 +536,70 @@ class Handler(BaseHTTPRequestHandler):
                               dumps_json(self.st.snapshot(since, want_track)),
                               'application/json; charset=utf-8')
 
-        # SHADE01 프론트가 부르는 것들. 이 서버는 재생·링크고정을 지원하지
-        # 않는다 — 없다고 정직하게 답한다. 화면은 이 값을 받고 해당 UI 를
-        # 비활성으로 둔다.
+        # 🔴 링크고정은 여전히 지원하지 않는다 — 경로가 USB 하나뿐이라
+        # 고를 것이 없다. 로그 재생은 2026-09-17 부터 지원한다 (아래).
         if path == '/api/link':
             return self._send(200, dumps_json({'pin': None, 'link': 'usb'}),
                               'application/json; charset=utf-8')
+
+        # ── 로그 재생 (2026-09-17) ───────────────────────────────────
+        # SHADE01 의 /api/logs, /api/playback/* 와 같은 이름·모양을 쓴다 —
+        # 프론트(index.html/app.js)가 SHADE01 것 그대로라 그 쪽이 부르는
+        # 경로를 맞춰야 그려진다. 실제 파싱은 bin_playback.py, 상태는
+        # 위 LogPlayback 이 한다.
         if path == '/api/logs':
             return self._send(200, dumps_json(
-                {'logs': [], 'source': None, 'remote': None,
-                 'error': 'DRONE live 는 로그 재생을 지원하지 않는다'}),
+                {'logs': list_logs(), 'source': 'local', 'remote': None,
+                 'error': None}),
                 'application/json; charset=utf-8')
-        if path.startswith('/api/playback'):
-            return self._send(200, dumps_json(
-                {'state': 'idle',
-                 'error': 'DRONE live 는 로그 재생을 지원하지 않는다'}),
-                'application/json; charset=utf-8')
+
+        if path == '/api/playback/open':
+            name = None
+            for kv in query.split('&'):
+                if kv.startswith('name='):
+                    from urllib.parse import unquote
+                    name = unquote(kv[5:])
+            if not name:
+                return self._send(400, '{"error":"name 이 없다"}',
+                                  'application/json')
+            allowed = {e['name'] for e in list_logs()}
+            if name not in allowed:
+                return self._send(404, '{"error":"그런 로그가 없다"}',
+                                  'application/json')
+            threading.Thread(target=self.pb.open, args=(name,), daemon=True).start()
+            return self._send(200, dumps_json({'ok': True, 'name': name}),
+                              'application/json; charset=utf-8')
+
+        if path == '/api/playback/close':
+            self.pb.close()
+            return self._send(200, '{"ok":true}', 'application/json')
+
+        if path == '/api/playback/info':
+            return self._send(200, dumps_json(self.pb.info()),
+                              'application/json; charset=utf-8')
+
+        if path == '/api/playback/series':
+            body = self.pb.series()
+            if body is None:
+                return self._send(409, dumps_json(self.pb.info()),
+                                  'application/json; charset=utf-8')
+            return self._send(200, dumps_json(body),
+                              'application/json; charset=utf-8')
+
+        if path == '/api/playback/state':
+            ts = 0.0
+            for kv in query.split('&'):
+                if kv.startswith('t='):
+                    try:
+                        ts = float(kv[2:])
+                    except ValueError:
+                        pass
+            snap = self.pb.at(ts)
+            if snap is None:
+                return self._send(409, dumps_json(self.pb.info()),
+                                  'application/json; charset=utf-8')
+            return self._send(200, dumps_json(snap),
+                              'application/json; charset=utf-8')
 
         # 정적 파일. 여러 뿌리를 **순서대로** 뒤진다 — 앞이 이긴다.
         rel = 'index.html' if path in ('/', '') else path.lstrip('/')
@@ -475,6 +660,7 @@ def main():
 
     Handler.st = st
     Handler.public = roots
+    Handler.pb = LogPlayback()
     srv = ThreadingHTTPServer(('127.0.0.1', args.http), Handler)
     print('[http] http://localhost:%d  (127.0.0.1 만 듣는다)' % args.http,
           flush=True)
