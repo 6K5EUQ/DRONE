@@ -2,3 +2,7 @@
 *.ulg
 .venv/
 __pycache__/
+
+# 비행로그 바이너리 — 로컬에만 둔다 (레포는 문서만)
+flights/**/*.BIN
+flights/**/LASTLOG.TXT
