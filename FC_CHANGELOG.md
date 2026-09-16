@@ -69,6 +69,7 @@ FC 의 상태를 바꾸는 모든 작업을 남긴다.
 - 조치:
   - 파라미터 838개를 로그에서 복원 → `params/params_20260914_from-log10.param`
   - 로그 원본 10개 → `flights/sd-recovered-20260914/`
+    ⚠️ **2026-09-16 에 이 사본은 소실됐다** (레포 정리 중 실수). 원본은 FC 의 SD 카드 `APM/LOGS/` 에 있다
 - 확인: `pymavlink` 로 10개 로그 전수 파싱. 펌웨어 문자열 10개 로그 일치
 - 상세: [components/fc/pixhawk-2.4.8/README.md](components/fc/pixhawk-2.4.8/README.md)
 

@@ -60,7 +60,7 @@ E 항의 RC·ESC 캘리브레이션은 **스로틀 입력이 필수**라 진행�
 
 - [x] 현재 파라미터를 실기에서 직접 받아 저장
       → [`params/params_20260914-1900_live-usb.param`](../../params/params_20260914-1900_live-usb.param) (838개)
-- [x] SD 카드 로그 백업 → [`flights/sd-recovered-20260914/`](../../flights/sd-recovered-20260914/)
+- [x] SD 카드 로그 분석 완료 (⚠️ 저장소 사본은 소실. 원본은 SD 카드 `APM/LOGS/`)
 - [x] [FC_CHANGELOG](../../FC_CHANGELOG.md) 기록
 
 > ✅ 실기 백업과 SD 로그 복원본을 대조한 결과 **15개만 차이**났고,
