@@ -78,14 +78,14 @@
 - [ ] 납땜부 수축튜브 처리
 - [ ] 신호선을 FC 출력 1~4 에 연결
 
-출력 배치 (ArduCopter 쿼드 X, [FC 문서](../../components/fc/pixhawk-2.4.8/README.md) 확인값):
+출력 배치 (ArduCopter 쿼드 X, [FC 문서](../../components/fc/pixhawk-2.4.8/README.md) 2026-09-16 실측값):
 
 | FC 출력 | 모터 | 위치 | 회전 |
 |---|---|---|---|
 | 1 | Motor1 | 우전 | CCW |
-| 2 | Motor2 | 좌후 | CCW |
-| 3 | Motor3 | 좌전 | CW |
-| 4 | Motor4 | 우후 | CW |
+| 2 | Motor2 | 우후 | CW |
+| 3 | Motor3 | 좌후 | CCW |
+| 4 | Motor4 | 좌전 | CW |
 
 ---
 
