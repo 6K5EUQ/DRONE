@@ -55,10 +55,50 @@ SHADE01 은 PX4 모드 표로 해석한다. 화면에 `MANUAL` 로 떴지만 실
 | | 출처 |
 |---|---|
 | 파싱 (백엔드) | **이 디렉터리** `drone_live.py` — 이 기체 전용 |
-| 화면 (HTML/CSS/JS) | `~/SHADE01/web/live/public/` 을 **읽어 쓴다** |
+| 화면 (HTML/CSS/JS) | SHADE01 것을 **읽어 쓴다** (아래 두 곳) |
 
 화면 자산을 공유하는 것은 JSON 스키마가 같기 때문이다. 화면이 바뀌면 이쪽도
-같이 바뀐다 — 그것이 의도다. 다른 경로를 쓰려면 `--public` 으로 준다.
+같이 바뀐다 — 그것이 의도다. 다른 경로를 쓰려면 `--public` 으로 준다
+(여러 번 줄 수 있고 앞이 이긴다).
+
+### 🔴 자산이 두 디렉터리에 나뉘어 있다
+
+```
+~/SHADE01/web/live/public/   index.html · live.css · live.js
+~/SHADE01/web/public/        app.css · chart.js · vendor/leaflet/
+```
+
+`index.html` 은 `/app.css`·`/chart.js`·`/vendor/leaflet/` 을 **루트에서**
+찾는다. 앞쪽만 서빙하면 404 가 나는데 **JS 에러는 안 난다** — 화면이 뜨긴
+뜨고 **글자만 전부 검정으로 묻힌다.** `app.css` 에 색 토큰(CSS 변수) 21개가
+있어서, 그게 빠지면 변수가 전부 미정의가 되기 때문이다. 지도·차트도 함께
+사라진다.
+
+증상이 "JS 가 깨진 것" 처럼 보이지만 원인은 CSS 파일 하나다.
+자산이 안 보이면 먼저 이걸 확인해라:
+
+```bash
+for f in /app.css /chart.js /live.css /live.js /vendor/leaflet/leaflet.js; do
+  printf "%-32s %s\n" "$f" "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4401$f)"
+done
+```
+
+### 🔴 키 이름은 화면이 정한다
+
+백엔드가 값을 내도 **이름이 다르면 화면은 "—" 를 그린다.** JS 에러도 안 난다.
+`live.js` 가 읽는 이름에 맞춰야 한다 — 실제로 한 번 걸렸다:
+
+| 틀리기 쉬운 이름 | 화면이 읽는 이름 |
+|---|---|
+| `spd` | **`groundspeed`** |
+| `vib` | **`vibe`** |
+| `ekf` | **`ekf_ratio`** (하위 키도 `alt` 가 아니라 `hgt`) |
+
+화면 값이 `—` 인데 `/api/state` 에는 값이 있으면 이것을 의심해라:
+
+```bash
+curl -s 'http://localhost:4401/api/state?track=0' | python3 -m json.tool | less
+```
 
 ---
 
