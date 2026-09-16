@@ -81,7 +81,20 @@ SD 카드 조사(2026-09-14) 결과, **이 보드는 새것이 아니다.**
 | `tools/` | 스크립트 (현재 비어 있음) |
 | `FC_CHANGELOG.md` | FC 상태를 바꾼 모든 작업의 이력 — **바꾸기 전에 읽고, 바꾼 뒤에 쓴다** |
 
-문서 지도는 [CLAUDE.md](CLAUDE.md) 에 있다.
+### 문서 지도
+
+| 파일 | 내용 | |
+|---|---|---|
+| [docs/procedures/00-progress.md](docs/procedures/00-progress.md) | **지금 어디까지 왔나** — 완료·미해결·함정·작업수칙 | 🔴 **가장 먼저** |
+| [FC_CHANGELOG.md](FC_CHANGELOG.md) | FC 상태를 바꾼 모든 작업 | 🔴 **FC 건드리기 전 필독** |
+| [docs/design/01-thrust-weight.md](docs/design/01-thrust-weight.md) | 추력·중량·비행시간 계산 | 🔴 설계 근거 |
+| [docs/procedures/01-assembly.md](docs/procedures/01-assembly.md) | 조립 절차 | |
+| [docs/procedures/02-fc-setup.md](docs/procedures/02-fc-setup.md) | FC 셋업·캘리브레이션 | |
+| [docs/procedures/03-ground-test.md](docs/procedures/03-ground-test.md) | 지상 시험 · GO/NO-GO | |
+| [docs/procedures/04-first-flight.md](docs/procedures/04-first-flight.md) | 첫 비행 단계별 확장 | |
+| [components/fc/pixhawk-2.4.8/](components/fc/pixhawk-2.4.8/README.md) | FC 실물 상태 · 복원된 설정 | 🔴 |
+| [components/motors/gt-drone-3508-380kv/](components/motors/gt-drone-3508-380kv/README.md) | 모터 | |
+| [components/esc/gt-drone-ec-x3-30a/](components/esc/gt-drone-ec-x3-30a/README.md) | ESC | |
 
 ---
 
