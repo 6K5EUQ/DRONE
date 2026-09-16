@@ -49,7 +49,17 @@ TRACK_MAX = 20000           # 항적 상한. 넘으면 앞에서 버린다
 MSG_MAX = 200               # STATUSTEXT 보관 수
 
 # SHADE01 의 화면 자산을 그대로 쓴다. 같은 JSON 스키마를 내면 그대로 그려진다.
-DEFAULT_PUBLIC = os.path.expanduser('~/SHADE01/web/live/public')
+#
+# 🔴 자산이 **두 디렉터리에 나뉘어** 있다 (2026-09-16 캡처로 규명).
+#    index.html 은 /app.css·/chart.js·/vendor/leaflet/ 을 루트에서 찾는데
+#    그것들은 live/public 이 아니라 web/public 에 있다. 앞쪽만 서빙하면
+#    404 가 나고 **CSS 변수가 통째로 빠져 글자가 전부 검정**으로 나온다
+#    (app.css 에 색 토큰 21개가 있다).
+#    앞에 있는 것이 이긴다 — index.html 은 양쪽에 다 있고 live 쪽이 맞다.
+DEFAULT_PUBLIC = [
+    os.path.expanduser('~/SHADE01/web/live/public'),
+    os.path.expanduser('~/SHADE01/web/public'),
+]
 
 # ArduCopter 비행모드. 🔴 PX4 표와 다르다 — 섞지 마라.
 #    출처: ArduPilot/ArduCopter/mode.h (Mode::Number), 3.6 기준
@@ -406,13 +416,18 @@ class Handler(BaseHTTPRequestHandler):
                  'error': 'DRONE live 는 로그 재생을 지원하지 않는다'}),
                 'application/json; charset=utf-8')
 
-        # 정적 파일
+        # 정적 파일. 여러 뿌리를 **순서대로** 뒤진다 — 앞이 이긴다.
         rel = 'index.html' if path in ('/', '') else path.lstrip('/')
-        # 🔴 ../ 로 상위를 못 읽게 한다.
-        full = os.path.normpath(os.path.join(self.public, rel))
-        if not full.startswith(os.path.realpath(self.public)):
-            return self._send(403, 'nope', 'text/plain')
-        if not os.path.isfile(full):
+        full = None
+        for root in self.public:
+            cand = os.path.normpath(os.path.join(root, rel))
+            # 🔴 ../ 로 그 뿌리 밖을 못 읽게 한다. 뿌리마다 따로 본다.
+            if not cand.startswith(root):
+                continue
+            if os.path.isfile(cand):
+                full = cand
+                break
+        if full is None:
             return self._send(404, 'not found', 'text/plain')
         ctype = {
             '.html': 'text/html; charset=utf-8',
@@ -423,7 +438,13 @@ class Handler(BaseHTTPRequestHandler):
             '.ico': 'image/x-icon',
         }.get(os.path.splitext(full)[1], 'application/octet-stream')
         with open(full, 'rb') as fh:
-            return self._send(200, fh.read(), ctype)
+            body = fh.read()
+        # 🔴 탭 제목이 "SHADE01 라이브" 로 뜨면 기체를 오인한다. 원본은
+        #    SHADE01 소유라 못 고치므로 내보낼 때만 바꾼다.
+        if rel.endswith('.html'):
+            body = body.replace('SHADE01 라이브'.encode('utf-8'),
+                                'DRONE 라이브'.encode('utf-8'))
+        return self._send(200, body, ctype)
 
 
 def main():
@@ -434,12 +455,16 @@ def main():
     ap.add_argument('--baud', type=int, default=115200)
     ap.add_argument('--http', type=int, default=4401,
                     help='HTTP 포트 (기본 4401 — SHADE01 은 4400)')
-    ap.add_argument('--public', default=DEFAULT_PUBLIC,
-                    help='화면 자산 경로 (기본: SHADE01 것을 읽어 쓴다)')
+    ap.add_argument('--public', action='append', default=None,
+                    help='화면 자산 경로. 여러 번 줄 수 있고 앞이 이긴다. '
+                         '(기본: SHADE01 의 live/public + web/public)')
     args = ap.parse_args()
 
-    if not os.path.isdir(args.public):
-        sys.exit('화면 자산이 없다: %s' % args.public)
+    roots = [os.path.realpath(os.path.expanduser(p))
+             for p in (args.public or DEFAULT_PUBLIC)]
+    missing = [p for p in roots if not os.path.isdir(p)]
+    if missing:
+        sys.exit('화면 자산이 없다: %s' % ', '.join(missing))
 
     st = State()
     stop = threading.Event()
@@ -449,11 +474,12 @@ def main():
     th.start()
 
     Handler.st = st
-    Handler.public = os.path.realpath(args.public)
+    Handler.public = roots
     srv = ThreadingHTTPServer(('127.0.0.1', args.http), Handler)
     print('[http] http://localhost:%d  (127.0.0.1 만 듣는다)' % args.http,
           flush=True)
-    print('[http] 화면 자산: %s' % Handler.public, flush=True)
+    for i, p in enumerate(roots):
+        print('[http] 화면 자산 %d: %s' % (i + 1, p), flush=True)
     print('종료: Ctrl-C', flush=True)
     try:
         srv.serve_forever()
