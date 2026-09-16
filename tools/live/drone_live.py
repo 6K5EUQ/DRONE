@@ -131,7 +131,7 @@ class State:
         elif t == 'SYS_STATUS':
             # 🔴 이 기체의 배터리 정본이다. BATTERY_STATUS 가 아니다 —
             #    파일 첫머리 주석 참조.
-            d['volt'] = (msg.voltage_battery / 1000.0
+            d['volt'] = (round(msg.voltage_battery / 1000.0, 2)
                          if msg.voltage_battery not in (0, 65535) else None)
             d['cur'] = (msg.current_battery / 100.0
                         if msg.current_battery != -1 else None)
@@ -158,7 +158,10 @@ class State:
             d['yawspeed'] = round(math.degrees(msg.yawspeed), 1)
 
         elif t == 'VFR_HUD':
-            d['spd'] = round(msg.groundspeed, 2)
+            # 🔴 키 이름은 화면(live.js)이 정한다. `spd` 로 내면 속도 칸이
+            #    영원히 "—" 다 — 프론트는 `groundspeed` 를 읽는다 (2026-09-16
+            #    캡처로 확인). 화면 자산을 SHADE01 과 공유하는 대가다.
+            d['groundspeed'] = round(msg.groundspeed, 2)
             d['airspeed'] = round(msg.airspeed, 2)
             d['hdg'] = msg.heading
             d['climb'] = round(msg.climb, 2)
@@ -169,6 +172,9 @@ class State:
             d['alt'] = round(msg.relative_alt / 1000.0, 2)
             lat, lon = msg.lat / 1e7, msg.lon / 1e7
             d['lat'], d['lon'] = lat, lon
+            # vx/vy 는 화면이 지도 위 속도 벡터에 쓴다. cm/s 로 온다.
+            d['vx'] = round(msg.vx / 100.0, 2)
+            d['vy'] = round(msg.vy / 100.0, 2)
             d['vz'] = round(msg.vz / 100.0, 2)
             # lat/lon 0 은 "아직 픽스 없음" 이다. 항적에 넣으면 아프리카 앞바다
             # 에 점이 찍힌다.
@@ -191,18 +197,21 @@ class State:
                 round(msg.eph / 100.0, 2)
 
         elif t == 'EKF_STATUS_REPORT':
-            d['ekf'] = {
+            # 🔴 화면은 `ekf_ratio` 를 읽는다 (live.js:584). `ekf` 로 내면
+            #    EKF 칸이 안 그려진다.
+            d['ekf_ratio'] = {
                 'vel': round(msg.velocity_variance, 3),
                 'pos': round(msg.pos_horiz_variance, 3),
-                'alt': round(msg.pos_vert_variance, 3),
+                'hgt': round(msg.pos_vert_variance, 3),
                 'mag': round(msg.compass_variance, 3),
             }
             d['ekf_flags'] = msg.flags
 
         elif t == 'VIBRATION':
-            d['vib'] = [round(msg.vibration_x, 2),
-                        round(msg.vibration_y, 2),
-                        round(msg.vibration_z, 2)]
+            # 🔴 화면이 읽는 이름은 `vibe` 다. `vib` 가 아니다.
+            d['vibe'] = [round(msg.vibration_x, 2),
+                         round(msg.vibration_y, 2),
+                         round(msg.vibration_z, 2)]
             d['clip'] = [msg.clipping_0, msg.clipping_1, msg.clipping_2]
 
         elif t == 'SERVO_OUTPUT_RAW':
