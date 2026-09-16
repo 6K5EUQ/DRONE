@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>DRONE 비행 로그</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, sans-serif; margin: 0; padding: 16px; background: #0d1117; color: #e6edf3; }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 8px 14px; background: #21262d; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .tab.active { background: #1f6feb; border-color: #1f6feb; }
+  .tab .bad { color: #f85149; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 8px; margin-bottom: 16px; }
+  .stat { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; }
+  .stat .label { font-size: 11px; color: #8b949e; }
+  .stat .value { font-size: 18px; font-weight: 600; margin-top: 2px; }
+  .stat.warn .value { color: #d29922; }
+  .stat.bad .value { color: #f85149; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px,1fr)); gap: 16px; }
+  .chart-box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; }
+  .chart-box h3 { margin: 0 0 8px; font-size: 13px; color: #8b949e; }
+  canvas { max-height: 220px; }
+  .events { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; margin-top: 16px; max-height: 240px; overflow-y: auto; font-size: 12px; }
+  .events div { padding: 3px 0; border-bottom: 1px solid #21262d; }
+  .events .err { color: #f85149; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>DRONE 비행 로그 — 실내 2026-09-16</h1>
+<div class="tabs" id="tabs"></div>
+<div id="panels"></div>
+
+<script>
+const LOGS = ["00000012", "00000013", "00000014", "00000015", "00000016"];
+const tabsEl = document.getElementById('tabs');
+const panelsEl = document.getElementById('panels');
+
+Promise.all(LOGS.map(id => fetch(id + '.json').then(r => r.json()))).then(datas => {
+  datas.forEach((d, i) => {
+    const id = LOGS[i];
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (i === 0 ? ' active' : '');
+    tab.textContent = `#${id} (${d.duration_s}s)` + (d.crash ? ' ⚠️' : '');
+    tab.onclick = () => selectTab(i);
+    tabsEl.appendChild(tab);
+
+    const panel = document.createElement('div');
+    panel.id = 'panel-' + i;
+    panel.className = i === 0 ? '' : 'hidden';
+    panel.innerHTML = buildPanel(d);
+    panelsEl.appendChild(panel);
+  });
+
+  function selectTab(i) {
+    [...tabsEl.children].forEach((t, j) => t.classList.toggle('active', j === i));
+    [...panelsEl.children].forEach((p, j) => p.classList.toggle('hidden', j !== i));
+    renderCharts(datas[i], 'panel-' + i);
+  }
+
+  renderCharts(datas[0], 'panel-0');
+});
+
+function statClass(label, val) {
+  if (label === '진동최대' && val > 60) return 'bad';
+  if (label === '진동최대' && val > 30) return 'warn';
+  if (label === 'GPS위성' && val === 0) return 'warn';
+  if (label === '충돌') return val ? 'bad' : '';
+  return '';
+}
+
+function buildPanel(d) {
+  const stats = [
+    ['펌웨어', d.firmware || '-'],
+    ['길이', d.duration_s + 's'],
+    ['ARM 횟수', d.arm_count],
+    ['최고고도', d.alt_max_m + 'm'],
+    ['GPS fix', d.gps_fix_max],
+    ['GPS위성', d.gps_sats_max],
+    ['전압최저', (d.volt_min_v ?? '-') + 'V'],
+    ['전류최대', (d.curr_max_a ?? '-') + 'A'],
+    ['진동최대', d.vibe_max],
+    ['클리핑', d.clip_total],
+    ['충돌', d.crash ? '🔴 감지됨' : '없음'],
+  ];
+  let html = '<div class="summary">';
+  for (const [label, val] of stats) {
+    const cls = statClass(label, val);
+    html += `<div class="stat ${cls}"><div class="label">${label}</div><div class="value">${val}</div></div>`;
+  }
+  html += '</div>';
+
+  html += `<div class="charts">
+    <div class="chart-box"><h3>자세 (Roll/Pitch/Yaw, deg)</h3><canvas id="att-${d.file}"></canvas></div>
+    <div class="chart-box"><h3>모터 출력 (RCOU, PWM)</h3><canvas id="rcou-${d.file}"></canvas></div>
+    <div class="chart-box"><h3>진동 (VIBE)</h3><canvas id="vibe-${d.file}"></canvas></div>
+    <div class="chart-box"><h3>배터리 전압/전류</h3><canvas id="bat-${d.file}"></canvas></div>
+    <div class="chart-box"><h3>고도 (CTUN)</h3><canvas id="alt-${d.file}"></canvas></div>
+  </div>`;
+
+  html += '<div class="events"><strong>이벤트 로그</strong>';
+  (d.events || []).forEach(e => {
+    const isErr = /error|fail|crash|preارm|prearm/i.test(e.text);
+    html += `<div class="${isErr ? 'err' : ''}">[${e.t?.toFixed(1) ?? '?'}s] ${escapeHtml(e.text)}</div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+
+const chartInstances = {};
+
+function renderCharts(d, panelId) {
+  const suf = d.file;
+  mkChart(`att-${suf}`, d.series.att, ['t','Roll','Pitch','Yaw'], [1,2,3], ['Roll','Pitch','Yaw']);
+  mkChart(`rcou-${suf}`, d.series.rcou, ['t','M1','M2','M3','M4'], [1,2,3,4], ['MAIN1','MAIN2','MAIN3','MAIN4']);
+  mkChart(`vibe-${suf}`, d.series.vibe, ['t','X','Y','Z'], [1,2,3], ['X','Y','Z']);
+  mkChart(`bat-${suf}`, d.series.bat, ['t','Volt','Curr'], [1,2], ['전압(V)','전류(A)']);
+  mkChart(`alt-${suf}`, d.series.ctun, ['t','Alt','ThO','DAlt'], [1], ['고도(m)']);
+}
+
+function mkChart(canvasId, rows, cols, valueIdx, labels) {
+  const el = document.getElementById(canvasId);
+  if (!el || !rows || !rows.length) return;
+  if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
+  const t = rows.map(r => r[0]);
+  const datasets = valueIdx.map((idx, i) => ({
+    label: labels[i],
+    data: rows.map(r => r[idx]),
+    borderWidth: 1,
+    pointRadius: 0,
+    tension: 0.1,
+  }));
+  chartInstances[canvasId] = new Chart(el, {
+    type: 'line',
+    data: { labels: t.map(v => v?.toFixed(1)), datasets },
+    options: {
+      responsive: true,
+      animation: false,
+      scales: { x: { ticks: { maxTicksLimit: 8 } } },
+      plugins: { legend: { labels: { boxWidth: 10, font: { size: 10 } } } },
+    },
+  });
+}
+</script>
+</body>
+</html>

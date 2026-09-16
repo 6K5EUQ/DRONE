@@ -9,3 +9,9 @@ flights/**/LASTLOG.TXT
 
 # 에이전트 작업 지침 — 내부 운영 문서라 공개하지 않는다
 CLAUDE.md
+
+# 로그 뷰어 산출물 — extract.py 로 언제든 재생성
+tools/logview/*.json
+
+# 로그 뷰어 산출물 — 로그 원본에서 언제든 재생성
+flights/**/*.json
