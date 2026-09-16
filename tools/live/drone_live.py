@@ -174,28 +174,32 @@ class LogPlayback:
 
     def series(self):
         """차트용 전량 시계열. drone_live 의 핵심 채널만 낸다
-        (자세·모터출력·배터리·GPS — 2026-09-16 범위 결정)."""
+        (자세·배터리·GPS — 2026-09-16 범위 결정).
+
+        🔴 `cols` 의 값은 **반드시 리스트**여야 한다. 프론트(live.js
+           pbFillCharts)가 `for (const k in s.cols) trk[k] = s.cols[k].slice(...)`
+           로 도는데, 리스트가 아닌 것이 하나라도 섞이면 `.slice` 가 없어
+           TypeError 가 나고 **그 뒤의 render(s) 가 통째로 안 돈다** —
+           화면은 라이브 값에서 얼어붙고 에러도 안 보인다.
+           실제로 모터를 dict 로 넣었다가 그 증상을 겪었다 (2026-09-17).
+           모터는 매 프레임 `d['motors']` 로 그려지므로 여기 넣을 이유가 없다.
+        """
         with self.lock:
             if not self.fl:
                 return None
             frames = self.fl['frames']
             cols = {k: [] for k in ('roll', 'pitch', 'yaw', 'volt', 'cur',
                                     'sats', 'alt')}
-            motor_cols = {n: [] for n, _ in MOTOR_PINS}
             modes = []
             last_mode = None
             for fr in frames:
                 d = fr['d']
                 for k in cols:
                     cols[k].append(d.get(k))
-                mo = d.get('motors') or {}
-                for n in motor_cols:
-                    motor_cols[n].append(mo.get(n))
                 m = d.get('mode')
                 if m and m != last_mode:
                     modes.append({'t': fr['t'], 'name': m})
                     last_mode = m
-            cols['motors'] = motor_cols
             return {'hz': self.fl['hz'], 'n': len(frames), 'dur': self.fl['dur'],
                     'cols': cols, 'modes': modes, 'messages': self.fl['messages']}
 
