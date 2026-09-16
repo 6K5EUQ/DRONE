@@ -1,4 +1,4 @@
-# 로그 바이너리는 크다 — sd-recovered 는 예외로 보존한다
+# 로그 바이너리는 레포에 두지 않는다 — 원본은 FC 의 SD 카드에 있다
 *.ulg
 .venv/
 __pycache__/
@@ -6,3 +6,6 @@ __pycache__/
 # 비행로그 바이너리 — 로컬에만 둔다 (레포는 문서만)
 flights/**/*.BIN
 flights/**/LASTLOG.TXT
+
+# 에이전트 작업 지침 — 내부 운영 문서라 공개하지 않는다
+CLAUDE.md
