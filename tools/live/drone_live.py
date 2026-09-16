@@ -501,7 +501,16 @@ class Handler(BaseHTTPRequestHandler):
     pb = None
 
     def log_message(self, fmt, *args):
-        pass                                        # 접속 로그는 끈다
+        # 접속 로그는 끈다. 단 DRONE_LIVE_DEBUG=1 이면 /api/* 만 찍는다 —
+        # 프론트가 어느 경로를 부르는지 봐야 할 때가 있다 (2026-09-17 재생 진단).
+        if os.environ.get('DRONE_LIVE_DEBUG') == '1':
+            try:
+                line = fmt % args
+            except Exception:
+                line = str(fmt)
+            if '/api/' in line:
+                sys.stderr.write('[req] %s\n' % line)
+                sys.stderr.flush()
 
     def _send(self, code, body, ctype):
         if isinstance(body, str):
@@ -596,7 +605,15 @@ class Handler(BaseHTTPRequestHandler):
                         pass
             snap = self.pb.at(ts)
             if snap is None:
-                return self._send(409, dumps_json(self.pb.info()),
+                # 🔴 열린 로그가 없다. 프론트(live.js pbRender)는 `!r.ok` 면
+                #    조용히 return 하고 다음 tick 에 또 부른다 — 서버 세션이
+                #    끊긴 줄 모르고 라이브 값을 계속 그린다. 실제로 그렇게
+                #    「파일은 떴는데 값이 안 움직인다」로 한참 헤맸다
+                #    (2026-09-17). 200 으로 사정을 실어 보내 화면이 알게 한다.
+                info = self.pb.info()
+                info['playback'] = True
+                info['gone'] = True
+                return self._send(200, dumps_json(info),
                                   'application/json; charset=utf-8')
             return self._send(200, dumps_json(snap),
                               'application/json; charset=utf-8')
