@@ -1,0 +1,141 @@
+Labels:
+  "Favorites":
+Sort: 1
+Models:
+  model1.yml:
+    hash: "5b2c00004f2cfc03"
+    name: "GREEN"
+    mod0type: 6
+    mod0rf: 14
+    labels: ""
+    bitmap: "Cva142HD.png"
+    lastopen: 1004738189
+  model10.yml:
+    hash: "0c1d00008453335d"
+    name: "Eachine F4U"
+    mod0type: 6
+    mod0rf: 47
+    labels: ""
+    bitmap: "F4U.png"
+    lastopen: 0
+  model11.yml:
+    hash: "9c1a00008453335d"
+    name: "Eachine F22"
+    mod0type: 6
+    mod0rf: 47
+    labels: ""
+    bitmap: "F22.png"
+    lastopen: 0
+  model12.yml:
+    hash: "9c1a00008453335d"
+    name: "Eachine F16"
+    mod0type: 6
+    mod0rf: 47
+    labels: ""
+    bitmap: "F16.png"
+    lastopen: 0
+  model2.yml:
+    hash: "562100008453095f"
+    name: "DELTA"
+    mod0type: 6
+    mod0rf: 2
+    labels: ""
+    bitmap: "Delta1.jpg"
+    lastopen: 0
+  model3.yml:
+    hash: "cb2b00008453795f"
+    name: "OMPHOBBY M2"
+    mod0type: 6
+    mod0rf: 76
+    labels: ""
+    bitmap: "OH-M2-1.jpg"
+    lastopen: 0
+  model4.yml:
+    hash: "d127000084538061"
+    name: "QUAD"
+    mod0type: 6
+    mod0rf: 2
+    labels: ""
+    bitmap: "Cva142HD.png"
+    lastopen: 0
+  model5.yml:
+    hash: "d62900008453fb60"
+    name: "HELI"
+    mod0type: 6
+    mod0rf: 20
+    labels: ""
+    bitmap: "Hubi57.jpg"
+    lastopen: 0
+  model6.yml:
+    hash: "6e2c00008453335d"
+    name: "Eachine E160"
+    mod0type: 6
+    mod0rf: 20
+    labels: ""
+    bitmap: "E160.png"
+    lastopen: 0
+  model7.yml:
+    hash: "6e2c00008453335d"
+    name: "Eachine E180"
+    mod0type: 6
+    mod0rf: 20
+    labels: ""
+    bitmap: "E180.png"
+    lastopen: 0
+  model8.yml:
+    hash: "511d0000ee545065"
+    name: "Eachine P-51D"
+    mod0type: 6
+    mod0rf: 47
+    labels: ""
+    bitmap: "P51D.png"
+    lastopen: 0
+  model9.yml:
+    hash: "101d00008453335d"
+    name: "Eachine T-28"
+    mod0type: 6
+    mod0rf: 47
+    labels: ""
+    bitmap: "t28.png"
+    lastopen: 0
+  model13.yml:
+    hash: "211100000c298219"
+    name: "YUSOO"
+    mod0type: 6
+    mod0rf: 14
+    labels: ""
+    bitmap: "A10.JPG"
+    lastopen: 0
+  model14.yml:
+    hash: "600d00000d2996ad"
+    name: "MODEL14"
+    mod0type: 6
+    mod0rf: 14
+    labels: ""
+    bitmap: ""
+    lastopen: 0
+  model15.yml:
+    hash: "2d1100006a2afb0e"
+    name: "MODEL15"
+    mod0type: 6
+    mod0rf: 63
+    labels: ""
+    bitmap: ""
+    lastopen: 981016803
+  model16.yml:
+    hash: "09130000622b02af"
+    name: "0919YSW"
+    mod0type: 6
+    mod0rf: 2
+    labels: ""
+    bitmap: ""
+    lastopen: 984189722
+  model17.yml:
+    hash: "12120000672cf122"
+    name: "T1 Doran"
+    mod0type: 6
+    mod0rf: 14
+    labels: ""
+    bitmap: ""
+    lastopen: 1013733199
+
