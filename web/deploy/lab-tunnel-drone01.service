@@ -1,0 +1,16 @@
+# /etc/systemd/system/lab-tunnel-drone01.service 로 복사한다.
+# 터널은 도메인마다 따로다 — 하나를 재시작해도 다른 도메인은 영향이 없다.
+[Unit]
+Description=Lab Cloudflare Tunnel (drone01)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ku
+ExecStart=/home/ku/.local/bin/cloudflared --no-autoupdate --config /home/ku/.cloudflared/config-drone01.yml tunnel run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,71 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>DRONE01 비행 전 점검</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="/app.css">
+
+<!--
+  비행 전 점검 화면.
+
+  🔴 **판정은 이 파일에서 하지 않는다.** 서버가 준 level/verdict 를 그린다.
+     임계값은 tools/preflight/preflight.py 의 EXPECT 한 곳에만 있고,
+     터미널과 이 화면이 같은 코드로 같은 답을 내야 한다.
+
+  🔴 **점검은 병렬이다.** 묶음이 끝나는 순서는 정해져 있지 않다 — 자기
+     데이터가 먼저 온 것이 먼저 끝난다. 그래서 목록은 미리 다 깔아 두고,
+     끝난 자리부터 색이 들어온다. 번호는 자리 번호지 실행 순서가 아니다.
+
+  🔴 **판정 말고는 싣지 않는다.** 설명문·주의사항·터미널 절차를 여기 두면
+     현장에서 판정이 그 사이에 묻힌다. 그런 것은 리포 문서에 있다.
+-->
+
+<header>
+  <h1><a href="/">DRONE01 비행로그</a></h1>
+  <span class="sub">비행 전 점검</span>
+  <time class="pf-at" id="bAt"></time>
+  <span class="grow"></span>
+  <span class="pf-note" id="note"></span>
+  <a class="btn" href="/intro">소개</a>
+  <a class="btn" href="/live">실시간</a>
+</header>
+
+<main class="pf">
+  <section class="pf-hero" id="hero">
+    <button class="primary pf-big" id="go">기체 점검</button>
+  </section>
+
+  <div class="pf-run" id="run" hidden>
+    <!-- 임무 머리. 무엇을·어디서·언제 점검했는지 — 사진 한 장으로도 근거가 된다. -->
+    <!-- 3 : 1 — 왼쪽에 점검 목록, 오른쪽에 종합. 좁은 화면에서는 세로로
+         쌓이고 종합이 위로 간다 (현장에서 먼저 보는 것이 종합이다). -->
+    <div class="pf-split">
+      <ol class="pf-list" id="list"></ol>
+
+      <aside class="pf-side">
+        <section class="pf-total" id="total" hidden>
+          <span class="pf-tlabel">종합결과</span>
+          <strong class="pf-tverdict" id="tverdict">—</strong>
+          <div class="pf-tactions">
+            <button id="again" hidden>다시 점검</button>
+          </div>
+        </section>
+        <section id="fail" class="pf-fail" hidden></section>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<div class="pf-modal" id="modal" hidden>
+  <form class="pf-modalbox" id="pwForm">
+    <label for="pw">암호</label>
+    <input type="password" id="pw" inputmode="numeric" autocomplete="current-password">
+    <div class="pf-modalerr" id="pwErr" hidden></div>
+    <div class="pf-modalrow">
+      <button type="button" id="cancel">취소</button>
+      <button type="submit" class="primary">점검</button>
+    </div>
+  </form>
+</div>
+
+<script src="/preflight.js"></script>

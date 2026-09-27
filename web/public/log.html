@@ -1,0 +1,970 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>비행 분석 — DRONE01</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<style>
+  /* 지도와 그래프 반반. 좁아지면 위아래로 쌓는다. */
+  /* 왼쪽 지도(고정) / 오른쪽 차트(세로 스크롤).
+     업계 도구는 전부 차트를 세로 1열로 쌓는다 — 비행 플롯은 시간축이 생명이라
+     가로를 나눠 쓰면 해상도가 죽는다. 여기서는 지도를
+     왼쪽에 고정해 시간 커서와 같이 보면서도 차트에 ~900px 를 준다. */
+  .wrap { display: grid; grid-template-columns: 380px 1fr;
+          height: calc(100vh - 96px); }
+  .side { display: flex; flex-direction: column; min-height: 0;
+          border-right: 1px solid var(--border-2); }
+  .mapcell { position: relative; flex: 0 0 46%; min-height: 240px; }
+  #map { width: 100%; height: 100%; background: #0d1117; }
+  /* 위성 사진만 채도가 높아 어두운 차트 옆에서 그 칸만 튄다. 살짝 눌러
+     궤적(고도색 선)이 배경을 이기게 한다 (2026-09-12).
+     🔴 라이브(.45/.72)보다 약하게 잡았다 — 이 지도는 폭이 46% 로 크고
+     경로를 지형과 대조하는 것이 목적이라, 너무 누르면 활주로·건물이
+     안 보인다. */
+  #map .leaflet-tile { filter: saturate(.7) brightness(.85); }
+  .sidefoot { flex: 1 1 auto; overflow-y: auto; padding: 10px 12px; min-height: 0; }
+  .sidefoot .fname { font-family: var(--mono); font-size: 11px; color: var(--muted);
+                     word-break: break-all; margin-bottom: 10px; }
+  /* 차트 선택 — 로그마다 살아 있는 단이 12개까지 나오는데 전부 펼치면
+     스크롤만 길어지고 정작 볼 것이 안 보인다. 기본은 핵심 단만 켜고
+     나머지는 여기서 체크해 더한다. 켠 단은 목차 역할도 겸한다. */
+  .toch { font-size: 10px; color: var(--muted); letter-spacing: .5px;
+          margin: 2px 0 5px; display: flex; justify-content: space-between;
+          align-items: baseline; }
+  .toch button { background: none; border: 0; color: var(--dim); font-size: 10px;
+                 cursor: pointer; padding: 0 3px; }
+  .toch button:hover { color: var(--text); }
+  #toc { display: flex; flex-direction: column; gap: 1px; }
+  #toc label { display: flex; align-items: center; gap: 7px; cursor: pointer;
+               color: var(--muted); font-size: 12px; padding: 3px 8px;
+               border-radius: 5px; border-left: 2px solid transparent;
+               user-select: none; }
+  #toc label:hover { background: var(--panel); color: var(--text); }
+  #toc label.sel { color: var(--dim); }
+  #toc label.on { color: var(--accent); border-left-color: var(--accent);
+                  background: var(--panel); }
+  #toc input { accent-color: var(--accent); margin: 0; flex: 0 0 auto; }
+  #toc .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+             white-space: nowrap; }
+
+  /* 🔴 차트를 몇 개 켜든 **한 화면에 들어간다** (2026-09-14). 예전에는 단마다
+     210px 고정이라 다섯 단부터 넘쳐 세로 스크롤이 생겼고, 한 단을 보려면
+     다른 단이 화면 밖으로 밀려 시각을 눈으로 맞출 수가 없었다. 비행 로그는
+     단을 **세로로 나란히 놓고 같은 시각을 훑는 것**이 전부라 스크롤이 그
+     쓰임을 깨뜨린다.
+
+     그래서 남은 높이를 켜진 단이 똑같이 나눠 갖는다 — `flex: 1 1 0`.
+     🔴 `flex-basis` 는 반드시 **0** 이다. `auto` 면 SVG 가 제 높이를 주장해
+     다시 넘친다 (실시간 뷰어에서 같은 함정에 물렸다). */
+  .col { min-width: 0; overflow: hidden; display: flex; }
+  .charts { display: flex; flex-direction: column; flex: 1 1 auto;
+            min-height: 0; }
+  .chart { position: relative; border-bottom: 1px solid var(--border);
+           flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  /* 범례만 가운데 놓는다. 어느 단인지는 좌측 목차가 이미 말해 주므로
+     제목을 다시 적으면 같은 말이 두 번이다 — 그 자리를 계열 이름에 준다. */
+  .chart h3 { margin: 0; padding: 8px 14px 2px; font-size: 11px; font-weight: 600;
+              color: var(--dim); display: flex; gap: 10px; align-items: baseline;
+              flex-wrap: wrap; justify-content: center; }
+  /* flex:0 0 auto — 제 높이를 지킨다. 기본값(0 1 auto)이면 자리가 모자랄 때
+     주석이 먼저 찌그러져 글자가 잘린다. 줄어들 몫은 SVG 가 진다. */
+  .chart .note { margin: 0; padding: 0 14px 2px; font-size: 10px;
+                 color: var(--muted); text-align: center; flex: 0 0 auto; }
+  .chart svg tspan.k { user-select: none; }
+  .chart svg tspan.k.off { fill: var(--muted) !important;
+                           text-decoration: line-through; }
+  /* 약 2.1:1 */
+  /* 높이는 칸이 준다 — `flex: 1 1 0` 으로 남은 자리를 채운다. chart.js 가
+     `el.clientHeight` 로 viewBox 를 다시 잡으므로 그림이 따라 줄어든다.
+
+     🔴 **90px 이 바닥이다.** 그 아래로는 축 눈금이 겹쳐 못 읽는다. 단을 아주
+     많이 켜면 스크롤이 다시 생기는데, 읽을 수 없는 그림을 다 보여 주는 것보다
+     낫다고 판단했다 (2026-09-14).
+
+     1080p(사용 가능 984px) 기준 **10단까지는 스크롤이 없다** — 984/10 = 98px.
+     11단부터 90px 바닥에 닿아 넘친다. 1440p 면 14단까지 들어간다. */
+  /* 🔴 `touch-action` 은 **pan-y** 다 (2026-09-15). `none` 이면 브라우저가
+     세로 스크롤을 못 하게 되어, 폰에서 차트만 보이는 구간을 만나면 **페이지가
+     통째로 멈춘다** — 축 근처를 건드려도 아래로 못 내려간다.
+     차트의 드래그는 시간축(가로) 이동뿐이라 세로는 브라우저에 넘겨도 된다.
+     `pan-y` 면 위아래 스와이프는 스크롤, 좌우 스와이프는 우리 핸들러가 받는다. */
+  .chart svg { display: block; width: 100%; cursor: crosshair;
+               touch-action: pan-y; flex: 1 1 0; min-height: 90px; }
+  /* 호버 툴팁 — 커서가 놓인 차트의 계열값만 그 자리에서 읽는다.
+     상단 readout 은 고도·속도 같은 고정 목록이라 진동·EKF 처럼
+     그 단에서만 보는 값은 거기 없다. 그래서 단마다 따로 띄운다. */
+  .chart .tip {
+    position: absolute; pointer-events: none; z-index: 6; opacity: 0;
+    transition: opacity .08s; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px;
+    font-size: 11px; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,.45);
+    font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  .chart .tip .t { color: var(--muted); font-size: 10px; margin-bottom: 4px; }
+  .chart .tip .r { display: flex; align-items: baseline; gap: 10px;
+                   line-height: 1.55; }
+  .chart .tip .r .n { flex: 1; color: var(--dim); }
+  .chart .tip .r .d { width: 7px; height: 7px; border-radius: 50%;
+                      flex: 0 0 auto; }
+  .chart .tip .r b { font-weight: 600; }
+  .chart .tip .r i { font-style: normal; color: var(--muted); }
+
+  @media (max-width: 1100px) {
+    .wrap { grid-template-columns: 1fr; height: auto; }
+    .side { border-right: 0; }
+    .mapcell { flex: none; height: 44vh; }
+    /* 좁은 화면에서는 나눠 갖기를 포기한다. 폭이 좁으면 단이 이미 납작한데
+       높이까지 나누면 아무것도 안 보인다 — 여기서는 쌓고 페이지를 스크롤한다. */
+    .col { overflow: visible; display: block; }
+    .charts { display: block; }
+    .chart { display: block; }
+    .chart svg { height: 210px; }
+  }
+
+  /* ══ 폰 (2026-09-15) ═══════════════════════════════════════════════
+     1100px 분기는 태블릿·좁은 창까지만 본 것이라, 폰에서는 네 가지가 깨졌다:
+
+       · 하단 readout+player 가 화면의 1/3 을 먹고 차트를 밀어냈다
+       · 지도 44vh 아래로 목차 13줄이 이어져 차트까지 스크롤이 멀었다
+       · 체크박스·버튼이 손가락보다 작았다
+       · 210px 차트가 폰 가로폭에서는 납작해 축이 겹쳤다
+
+     지도를 접고, 목차를 가로로 흐르게 하고, 하단 바를 화면에 붙인다. */
+  @media (max-width: 640px) {
+    /* 지도는 작게 — 폰에서는 항적보다 차트를 본다. 탭하면 커진다. */
+    .mapcell { height: 30vh; min-height: 160px; transition: height .18s ease; }
+    .mapcell.big { height: 62vh; }
+    /* 🔴 줌 버튼을 숨긴다. 폰은 핀치줌이 자연스럽고, 30vh 지도에서 이 버튼이
+       왼쪽 위를 크게 덮는다. Leaflet 의 터치 줌은 그대로 남는다. */
+    .leaflet-control-zoom { display: none; }
+    /* 출처 표시도 한 줄로 눌러 지도 아래를 덜 먹게 한다. */
+    .leaflet-control-attribution { font-size: 9px; padding: 0 4px; }
+
+    /* 목차를 세로 목록에서 가로로 흐르는 칩으로. 13줄이 3~4줄로 준다. */
+    .sidefoot { overflow: visible; padding: 8px 10px 4px; }
+    .sidefoot .fname { font-size: 10px; margin-bottom: 6px; }
+    #toc { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+    #toc label { padding: 7px 10px; border: 1px solid var(--border);
+                 border-left-width: 1px; border-radius: 999px; font-size: 12px; }
+    #toc label.on { border-color: var(--accent); }
+    /* 🔴 손가락 크기. 12px 체크박스는 못 누른다. */
+    #toc input { width: 15px; height: 15px; }
+    .toch button { padding: 6px 10px; font-size: 11px; }
+    .maptools .btn, .maptools button { padding: 8px 12px; font-size: 13px; }
+
+    /* 차트는 폰 세로폭에 맞춰 키운다 — 축이 겹치지 않을 만큼. */
+    .chart svg { height: 44vw; min-height: 168px; }
+
+    /* 🔴 하단 바를 화면 아래에 붙인다. 스크롤을 따라다녀야 어느 차트를 보든
+       그 시각의 값을 읽는다 — 폰에서 위아래로 오가며 확인할 수는 없다. */
+    .bottom { position: sticky; bottom: 0; z-index: 500;
+              box-shadow: 0 -6px 16px rgba(0,0,0,.45); }
+    /* 값은 두 줄까지만. 그 아래는 잘라 낸다 — 재생바를 가리면 안 된다. */
+    .readout { max-height: 3.6em; overflow: hidden; padding: 6px 10px;
+               font-size: 11px; gap: 1px 3px; }
+    /* 재생 전에는 읽을 값이 없다. 빈 칸이 두 줄을 먹지 않게 접는다 —
+       :empty 는 자식이 하나도 없을 때만 맞으므로 값이 들어오면 저절로 펴진다. */
+    .readout:empty { display: none; }
+    .readout span { margin-left: 8px; }
+    .player { padding: 6px 10px; gap: 8px; }
+    .player button, .player select { padding: 8px 10px; font-size: 13px; }
+    .player .t { min-width: 0; font-size: 11px; }
+    /* 배속 선택은 폰에서 거의 안 쓴다 — 자리를 재생바에 준다. */
+    .player #speed { display: none; }
+  }
+
+  /* 재생 조작 */
+  .player { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+            border-top: 1px solid var(--border-2); background: var(--panel); }
+  .player input[type=range] { flex: 1; accent-color: var(--accent); }
+  .player .t { font-family: var(--mono); font-size: 12px; min-width: 96px;
+               font-variant-numeric: tabular-nums; }
+
+  /* 순간값 읽기 패널 */
+  /* 값 칸을 고정폭으로 잡아 자릿수가 바뀌어도 항목이 밀리지 않게 한다 */
+  .readout { display: flex; flex-wrap: wrap; align-items: baseline;
+             gap: 2px 4px; padding: 7px 12px;
+             border-top: 1px solid var(--border); background: var(--panel-2);
+             font-size: 12px; }
+  .readout span { color: var(--muted); margin-left: 12px; }
+  .readout span:first-child { margin-left: 0; }
+  .readout b.v { font-family: var(--mono); font-variant-numeric: tabular-nums;
+                 font-weight: 600; display: inline-block; text-align: right; }
+  .readout i.u { font-style: normal; color: var(--muted); font-size: 11px;
+                 display: inline-block; width: 2.6em; }
+
+  .maptools { position: absolute; z-index: 400; right: 10px; top: 10px;
+              display: flex; gap: 6px; }
+  .maptools .btn, .maptools button { background: rgba(22,27,34,.92);
+              backdrop-filter: blur(4px); text-decoration: none; line-height: 1.5; }
+
+  /* 아래 리포트 */
+  .report { padding: 20px; border-top: 1px solid var(--border-2); }
+  .report h2 { font-size: 14px; margin: 0 0 10px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+           gap: 12px; margin-bottom: 22px; }
+  .card { background: var(--panel); border: 1px solid var(--border);
+          border-radius: 8px; padding: 12px 14px; }
+  .card .l { font-size: 11px; color: var(--muted); }
+  .card .v { font-size: 19px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .finding { border-left: 3px solid var(--bad); background: var(--panel);
+             padding: 9px 12px; margin-bottom: 8px; border-radius: 0 6px 6px 0; }
+  .finding .cat { font-size: 11px; color: var(--bad); font-weight: 600; }
+  .finding .fix { color: var(--dim); font-size: 12px; margin-top: 3px; }
+  .good { border-left: 3px solid var(--ok); background: var(--panel);
+          padding: 7px 12px; margin-bottom: 6px; border-radius: 0 6px 6px 0; font-size: 13px; }
+  .evt { font-family: var(--mono); font-size: 12px; padding: 2px 0;
+         border-bottom: 1px solid var(--border); cursor: pointer; }
+  .evt:hover { background: var(--panel); }
+  .warnbox { background: #2d2118; border: 1px solid #4a3524; color: #e3b341;
+             padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
+</style>
+
+<div id="banner"></div>
+
+<div class="wrap">
+  <!-- 왼쪽: 지도 + 목차. 스크롤을 따라오지 않고 고정된다. -->
+  <aside class="side">
+    <div class="mapcell">
+      <div id="map"></div>
+      <div class="maptools">
+        <a class="btn" href="/" title="목록으로">←</a>
+        <button id="tileBtn">위성</button>
+      </div>
+    </div>
+    <div class="sidefoot">
+      <div class="fname" id="fname"></div>
+      <div class="toch"><span>차트</span>
+        <span><button id="tocAll">전체</button><button id="tocNone">해제</button></span>
+      </div>
+      <nav id="toc"></nav>
+    </div>
+  </aside>
+
+  <!-- 오른쪽: 차트 세로 스크롤. 시간축 폭을 최대한 준다. -->
+  <main class="col">
+    <div class="charts" id="charts"></div>
+  </main>
+</div>
+
+<div class="bottom">
+    <div class="readout" id="readout"></div>
+    <div class="player">
+      <button id="play" title="스페이스">▶</button>
+      <input type="range" id="seek" min="0" max="1000" value="0" step="1">
+      <span class="t" id="tlabel">0.0 / 0.0 s</span>
+      <button id="zoomOut" title="시간축 전체 보기 (그래프 더블클릭도 같다)"
+              style="display:none">전체 구간</button>
+      <select id="speed" style="padding:4px 6px">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+        <option value="10">10×</option>
+      </select>
+    </div>
+</div>
+
+<div class="report" id="report"></div>
+
+<script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/chart.js"></script>
+<script src="/player.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+const ID = location.pathname.split('/').pop();
+// 타일이 있는 것보다 더 당길 수 있게 둔다. 궤적을 가까이 볼 때 쓰인다.
+const MAX_ZOOM = 22;
+
+const HIDDEN = new Set();   // 범례 클릭으로 숨긴 계열
+let SUM = null, TRK = null, LOGNAME = '', map, track, marker, homeMk, startMk, endMk;
+// 🔴 위성이 기본이다 (2026-09-12). 라이브 화면(/live)과 같은 기본값 —
+//    지난 비행과 지금 비행을 같은 그림으로 읽어야 눈이 안 흔들린다.
+//    OSM 흰 바탕은 어두운 차트 옆에서 그 칸만 밝게 튀고, 비행장에서는
+//    활주로·장애물이 지도보다 사진에 더 잘 보인다. 버튼으로 전환된다.
+let tiles = {}, tileMode = 'sat';
+
+const f1 = (v, u) => v == null ? '–' : v.toFixed(1) + (u || '');
+const f2 = (v, u) => v == null ? '–' : v.toFixed(2) + (u || '');
+
+// ── 지도 ─────────────────────────────────────────────────────────────
+function initMap() {
+  map = L.map('map', { zoomControl: true, attributionControl: true, maxZoom: MAX_ZOOM });
+  // 🔴 레이어를 붙이기 전에 뷰를 반드시 정한다. 뷰가 없는 지도에 Path 를 추가하면
+  //    Leaflet 이 whenReady 로 미뤘다가 SVG 렌더러의 _bounds 가 없는 상태에서
+  //    _clipPoints 를 돌려 터진다 (intersects → undefined.min). 아래 fitBounds 가
+  //    실제 범위로 다시 맞춘다.
+  map.setView([36.5, 127.8], 6);
+  // maxZoom 은 지도를 얼마나 당길 수 있는지, maxNativeZoom 은 타일이 실제로
+  // 존재하는 한계다. 둘을 같게 두면 그 너머로 당겼을 때 없는 타일을 요청하는데,
+  // Esri 는 없어도 404 가 아니라 "Map data not yet available" 안내 이미지를
+  // HTTP 200 으로 돌려줘 Leaflet 이 오류로 걸러내지 못한다 — 지도가 통째로
+  // 회색 안내판이 된다. maxNativeZoom 을 주면 마지막 타일을 확대해서 쓴다.
+  // 흐릿해질 뿐 궤적 벡터는 선명하므로 근접 확인에 지장이 없다.
+  //
+  // 실측 (비행장 35.181, 128.554): OSM 은 z19 까지, Esri 는 **z18 까지**.
+  // z19 부터 Esri 는 2,521바이트 안내 타일을 준다. 지역마다 다르므로 다른
+  // 비행장에서 회색판이 나오면 이 값을 낮춰라.
+  tiles.osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: MAX_ZOOM, maxNativeZoom: 19, attribution: '© OpenStreetMap',
+  });
+  tiles.sat = L.tileLayer(
+    'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: MAX_ZOOM, maxNativeZoom: 18, attribution: 'Esri World Imagery' });
+  tiles[tileMode].addTo(map);
+
+  // 🔴 폰에서 지도를 탭하면 커진다 (2026-09-15). 폰에서는 차트를 보는 시간이
+  //    길어 지도를 30vh 로 눌러 뒀는데, 항적을 확인할 때는 그 크기로 부족하다.
+  //    누를 때만 62vh 로 벌리고 다시 누르면 접는다.
+  //    🔴 Leaflet 은 칸 크기가 바뀐 것을 스스로 모른다 — invalidateSize 를
+  //    전환이 끝난 뒤(.18s) 불러야 타일이 새 크기로 다시 깔린다.
+  $('#map').addEventListener('click', () => {
+    if (!matchMedia('(max-width: 640px)').matches) return;
+    const c = $('.mapcell');
+    c.classList.toggle('big');
+    setTimeout(() => { try { map && map.invalidateSize(); } catch (_) {} }, 200);
+  });
+
+  $('#tileBtn').onclick = () => {
+    map.removeLayer(tiles[tileMode]);
+    tileMode = tileMode === 'osm' ? 'sat' : 'osm';
+    tiles[tileMode].addTo(map);
+    $('#tileBtn').textContent = tileMode === 'osm' ? '위성' : '지도';
+  };
+  // 초기 라벨도 맞춘다 — 기본이 위성이므로 버튼은 "지도" 로 시작한다.
+  $('#tileBtn').textContent = tileMode === 'osm' ? '위성' : '지도';
+}
+
+/** 궤적을 고도로 색칠한다. 한 폴리라인으로는 색을 못 바꾸므로 구간을 쪼갠다. */
+function drawTrack() {
+  const pts = [];
+  for (let i = 0; i < TRK.n; i++) {
+    const la = TRK.lat && TRK.lat[i], lo = TRK.lon && TRK.lon[i];
+    if (la == null || lo == null) { pts.push(null); continue; }
+    pts.push([la, lo, TRK.alt ? TRK.alt[i] : null, i]);
+  }
+  const valid = pts.filter(Boolean);
+  if (!valid.length) {
+    $('#map').innerHTML = '<p class="muted" style="padding:20px">GPS 위치가 없는 로그다.</p>';
+    return;
+  }
+  let altMax = 0;
+  for (const p of valid) if (p[2] != null && p[2] > altMax) altMax = p[2];
+  altMax = Math.max(altMax, 1);
+
+  const grp = L.layerGroup().addTo(map);
+  const SEG = 4;                                  // 4점씩 묶어 그린다 (선 수를 줄인다)
+  for (let i = 0; i + 1 < valid.length; i += SEG) {
+    const chunk = valid.slice(i, i + SEG + 1);
+    // 궤적을 **비행모드 색**으로 칠한다. 차트 배경 밴드와 같은 색 언어를 쓰면
+    // "지도 이 구간 = 저 차트 저 구간" 이 설명 없이 이어진다.
+    const mid = chunk[Math.floor(chunk.length / 2)];
+    L.polyline(chunk.map((p) => [p[0], p[1]]), {
+      color: modeColorAt(mid[3] / TRK.hz), weight: 3.5, opacity: .95,
+    }).addTo(grp);
+  }
+  track = L.polyline(valid.map((p) => [p[0], p[1]]), { opacity: 0 }).addTo(map);
+
+  // 🔴 뷰를 먼저 정한다. circleMarker·marker 는 추가되는 즉시 좌표를 투영하는데,
+  //    center/zoom 이 없으면 Leaflet 내부에서 터진다.
+  map.fitBounds(track.getBounds(), { padding: [24, 24] });
+
+  startMk = L.circleMarker(valid[0].slice(0, 2), {
+    radius: 6, color: '#3fb950', fillColor: '#3fb950', fillOpacity: .9, weight: 2,
+  }).addTo(map).bindTooltip('이륙');
+  endMk = L.circleMarker(valid[valid.length - 1].slice(0, 2), {
+    radius: 6, color: '#f85149', fillColor: '#f85149', fillOpacity: .9, weight: 2,
+  }).addTo(map).bindTooltip('착륙');
+
+  marker = L.marker(valid[0].slice(0, 2), { icon: planeIcon(0) }).addTo(map);
+
+  // 고도 범례
+}
+
+/** 그 시각의 비행모드 색 */
+function modeColorAt(t) {
+  let name = null;
+  for (const m of (TRK.modes || [])) { if (m.t <= t) name = m.name; else break; }
+  return name ? modeColor(name) : '#58a6ff';
+}
+
+function altColor(f) {
+  f = Math.max(0, Math.min(1, f));
+  const stops = [[33, 46, 80], [56, 139, 253], [63, 185, 80], [210, 153, 34], [248, 81, 73]];
+  const x = f * (stops.length - 1), i = Math.min(Math.floor(x), stops.length - 2), k = x - i;
+  const c = stops[i].map((v, j) => Math.round(v + (stops[i + 1][j] - v) * k));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+function planeIcon(deg) {
+  return L.divIcon({
+    className: '', iconSize: [22, 22], iconAnchor: [11, 11],
+    html: `<svg width="22" height="22" viewBox="0 0 22 22"
+             style="transform:rotate(${deg}deg);transition:transform .08s linear">
+        <circle cx="11" cy="11" r="9" fill="rgba(13,17,23,.75)" stroke="#e6edf3" stroke-width="1.2"/>
+        <path d="M11 3 L15 15 L11 12.5 L7 15 Z" fill="#e6edf3"/></svg>`,
+  });
+}
+
+// ── 차트 ─────────────────────────────────────────────────────────────
+// 순서: 추정 → 제어 → 구동 → 센서 → 건강.
+//   1) 실측과 목표를 **같은 축**에 겹친다 (`sp` 계열). 차이를 계산하지 않아도 추종 실패가 보인다.
+//   2) 데이터가 없으면 그 단을 **통째로 숨긴다**. 남은 것이 전부 의미 있는 것이 된다.
+// 기본으로 펼치는 단. 나머지는 좌측 목록에서 체크해 더한다 —
+// 12단을 전부 펼치면 스크롤이 길어져 정작 볼 것을 못 찾는다.
+//
+// 🔴 디브리핑에서 매번 손으로 켜던 것을 기본에 넣었다 (2026-09-11).
+//    자세는 "기체가 무엇을 하려 했나", 진동은 "기체가 멀쩡한가" 를 말한다 —
+//    전류·고도만 보고 넘어가면 프롭 손상·마운트 풀림을 놓친다.
+//    다섯 단이면 스크롤이 한 화면을 조금 넘는 정도라 아직 찾을 만하다.
+const DEFAULT_ON = new Set(['c1', 'c2', 'c3', 'c7', 'c8']);
+//                          고도  속도  자세  전력  진동
+const CHARTS = [
+  { id: 'c1', title: '고도', bands: true, events: true, series: [
+      { key: 'alt', color: 'var(--c-alt)', label: '고도(융합)', axis: 'left', weight: 2, unit: 'm' },
+      { key: 'alt_baro', color: '#8b949e', label: '기압', axis: 'left', dim: true, unit: 'm' },
+      { key: 'climb', color: 'var(--c-spd)', label: '상승률', axis: 'right', unit: 'm/s' }] },
+  { id: 'c2', title: '속도', bands: true, series: [
+      { key: 'spd', color: 'var(--c-spd)', label: '수평속도', axis: 'left', weight: 2, unit: 'm/s' },
+      { key: 'aspd', color: '#a371f7', label: '대기속도(피토관)', axis: 'left', unit: 'm/s' }] },
+  { id: 'c3', title: '자세', bands: true, series: [
+      { key: 'roll', color: '#d55e00', label: '롤', axis: 'left', weight: 2, unit: '°' },
+      { key: 'roll_sp', color: '#009e73', label: '롤 목표', axis: 'left', dash: true, unit: '°' },
+      { key: 'pitch', color: '#e69f00', label: '피치', axis: 'left', weight: 2, unit: '°' },
+      { key: 'pitch_sp', color: '#55b4e9', label: '피치 목표', axis: 'left', dash: true, unit: '°' }] },
+  { id: 'c4', title: '각속도', bands: true, series: [
+      { key: 'rate_x', color: '#d55e00', label: '롤레이트', axis: 'left', weight: 2, unit: '°/s' },
+      { key: 'rate_x_sp', color: '#009e73', label: '목표', axis: 'left', dash: true, unit: '°/s' }] },
+  { id: 'c5', title: '조종 입력', bands: true, events: true, series: [
+      { key: 'stick_throttle', color: 'var(--c-thr)', label: '스로틀', axis: 'left', weight: 2 },
+      { key: 'stick_roll', color: '#d55e00', label: '롤', axis: 'left', dim: true },
+      { key: 'stick_pitch', color: '#e69f00', label: '피치', axis: 'left', dim: true },
+      { key: 'stick_yaw', color: '#55b4e9', label: '요', axis: 'left', dim: true }] },
+  { id: 'c6', title: '모터 출력', bands: true, series: [], motorsOn: 'left' },
+  { id: 'c7', title: '전력', bands: true, series: [
+      { key: 'cur', color: 'var(--c-cur)', label: '전류', axis: 'left', weight: 2, unit: 'A' },
+      { key: 'volt', color: 'var(--c-volt)', label: '전압', axis: 'right', unit: 'V' }],
+    // 모터 연속 14 A × 4 = 56 A (docs/design/01) — 넘으면 빨강, 그 7할에서 노랑
+    thresholds: [{ v: 40, label: '40A', color: '#d29922' },
+                 { v: 56, label: '56A', color: '#f85149' }] },
+  // 🔴 **나침반 간섭** — 전류가 자기장을 끌어당기는 정도를 본다.
+  //    |B| 는 3축 합성 세기다. 기체가 돌아도 지자기 세기는 안 변하는 것이
+  //    정상이므로, 비행 중 이 선이 출렁이면 방향이 아니라 간섭이다.
+  //    전류를 같은 칸에 겹쳐 두는 이유가 그것이다 — 두 선이 같이 움직이면
+  //    원인이 전원선이다 (2026-09-05 실측 상관 −0.91).
+  { id: 'c14', title: '나침반 간섭', bands: true, series: [
+      { key: 'mag_norm', color: '#a371f7', label: '자기장 |B|', axis: 'left', weight: 2, unit: 'G' },
+      { key: 'cur', color: 'var(--c-cur)', label: '전류', axis: 'right', unit: 'A' }] },
+  { id: 'c8', title: '진동', bands: true, series: [
+      { key: 'vib', color: '#f0883e', label: '진동', axis: 'left', weight: 2 }],
+    // VIBE m/s² — 30 넘으면 주의, 60 넘으면 위치 추정이 흔들린다
+    thresholds: [{ v: 30, label: '경고 30', color: '#d29922' },
+                 { v: 60, label: '위험 60', color: '#f85149' }] },
+  // 조종 링크 세기 (RADIO_STATUS). 기체 RSSI 가 주선, 지상 RSSI 는 같이 그린다.
+  { id: 'c12', title: '통신', bands: true, series: [
+      { key: 'rssi_air', color: '#58a6ff', label: '기체 RSSI', axis: 'left', weight: 2 },
+      { key: 'rssi_gnd', color: '#8b949e', label: '지상 RSSI(포화)', axis: 'left', dash: true },
+      { key: 'rf_noise', color: '#f0883e', label: '노이즈', axis: 'left' },
+      { key: 'home_dist', color: '#3fb950', label: '홈 거리', axis: 'right', unit: 'm' }] },
+  // 송신 버퍼 여유(%). 떨어지면 링크가 밀리고 있다는 뜻이다 — 2026-09-09
+  // "Sensor lost" 를 쫓을 때 이 값이 먼저 움직였다.
+  { id: 'c13', title: '링크 여유', bands: true, series: [
+      { key: 'tx_buf', color: '#d29922', label: '송신 버퍼 여유', axis: 'left', unit: '%' },
+      { key: 'home_dist', color: '#3fb950', label: '홈 거리', axis: 'right', unit: 'm' }] },
+  { id: 'c9', title: 'GPS 품질', bands: true, series: [
+      { key: 'sats', color: '#3fb950', label: '위성 수', axis: 'left', weight: 2 },
+      { key: 'eph', color: '#f85149', label: '위치 오차', axis: 'right', unit: 'm' }] },
+  // innov_* 는 extract.py 가 1.0 을 넘은 것만 골라 싣는다. 없으면 이 단은 안 뜬다.
+  // 세로축은 허용 오차의 배수. 1 을 넘으면 EKF 가 그 센서를 버리기 시작한다.
+  { id: 'c10', title: '센서 불일치', bands: true, dynamic: 'innov_',
+    series: [], thresholds: [{ v: 1, label: '한계', color: '#d29922' }] },
+  { id: 'c11', title: 'CPU · RAM', bands: true, series: [
+      { key: 'cpu', color: '#58a6ff', label: 'CPU', axis: 'left', unit: '%' },
+      { key: 'ram', color: '#a371f7', label: 'RAM', axis: 'left', unit: '%' }] },
+];
+function cssVar(v) {
+  return v.startsWith('var(') ?
+    getComputedStyle(document.documentElement).getPropertyValue(v.slice(4, -1)).trim() : v;
+}
+
+function buildCharts() {
+// EKF 필드 이름은 그대로 두면 아무도 못 읽는다 (gps_hvel_0, mag_field_2 …).
+// "무슨 센서가 어긋났나" 만 알면 되므로 축·번호는 버리고 센서 이름만 한글로 준다.
+const INNOV_KO = {
+  gps_hvel: 'GPS 속도(수평)', gps_vvel: 'GPS 속도(수직)',
+  gps_hpos: 'GPS 위치(수평)', gps_vpos: 'GPS 위치(수직)',
+  ev_hvel: '외부 속도(수평)', ev_vvel: '외부 속도(수직)',
+  ev_hpos: '외부 위치(수평)', ev_vpos: '외부 위치(수직)',
+  baro_vpos: '기압 고도', rng_vpos: '거리센서 고도',
+  hagl: '지면까지 높이', hagl_rate: '지면까지 높이 변화',
+  aux_hvel: '보조 속도', flow: '광류 센서',
+  heading: '기수 방향', mag_field: '지자기',
+  gravity: '중력 방향', drag: '공기 저항',
+};
+function innovLabel(f) {
+  const base = f.replace(/_\d+$/, '');            // gps_hvel_0 → gps_hvel
+  const ko = INNOV_KO[base];
+  if (!ko) return base;
+  const ax = f.match(/_(\d+)$/);                  // 축이 여럿이면 X/Y/Z 로
+  return ax ? `${ko} ${'XYZ'[ax[1]] || ax[1]}` : ko;
+}
+
+  const mc = ['#58a6ff', '#3fb950', '#f0883e', '#db61a2', '#a371f7', '#d29922'];
+  const motors = TRK.motors || {};
+
+  for (const c of CHARTS) {
+    // 모터처럼 개수가 로그마다 다른 계열은 여기서 붙인다
+    if (c.motorsOn) {
+      c.series = Object.keys(motors).sort().map((k, i) => {
+        TRK['m' + k] = motors[k];
+        return { key: 'm' + k, color: mc[i % mc.length], label: k, axis: c.motorsOn };
+      });
+    }
+    // innov_* 처럼 추출기가 골라 실은 계열
+    if (c.dynamic) {
+      const keys = Object.keys(TRK).filter((k) => k.startsWith(c.dynamic)).sort();
+      c.series = keys.map((k, i) => ({
+        key: k, color: mc[i % mc.length], axis: 'left',
+        label: c.dynamic === 'innov_' ? innovLabel(k.slice(6)) : k.slice(c.dynamic.length),
+      }));
+    }
+  }
+
+  // 🔴 데이터가 없는 단은 통째로 뺀다. 많이 정의하고도 페이지가 읽히는 이유가
+  //    이것이다 — 남은 단은 전부 실제로 볼 것이 있는 단이 된다.
+  const live = CHARTS.filter((c) => c.series.some((sx) => {
+    const a = TRK[sx.key];
+    return a && a.some((v) => v != null);
+  }));
+  CHARTS_LIVE = live;
+  // 기본에 걸린 단이 이 로그에 하나도 없으면(예: 전력 미기록) 첫 단이라도 켠다
+  SHOWN = new Set(live.filter((c) => DEFAULT_ON.has(c.id)).map((c) => c.id));
+  if (!SHOWN.size && live.length) SHOWN.add(live[0].id);
+
+  // 좌측 선택 목록. 켠 단은 목차(스크롤 위치 표시)도 겸한다.
+  $('#toc').innerHTML = live.map((c) =>
+    `<label data-sec="${c.id}"><input type="checkbox" data-sec="${c.id}"${
+      SHOWN.has(c.id) ? ' checked' : ''}><span class="nm">${c.title}</span></label>`).join('');
+
+  $('#toc').onchange = (e) => {
+    const id = e.target.dataset && e.target.dataset.sec;
+    if (!id) return;
+    e.target.checked ? SHOWN.add(id) : SHOWN.delete(id);
+    renderCharts();
+  };
+  // 라벨 글자를 누르면 그 단으로 스크롤한다. 체크박스 자체는 켜고 끄기 그대로.
+  $('#toc').addEventListener('click', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    const lb = e.target.closest('label');
+    if (!lb || !SHOWN.has(lb.dataset.sec)) return;
+    e.preventDefault();
+    const sec = document.getElementById('sec-' + lb.dataset.sec);
+    if (sec) document.querySelector('.col').scrollTo({ top: sec.offsetTop - 4,
+                                                       behavior: 'smooth' });
+  });
+  $('#tocAll').onclick = () => { live.forEach((c) => SHOWN.add(c.id)); syncToc(); renderCharts(); };
+  $('#tocNone').onclick = () => { SHOWN.clear(); syncToc(); renderCharts(); };
+
+  renderCharts();
+}
+
+/** 스크롤 위치에 있는 단을 좌측 목록에서 밝힌다. */
+function scrollSpy() {
+  const col = document.querySelector('.col');
+  if (!col) return;
+  const y = col.scrollTop + 60;
+  let cur = null;
+  for (const c of CHARTS_LIVE) {
+    if (!SHOWN.has(c.id)) continue;
+    const el = document.getElementById('sec-' + c.id);
+    if (el && el.offsetTop <= y) cur = c.id;
+  }
+  if (cur == null) cur = firstShownId();
+  document.querySelectorAll('#toc label').forEach((lb) =>
+    lb.classList.toggle('on', lb.dataset.sec === cur));
+}
+
+/** 체크 상태를 목록 UI 에 되돌려 쓴다 (전체/해제 버튼용) */
+function syncToc() {
+  document.querySelectorAll('#toc input').forEach((i) => {
+    i.checked = SHOWN.has(i.dataset.sec);
+  });
+}
+
+/** 켜진 단만 DOM 에 만든다. 끈 단은 아예 그리지 않아 스크롤이 짧아진다. */
+function renderCharts() {
+  const live = CHARTS_LIVE.filter((c) => SHOWN.has(c.id));
+  $('#charts').innerHTML = live.map((c) => `
+    <section class="chart" id="sec-${c.id}">
+      ${c.note ? `<p class="note">${c.note}</p>` : ''}
+      <svg id="${c.id}"></svg>
+      <div class="tip" id="tip-${c.id}"></div>
+    </section>`).join('');
+
+  // 범례 클릭으로 계열 숨김 — 전 도구 공통 기대치다.
+  // 축 머리말은 redraw() 마다 새로 그려지므로 개별 요소가 아니라 컨테이너에
+  // 한 번만 걸어 위임한다. 안 그러면 첫 클릭 후 핸들러가 사라진다.
+  $('#charts').onclick = (e) => {
+    const el = e.target.closest && e.target.closest('tspan.k');
+    if (!el) return;
+    const k = el.dataset.key;
+    HIDDEN.has(k) ? HIDDEN.delete(k) : HIDDEN.add(k);
+    redraw();
+  };
+  document.querySelectorAll('#toc label').forEach((lb) =>
+    lb.classList.toggle('sel', SHOWN.has(lb.dataset.sec)));
+
+  redraw();
+  scrollSpy();
+}
+
+let svgs = [], CHARTS_LIVE = [];
+// 지금 펼쳐 둔 단의 id 들. 좌측 체크 목록이 이걸 바꾼다.
+let SHOWN = new Set();
+function firstShownId() {
+  const c = CHARTS_LIVE.find((x) => SHOWN.has(x.id));
+  return c ? c.id : null;
+}
+// 보이는 시간 구간. 두 차트가 같은 값을 쓰므로 확대·이동이 함께 움직인다.
+let VIEW = null;
+
+/** 화면 x(px) → 로그 시각(s). viewBox 가 있으므로 CSS 폭으로 환산해야 한다. */
+function timeAtEvent(el, clientX) {
+  const r = el.getBoundingClientRect();
+  const g = el._geom;
+  const px = ((clientX - r.left) / r.width) * g.W;      // viewBox 좌표로
+  return g.tAt(px);
+}
+
+function setView(t0, t1) {
+  const MIN = 0.5;                                      // 0.5초보다 좁게는 안 줄인다
+  let a = Math.max(0, t0), b = Math.min(TRK.dur, t1);
+  if (b - a < MIN) {
+    const c = (a + b) / 2;
+    a = Math.max(0, c - MIN / 2); b = Math.min(TRK.dur, a + MIN);
+  }
+  // 전체를 보고 있으면 VIEW 를 비워 둔다 (기본 상태)
+  VIEW = (a <= 0.001 && b >= TRK.dur - 0.001) ? null : { t0: a, t1: b };
+  $('#zoomOut').style.display = VIEW ? '' : 'none';
+  redraw();
+}
+
+function redraw() {
+  svgs = [];
+  for (const c of CHARTS_LIVE) {
+    if (!SHOWN.has(c.id)) continue;
+    const el = document.getElementById(c.id);
+    if (!el) continue;
+    // 숨긴 계열을 뺀 뒤 남는 목록. 툴팁이 이걸 그대로 읽어 차트와 어긋나지 않는다.
+    const shown = c.series.filter((s) => !HIDDEN.has(s.key))
+                          .map((s) => ({ ...s, color: cssVar(s.color) }));
+    // 숨긴 계열도 머리말에는 남긴다 — 사라지면 되돌릴 방법이 없다.
+    const caption = c.series.map((s) => ({ ...s, color: cssVar(s.color),
+                                           hidden: HIDDEN.has(s.key) }));
+    drawChart(el, TRK, {
+      series: shown, caption,
+      bands: c.bands, bandLabels: c.id === firstShownId(),
+      events: c.events, thresholds: c.thresholds, view: VIEW,
+    });
+    el._shown = shown;
+    el._tip = document.getElementById('tip-' + c.id);
+    svgs.push(el);
+    bindChartInput(el);
+  }
+  if (player) player.apply();
+}
+
+/** 휠=줌, 드래그=이동, 클릭=그 시각으로, 더블클릭=전체 */
+function bindChartInput(el) {
+  if (el._bound) return;                                // redraw 마다 다시 걸지 않는다
+  el._bound = true;
+
+  el.addEventListener('wheel', (e) => {
+    e.preventDefault();                                 // 페이지가 같이 스크롤되면 못 쓴다
+    const g = el._geom;
+    if (!g) return;
+    const at = timeAtEvent(el, e.clientX);              // 커서 아래 시각을 고정점으로
+    const k = e.deltaY < 0 ? 0.8 : 1.25;                // 위로 굴리면 확대
+    const a = at - (at - g.v0) * k;
+    const b = at + (g.v1 - at) * k;
+    setView(a, b);
+  }, { passive: false });
+
+  let drag = null;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    drag = { x: e.clientX, t: timeAtEvent(el, e.clientX), moved: false,
+             v0: el._geom.v0, v1: el._geom.v1 };
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (Math.abs(e.clientX - drag.x) < 3) return;       // 클릭과 구분
+    drag.moved = true;
+    const g = el._geom;
+    const r = el.getBoundingClientRect();
+    const dt = ((e.clientX - drag.x) / r.width) * (drag.v1 - drag.v0);
+    let a = drag.v0 - dt, b = drag.v1 - dt;
+    const w = b - a;
+    if (a < 0) { a = 0; b = w; }
+    if (b > TRK.dur) { b = TRK.dur; a = b - w; }
+    setView(a, b);
+  });
+  el.addEventListener('pointerup', (e) => {
+    if (drag && !drag.moved) player.seek(timeAtEvent(el, e.clientX));
+    drag = null;
+  });
+  // 호버로 값을 읽는다. 실제 분석은 재생보다 이걸로 하는 일이 많다 —
+  // 재생 중에는 방해하지 않는다.
+  el.addEventListener('pointermove', (e) => {
+    // 🔴 손가락은 호버가 없다 (2026-09-15). 폰에서 스크롤하려 스와이프하는
+    //    동안 툴팁이 따라붙고 커서가 끌려다녀 화면이 어지러웠다. 터치는
+    //    탭(=seek)만 받고, 값 읽기는 마우스·펜에서만 한다.
+    if (e.pointerType === 'touch') return;
+    if (drag) { hideTip(el); return; }
+    const t = timeAtEvent(el, e.clientX);
+    if (t < 0 || t > TRK.dur) { hideTip(el); return; }
+    showTip(el, t, e.clientX, e.clientY);
+    // 재생 중에는 커서·상단 패널을 뺏지 않는다 — 툴팁만 따라간다.
+    if (!player.playing) { moveCursors(svgs, t); showValues(t); }
+  });
+  el.addEventListener('pointerleave', () => {
+    hideTip(el);
+    if (!player.playing) { moveCursors(svgs, player.t); showValues(player.t); }
+  });
+  el.addEventListener('pointercancel', () => { drag = null; hideTip(el); });
+  el.addEventListener('dblclick', () => setView(0, TRK.dur));
+}
+
+/** 마우스가 놓인 차트의 계열값을 그 자리에 띄운다.
+ *  값이 없는 계열은 빼지 않고 `–` 로 남긴다 — 줄이 사라지면 툴팁 높이가
+ *  샘플마다 튀어서 읽기가 더 어렵다. */
+function showTip(el, t, cx, cy) {
+  const tip = el._tip, shown = el._shown;
+  if (!tip || !shown || !shown.length) return;
+  const i = Math.max(0, Math.min(TRK.n - 1, Math.round(t * TRK.hz)));
+  let h = `<div class="t">${t.toFixed(2)} s · ${curMode(t)}</div>`;
+  for (const s of shown) {
+    const a = TRK[s.key];
+    const v = a ? a[i] : null;
+    h += `<div class="r"><span class="d" style="background:${s.color}"></span>` +
+         `<span class="n">${s.label}</span>` +
+         `<b>${v == null ? '–' : fmtTip(v)}</b>` +
+         (s.unit ? `<i>${s.unit}</i>` : '');
+    h += '</div>';
+  }
+  tip.innerHTML = h;
+  tip.style.opacity = '1';
+
+  // 커서 옆에 두되 차트 밖으로 나가지 않게 접는다
+  const r = el.getBoundingClientRect();
+  const sec = el.parentElement.getBoundingClientRect();
+  const w = tip.offsetWidth, hh = tip.offsetHeight;
+  let x = cx - sec.left + 14;
+  if (x + w > sec.width - 4) x = cx - sec.left - 14 - w;
+  if (x < 4) x = 4;
+  let y = cy - sec.top - hh - 12;
+  if (y < 4) y = cy - sec.top + 16;
+  if (y + hh > sec.height - 4) y = Math.max(4, sec.height - hh - 4);
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+}
+function hideTip(el) { if (el._tip) el._tip.style.opacity = '0'; }
+
+/** 자릿수를 값 크기에 맞춘다. 0.02 를 0.0 으로 죽이지 않고,
+ *  1250 을 1250.00 으로 늘어뜨리지도 않는다. */
+function fmtTip(v) {
+  const a = Math.abs(v);
+  return a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1)
+       : a >= 1 ? v.toFixed(2) : v.toFixed(3);
+}
+
+// ── 재생 ─────────────────────────────────────────────────────────────
+let player;
+function initPlayer() {
+  player = makePlayer({
+    dur: TRK.dur,
+    onTick(t) {
+      const i = Math.max(0, Math.min(TRK.n - 1, Math.round(t * TRK.hz)));
+      moveCursors(svgs, t);
+      if (marker && TRK.lat && TRK.lat[i] != null && TRK.lon[i] != null) {
+        marker.setLatLng([TRK.lat[i], TRK.lon[i]]);
+        const hd = TRK.hdg && TRK.hdg[i];
+        if (hd != null) marker.setIcon(planeIcon(hd));
+      }
+      $('#tlabel').textContent = `${t.toFixed(1)} / ${TRK.dur.toFixed(1)} s`;
+      $('#seek').value = String(Math.round((t / TRK.dur) * 1000));
+      drawReadout(i, t);
+    },
+  });
+  $('#play').onclick = () => player.toggle();
+  $('#seek').oninput = (e) => player.seek((e.target.value / 1000) * TRK.dur);
+  $('#speed').onchange = (e) => player.setRate(parseFloat(e.target.value));
+  $('#zoomOut').onclick = () => setView(0, TRK.dur);
+  // ?t= 왕복. 링크를 복사하면 지금 보고 있는 순간이 그대로 담기게 한다.
+  // 클램프된 player.t 를 되읽으므로 범위를 벗어난 t 도 정규화된다.
+  // 슬라이더 드래그가 oninput 으로 연속 발화하므로 디바운스한다.
+  let urlTimer;
+  const rawSeek = player.seek.bind(player);
+  player.seek = (v) => {
+    rawSeek(v);
+    clearTimeout(urlTimer);
+    urlTimer = setTimeout(
+      () => history.replaceState(null, '', `?t=${player.t.toFixed(2)}`), 200);
+  };
+
+  addEventListener('keydown', (e) => {
+    if (e.target.matches('input,select,textarea')) return;
+    if (e.code === 'Space') { e.preventDefault(); player.toggle(); }
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') {
+      e.preventDefault();                      // 안 막으면 페이지가 같이 스크롤된다
+      // 확대한 구간에서 1초 스텝은 뷰를 통째로 벗어난다. 보이는 폭에 맞춘다.
+      const w = VIEW ? VIEW.t1 - VIEW.t0 : TRK.dur;
+      const step = Math.min(e.shiftKey ? 10 : 1, w / 20);
+      player.seek(player.t + (e.code === 'ArrowRight' ? step : -step));
+    }
+  });
+}
+
+// [라벨, 키, 소수자리, 단위, 값칸 폭(문자수)]
+// 폭을 고정하지 않으면 5.8 → 12.3 처럼 자릿수가 바뀔 때마다 뒤 항목이 밀려
+// 재생 중에 패널 전체가 흔들린다. 값은 오른쪽 정렬, 단위는 그 뒤에 고정폭으로 둔다.
+const RD = [
+  ['고도', 'alt', 1, 'm', 6], ['속도', 'spd', 1, 'm/s', 5], ['상승률', 'climb', 1, 'm/s', 5],
+  ['전류', 'cur', 1, 'A', 5], ['전압', 'volt', 2, 'V', 6],
+  ['롤', 'roll', 0, '°', 4], ['피치', 'pitch', 0, '°', 4], ['기수', 'hdg', 0, '°', 4],
+  ['스로틀', 'stick_throttle', 2, '', 5],
+];
+/** 시각 t 의 값들을 읽기 패널에 쓴다 (재생·호버 공용) */
+function showValues(t) {
+  drawReadout(Math.max(0, Math.min(TRK.n - 1, Math.round(t * TRK.hz))), t);
+  $('#tlabel').textContent = `${t.toFixed(1)} / ${TRK.dur.toFixed(1)} s`;
+}
+
+function drawReadout(i, t) {
+  const mode = curMode(t);
+  let h = `<span>모드</span><b class="v" style="width:7.5em;color:${
+    cssVar('var(--accent)')}">${mode}</b>`;
+  for (const [label, key, d, u, w] of RD) {
+    const a = TRK[key];
+    if (!a) continue;
+    const v = a[i];
+    h += `<span>${label}</span><b class="v" style="width:${w}ch">${
+      v == null ? '–' : v.toFixed(d)}</b>${u ? `<i class="u">${u}</i>` : ''}`;
+  }
+  $('#readout').innerHTML = h;
+}
+function curMode(t) {
+  let m = '–';
+  for (const x of (TRK.modes || [])) { if (x.t <= t) m = x.name; else break; }
+  return m;
+}
+
+// ── 리포트 ───────────────────────────────────────────────────────────
+function drawReport() {
+  const s = SUM;
+  const card = (l, v) => `<div class="card"><div class="l">${l}</div><div class="v">${v}</div></div>`;
+  let h = '<div class="cards">';
+  h += card('비행시간', s.duration == null ? '–' :
+    (s.duration < 60 ? s.duration.toFixed(0) + '초'
+      : Math.floor(s.duration / 60) + '분 ' + Math.round(s.duration % 60) + '초'));
+  h += card('최고고도 <span class="muted">(arm 기준)</span>', f1(s.alt_max, ' m'));
+  h += card('최대속도', f1(s.speed_max, ' m/s'));
+  if (s.cur_max != null) {
+    const cls = s.cur_max > 90 ? 'badc' : s.cur_max > 45 ? 'warnc' : '';
+    h += card('최대전류', `<span class="${cls}">${f1(s.cur_max, ' A')}</span>`);
+  }
+  if (s.cell_min != null) h += card('셀 최저전압', f2(s.cell_min, ' V'));
+  if (s.mah != null) h += card('이번 비행 소모', s.mah.toFixed(0) + ' mAh');
+  if (s.sats != null) h += card('GPS', `위성 ${s.sats.toFixed(0)}개 · 위치 오차 ${f2(s.eph, ' m')}`);
+  if (s.vib_max != null) h += card('진동 최대', f1(s.vib_max));
+  h += '</div>';
+
+  if (s.findings && s.findings.length) {
+    h += `<h2>문제 (${s.findings.length}건)</h2>`;
+    for (const [cat, what, fix] of s.findings) {
+      h += `<div class="finding"><div class="cat">${cat}</div><div>${esc(what)}</div>
+            <div class="fix">→ ${esc(fix)}</div></div>`;
+    }
+  }
+  if (s.good && s.good.length) {
+    h += '<h2 style="margin-top:20px">잘 된 것</h2>';
+    for (const g of s.good) h += `<div class="good">✅ ${esc(g)}</div>`;
+  }
+  if (s.msgs && s.msgs.length) {
+    h += `<h2 style="margin-top:20px">FC 경고 (${s.msgs.length}건)</h2>`;
+    for (const [ts, lvl, txt] of s.msgs) {
+      const rt = ts - s.t0;
+      const col = lvl === 'ERROR' ? 'badc' : 'warnc';
+      h += `<div class="evt" data-t="${rt.toFixed(2)}">
+            <span class="muted">${rt.toFixed(1)}s</span>
+            <span class="${col}">[${lvl}]</span> ${esc(txt)}</div>`;
+    }
+  }
+  if (s.innov && s.innov.length) {
+    h += '<h2 style="margin-top:20px">센서 불일치</h2>';
+    for (const [k, v] of s.innov.slice(0, 6)) {
+      // 차트와 같은 이름을 쓴다 (extract 는 mag_field_0 꼴).
+      h += `<div class="evt">${esc(innovLabel(String(k).replace(/\[(\d+)\]/, '_$1')))}` +
+           ` <span class="muted">최대</span> ${v.toFixed(2)}</div>`;
+    }
+  }
+  $('#report').innerHTML = h;
+  document.querySelectorAll('.evt[data-t]').forEach((el) => el.onclick = () => {
+    const t = parseFloat(el.dataset.t);
+    // 확대 중이라면 그 시각이 화면 밖일 수 있다. 폭은 유지한 채 가운데로 옮긴다.
+    if (VIEW && (t < VIEW.t0 || t > VIEW.t1)) {
+      const w = VIEW.t1 - VIEW.t0;
+      setView(t - w / 2, t + w / 2);
+    }
+    player.seek(t);
+    document.querySelector('.wrap').scrollIntoView({ behavior: 'smooth' });
+  });
+}
+
+// ── 시작 ─────────────────────────────────────────────────────────────
+async function boot() {
+  const [rs, rt] = await Promise.all([
+    fetch(`/api/logs/${ID}/sum`), fetch(`/api/logs/${ID}/trk`),
+  ]);
+  if (!rs.ok) {
+    const e = await rs.json().catch(() => ({}));
+    $('#report').innerHTML = `<div class="warnbox">이 로그는 분석할 수 없다 — ${esc(e.error || rs.status)}</div>`;
+    return;
+  }
+  SUM = await rs.json();
+  TRK = await rt.json();
+
+  const rows = await (await fetch('/api/logs')).json();
+  const row = rows.find((r) => r.id === ID) || {};
+  document.title = `${row.name || ''} — DRONE01`;
+  LOGNAME = row.name || ID;
+
+  let banners = '';
+  if (SUM.corrupt) banners += `<div class="warnbox">⚠️ 중간에 깨진 구간이 있다. 그 구간 샘플이 빠져 비행시간·최대값이 실제보다 작을 수 있다.</div>`;
+  if (SUM.armed === false) banners += `<div class="warnbox">⚠️ arm 구간이 없다. 로그 <b>전체 구간</b>으로 계산했다 — 지상 기록이다.</div>`;
+  if (banners) $('#banner').innerHTML = `<div style="padding:14px 20px 0">${banners}</div>`;
+
+  // 🔴 buildCharts 가 격자와 함께 지도 셀(#map)을 만든다. initMap 이 먼저 돌면
+  //    붙일 요소가 없다.
+  buildCharts();
+  initMap();
+  drawTrack();
+  initPlayer();
+  drawReport();
+  // 스크롤에 따라 지금 보고 있는 단을 목록에서 밝힌다.
+  // 켠 단만 DOM 에 있으므로 매번 다시 모은다.
+  document.querySelector('.col')
+    .addEventListener('scroll', scrollSpy, { passive: true });
+  scrollSpy();
+
+  // ?t=113.5 로 특정 순간을 바로 열 수 있다. FC 경고를 남에게 보낼 때 쓴다.
+  const t0 = parseFloat(new URLSearchParams(location.search).get('t'));
+  player.seek(isFinite(t0) ? t0 : 0);
+
+
+  let rt2;
+  addEventListener('resize', () => { clearTimeout(rt2); rt2 = setTimeout(redraw, 150); });
+}
+boot();
+
+</script>

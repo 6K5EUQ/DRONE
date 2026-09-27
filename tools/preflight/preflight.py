@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""DRONE(2kg 쿼드, ArduCopter) 비행 전 점검 — GO/NOGO.
+"""DRONE01(2kg 쿼드, ArduCopter) 비행 전 점검 — GO/NOGO.
 
-    ~/SHADE01/.venv/bin/python tools/preflight/preflight.py
-    ~/SHADE01/.venv/bin/python tools/preflight/preflight.py --conn udpout:100.117.47.105:14550
+    .venv/bin/python tools/preflight/preflight.py
+    .venv/bin/python tools/preflight/preflight.py --conn /dev/ttyACM0
+
+🔴 FC USB 는 하나다. drone-live 가 켜져 있으면 먼저 끈다 (`tools/live/drone-live off`).
 
 🔴 읽기 전용이다. PARAM_SET·COMMAND_LONG 을 보내지 않는다. 보내는 것은
    GCS 하트비트와 PARAM_REQUEST_READ 뿐이다.
 
-🔴 SHADE01 의 preflight.py 를 베끼지 않았다 — 스택이 다르다(ArduCopter vs
-   PX4). 파라미터 이름도 의미도 다르다. 이 파일의 임계값은 전부
-   2026-09-21 이 기체에서 직접 실측한 값이거나 DRONE/FC_CHANGELOG.md·
-   docs/procedures/00-progress.md 에 이미 기록된 값이다. 추측값은 없다.
+🔴 이 파일의 임계값은 전부 2026-09-21 이 기체에서 직접 실측한 값이거나
+   FC_CHANGELOG.md·docs/procedures/00-progress.md 에 이미 기록된 값이다.
+   추측값은 없다.
 
 🔴 이 기체는 실비행 이력이 0 회다(2026-09-21 기준). 임계값 다수가
    "정상 비행에서 이만큼 흔들린다"가 아니라 "설계상 이래야 한다"는
@@ -23,7 +24,7 @@ import time
 try:
     from pymavlink import mavutil
 except ImportError:
-    sys.exit("pymavlink 이 없다. SHADE01/.venv/bin/python 으로 돌려라.")
+    sys.exit("pymavlink 이 없다. .venv/bin/python 으로 돌려라 (web/README.md 「rim3」).")
 
 LOCAL_TIMEOUT = 4.0
 
@@ -49,21 +50,18 @@ class Result:
 
 # ── 연결 ──────────────────────────────────────────────────────────
 def connect(explicit):
-    """시리얼이 비어 있으면 직결, 아니면 브리지 UDP. 포트는 SHADE01 과 공유한다
-    — shade-bridge 가 살아 있으면 시리얼은 못 열리므로 UDP 로 우회한다."""
+    """FC USB 직결. 이 기체의 FC 만 USB id(3D_Robotics…v2)로 찾는다."""
+    import glob
+    import os
     tries = []
     if explicit:
         tries.append((explicit, '지정'))
     else:
-        # 🔴 시리얼을 먼저 시도하지 않는다. shade-bridge.service 가 대개
-        #    /dev/ttyACM0 을 이미 쥐고 있어(00-progress.md "포트는 하나다"),
-        #    여기서 열면 뺏은 직후 바로 끊긴다. 브리지를 내리지 않고도
-        #    붙을 수 있는 UDP 를 우선한다.
-        tries.append(('udpout:100.117.47.105:14550', '브리지 UDP 경유 (rim3)'))
-        tries.append(('udpout:127.0.0.1:14550', '브리지 UDP (로컬)'))
-        tries.append(('/dev/ttyACM0', 'FC USB 직결 (브리지가 꺼져 있을 때만)'))
+        for p in sorted(glob.glob('/dev/serial/by-id/usb-3D_Robotics*v2*-if00')):
+            tries.append((os.path.realpath(p), 'FC USB 직결'))
 
-    notes = []
+    notes = [] if tries else ['FC USB 없음 (ls /dev/serial/by-id/)']
+
     for conn, why in tries:
         try:
             baud = 921600 if conn.startswith('/dev/') else None
@@ -87,9 +85,9 @@ def connect(explicit):
             if hb:
                 break
         if hb:
-            # 이 기체가 맞는지 확인 — mav_type 2=쿼드(DRONE), 22=VTOL(SHADE01)
-            if hb.type == 22:
-                notes.append('%s: 연결은 됐지만 SHADE01(VTOL, mav_type=22)이 붙어 있다 — DRONE 이 아니다' % why)
+            # 이 기체가 맞는지 확인 — mav_type 2 = 쿼드
+            if hb.type != 2:
+                notes.append('%s: 연결은 됐지만 쿼드가 아니다 (mav_type=%d)' % (why, hb.type))
                 continue
             return m, why, time.time() - t0, notes
         notes.append('%s: 하트비트 없음' % why)

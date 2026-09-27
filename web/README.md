@@ -1,0 +1,119 @@
+# web — drone01.bewe.co.kr
+
+DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업로드만 공유 암호.**
+
+```
+목록      https://drone01.bewe.co.kr/
+분석      https://drone01.bewe.co.kr/log/<id>
+비교      https://drone01.bewe.co.kr/compare?a=<id>&b=<id>
+실시간    https://drone01.bewe.co.kr/live
+콕핏      https://drone01.bewe.co.kr/cockpit
+점검      https://drone01.bewe.co.kr/preflight
+소개      https://drone01.bewe.co.kr/intro
+상태      https://drone01.bewe.co.kr/api/health
+```
+
+## 구조
+
+| 파일 | 역할 |
+|---|---|
+| `server.js` | node 내장만 쓴다. 업로드·카탈로그·캐시·라이브 중계·재생 프록시 |
+| `extract.py` | ArduCopter `.BIN` → 목록 한 줄(`row`) / 요약+시계열(`full`). **유일한 파싱 경로** |
+| `public/` | 목록·분석·비교·콕핏·점검·소개 화면, `vendor/`(leaflet·three·inter) |
+| `live/public/` | 실시간 화면 (rim3 의 `drone-live` 와 같은 파일) |
+| `live/livepush.py` | rim3 → 웹 실시간 중계 (한 방향) |
+| `model/drone01.py` | 콕핏 3D 모델 정본(Blender 4.5). 결과물 `public/model/drone01.glb` |
+| `deploy/` | 랩서버 유닛·터널 설정·`deploy.sh` |
+
+- 모터 매핑 `MOTOR_PINS` 는 `extract.py`·`tools/live/drone_live.py`·`tools/live/bin_playback.py`
+  세 곳이 **같아야 한다** (MAIN1~4 = RF·RB·LB·LF, 2026-09-16 실측).
+- 콕핏은 노드 이름으로 부품을 찾는다 — `rotor_LF/RF/LB/RB`, `gps`, `bay_battery/fc/power/gps`.
+  모델을 고치면 스크립트를 고치고 다시 굽는다:
+
+  ```bash
+  ~/tools/blender-4.5.9-linux-x64/blender -b -P web/model/drone01.py -- web/public/model/drone01.glb
+  ```
+- 판정 임계값: 전류 40/56 A(모터 연속 14 A × 4, docs/design/01), 진동 30/60 m/s².
+  🔶 실비행으로 검증 전이다.
+
+## 포트
+
+| 곳 | 포트 | 무엇 |
+|---|---|---|
+| 랩서버 | 4310 | `lab-drone01` (node) |
+| 랩서버 | 4411 | `drone-playback` (`drone_live.py --device none`) |
+| rim3 | 4410 | `drone-live` (FC USB) |
+
+## 로컬에서 돌리기
+
+```bash
+python3 -m venv --without-pip .venv && curl -sS https://bootstrap.pypa.io/get-pip.py | .venv/bin/python
+.venv/bin/pip install -r web/requirements.txt
+cd web && PORT=4310 UPLOAD_PASSWORD=x node server.js      # 로그는 web/data/logs/*.BIN
+```
+
+## 서버 설치 (ku-labserver, 최초 1회)
+
+```bash
+ssh ku@100.86.239.31
+git clone https://github.com/6K5EUQ/DRONE.git ~/DRONE
+python3 -m venv --without-pip ~/drone01-venv
+curl -sS https://bootstrap.pypa.io/get-pip.py | ~/drone01-venv/bin/python
+~/drone01-venv/bin/pip install -r ~/DRONE/web/requirements.txt
+mkdir -p ~/drone01-data/logs
+
+# .env — 암호는 여기서 만들고 커밋하지 않는다
+cat > ~/DRONE/web/.env <<EOF
+PORT=4310
+DATA_DIR=/home/ku/drone01-data
+PARSE_PYTHON=/home/ku/drone01-venv/bin/python
+DRONE_PLAYBACK_PORT=4411
+UPLOAD_PASSWORD=<업로드 암호>
+LIVE_PUSH_KEY=<rim3 livepush 와 같은 값>
+EOF
+chmod 600 ~/DRONE/web/.env
+
+sudo cp ~/DRONE/web/deploy/lab-drone01.service ~/DRONE/web/deploy/lab-tunnel-drone01.service /etc/systemd/system/
+mkdir -p ~/.config/systemd/user && cp ~/DRONE/web/deploy/drone-playback.service ~/.config/systemd/user/
+sudo systemctl daemon-reload && sudo systemctl enable --now lab-drone01
+systemctl --user daemon-reload && systemctl --user enable --now drone-playback
+
+# 터널 — 도메인마다 따로
+~/.local/bin/cloudflared tunnel create drone01
+sed "s/REPLACE_WITH_TUNNEL_UUID/<UUID>/g" ~/DRONE/web/deploy/config-drone01.yml > ~/.cloudflared/config-drone01.yml
+~/.local/bin/cloudflared tunnel route dns drone01 drone01.bewe.co.kr
+sudo systemctl enable --now lab-tunnel-drone01
+```
+
+점검(`/preflight`)은 `.env` 에 `PREFLIGHT_KEY`·`PREFLIGHT_PASSWORD`·`PREFLIGHT_AGENTS` 가
+있어야 켜진다. 에이전트는 아직 없다 — 화면은 뜨고 점검만 막힌다.
+
+## 배포 (이후)
+
+```bash
+ssh ku@100.86.239.31 'cd ~/DRONE && ./web/deploy/deploy.sh'
+```
+
+## rim3
+
+```bash
+python3 -m venv --without-pip ~/DRONE/.venv && curl -sS https://bootstrap.pypa.io/get-pip.py | ~/DRONE/.venv/bin/python
+~/DRONE/.venv/bin/pip install -r ~/DRONE/web/requirements.txt
+echo "LIVE_PUSH_KEY=<서버 .env 와 같은 값>" > ~/.config/drone-live.env && chmod 600 ~/.config/drone-live.env
+cp ~/DRONE/web/live/drone-live.service ~/DRONE/web/live/drone-livepush.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now drone-live drone-livepush
+```
+
+켜고 끄기는 `tools/live/drone-live [on|off|status]`. FC USB 는 하나라 QGC·로그 내려받기·
+점검 전에는 `off`, 끝나면 `on`.
+
+## 장애 대응
+
+| 증상 | 확인 | 대응 |
+|---|---|---|
+| 500 / 페이지 안 뜸 | `systemctl status lab-drone01`, `tail ~/drone01-data/server.log` | `sudo systemctl restart lab-drone01` |
+| 502 / 도메인만 죽음 | `systemctl status lab-tunnel-drone01` | 터널만 재시작 |
+| 전부 "파싱 실패" | `/api/health` | venv 가 깨졌다. 설치 venv 단계 다시 |
+| 업로드 401 | `.env` 의 `UPLOAD_PASSWORD` | 비어 있으면 업로드가 막힌다 |
+| 재생 503 | `systemctl --user status drone-playback` | 재시작 |
+| 실시간 안 뜸 | rim3 `tools/live/drone-live status` | FC USB·`drone-livepush` 키 확인 |

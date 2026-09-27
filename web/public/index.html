@@ -1,0 +1,246 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>DRONE01 비행로그</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/app.css">
+
+<header>
+  <h1><a href="/">DRONE01 비행로그</a></h1>
+  <span class="sub" id="count">불러오는 중…</span>
+  <span class="grow"></span>
+  <input type="search" id="q" placeholder="파일명 검색" style="width:180px">
+  <select id="filter">
+    <option value="">전체</option>
+    <optgroup label="자동 모드 (겹칠 수 있다)">
+      <option value="misn">미션</option>
+      <option value="rtl">RTL</option>
+    </optgroup>
+    <optgroup label="분류">
+      <option value="flight">실비행</option>
+      <option value="hover">호버</option>
+      <option value="ground">지상</option>
+      <option value="abort">즉시 disarm</option>
+    </optgroup>
+  </select>
+  <button id="cmpBtn" disabled>비교</button>
+  <!-- 실시간. 현장 노트북(rim3)이 밀어 올리는 동안에만 초록 점이 켜진다 —
+       기체가 안 떠 있으면 눌러도 「끊김」 화면이라, 눌러 볼 값어치가 있는지를
+       버튼 자체가 말해 준다. -->
+  <a class="btn" href="/intro" title="기체 제원">소개</a>
+  <!-- 비행 전 점검. FC 가 꽂힌 PC 의 에이전트를 통해 읽기 전용으로 조회한다. -->
+  <a class="btn" href="/preflight" title="비행 전 점검 — FC 를 읽어 GO / NO-GO">점검</a>
+  <a class="btn" href="/cockpit">콕핏</a>
+  <a class="btn" id="liveBtn" href="/live" title="지금 뜬 기체를 실시간으로">
+    <span class="livedot" id="liveDot"></span>실시간</a>
+  <button class="primary" id="upBtn">업로드</button>
+</header>
+
+<main style="padding:0 20px 40px">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:28px"></th>
+        <th data-k="name">파일</th>
+        <th data-k="utc">시간 (KST)</th>
+        <th data-k="badge">분류</th>
+        <th data-k="alt_max" class="num">최대고도</th>
+        <th data-k="speed_max" class="num">최대속도</th>
+        <th data-k="duration" class="num">비행시간</th>
+        <th data-k="cur_max" class="num">최대전류</th>
+        <th data-k="findings_n" class="num">문제</th>
+        <th data-k="size" class="num">크기</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p class="muted" id="empty" style="display:none;padding:30px 0">로그가 없다. 업로드해라.</p>
+</main>
+
+<dialog id="upDlg">
+  <h2>로그 업로드</h2>
+  <p class="muted" style="margin:0 0 14px;font-size:12px">
+    `.BIN` 파일만 받는다. 업로드에는 공유 암호가 필요하다 (조회는 공개).</p>
+  <form method="dialog" id="upForm">
+    <input type="file" id="upFile" accept=".bin,.BIN" multiple required
+           style="width:100%;margin-bottom:10px">
+    <!-- 계정은 없지만 암호 관리자·스크린리더가 짝이 되는 아이디 칸을 기대한다 -->
+    <input type="text" name="username" value="drone01" autocomplete="username"
+           hidden readonly>
+    <input type="password" id="upPw" placeholder="업로드 암호" required
+           style="width:100%;margin-bottom:14px" autocomplete="current-password">
+    <div id="upMsg" class="muted" style="font-size:12px;min-height:18px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button value="cancel" type="button" id="upCancel">닫기</button>
+      <button class="primary" id="upGo" type="submit">올리기</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const $ = (s) => document.querySelector(s);
+// 자동 모드 태그 — 주 배지 옆에 나란히 붙는다. 「호버 + RTL」 처럼 겹칠 수 있다.
+const AUTO = {
+  misn: ['미션', 'AUTO_MISSION 을 시도했다 — 성공 여부와 무관. 진입이 거부돼 모드가 안 바뀐 것도 포함한다'],
+  rtl:  ['RTL', 'AUTO_RTL 로 복귀했다'],
+};
+
+const BADGE = {
+  flight: ['실비행', '고도 10m 이상이거나 속도 3m/s 이상'],
+  hover:  ['호버', '떴지만 저고도·저속 — 제자리 호버이거나 지상 확인'],
+  ground: ['지상', '고도 0.5m 미만, 속도 0.5m/s 이하'],
+  abort:  ['즉시 disarm', 'arm 6초 이하 — 이륙 포기이거나 지상 점검'],
+  noarm:  ['arm 없음', 'arm 구간이 없다. 로그 전체 구간으로 계산했다'],
+  unknown:['판정 불가', 'vehicle_local_position 이 없어 고도·속도를 못 낸다'],
+  err:    ['읽기 실패', ''],
+};
+
+let all = [], sortKey = 'utc', sortDir = -1;
+const selected = new Set();
+
+const fmtN = (v, d, unit) => v == null ? '<span class="muted">–</span>'
+  : v.toFixed(d) + (unit ? ' ' + unit : '');
+const fmtDur = (s) => s == null ? '<span class="muted">–</span>'
+  : (s < 60 ? s.toFixed(0) + '초' : Math.floor(s / 60) + '분 ' + Math.round(s % 60) + '초');
+const fmtTime = (s) => {
+  if (!s) return '<span class="muted">–</span>';
+  const d = new Date(s);
+  if (isNaN(d)) return s.slice(0, 16).replace('T', ' ');
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+function render() {
+  const q = $('#q').value.trim().toLowerCase();
+  const f = $('#filter').value;
+  const rows = all
+    // 필터는 주 배지와 자동 모드 태그 **양쪽**을 본다 — 「미션」 을 고르면
+    // 호버였든 실비행이었든 미션을 시도한 것이 전부 나와야 한다.
+    .filter((r) => (!q || r.name.toLowerCase().includes(q))
+      && (!f || r.badge === f || (r.auto || []).includes(f)))
+    .sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return (typeof av === 'string' ? av.localeCompare(bv) : av - bv) * sortDir;
+    });
+
+  $('#rows').innerHTML = rows.map((r) => {
+    const b = r.error ? 'err' : (r.badge || 'unknown');
+    const [label, tip] = BADGE[b] || [b, ''];
+    const cur = r.cur_max;
+    // 45A 는 XT90 커넥터 연속 정격. 넘으면 눈에 띄어야 한다.
+    const curCls = cur == null ? '' : (cur > 90 ? 'badc' : cur > 45 ? 'warnc' : '');
+    return `<tr data-id="${r.id}">
+      <td><input type="checkbox" class="pick" data-id="${r.id}"
+           ${selected.has(r.id) ? 'checked' : ''}></td>
+      <td><a href="/log/${r.id}">${r.name}</a>
+          ${r.repaired ? '<span class="flag" title="구독 섹션이 유실돼 다른 로그의 정의를 이식해 읽었다. 수치를 정본으로 쓰지 마라">⚠복구</span>' : ''}
+          ${r.corrupt ? '<span class="flag" title="중간에 깨진 구간이 있다. 최대값이 실제보다 작을 수 있다">⚠손상</span>' : ''}</td>
+      <td class="mono">${fmtTime(r.utc)}</td>
+      <td><span class="badge ${b}" title="${tip}">${label}</span>${(r.auto || []).map((a) => { const [al, at] = AUTO[a] || [a, '']; return ` <span class="badge ${a}" title="${at}">${al}</span>`; }).join('')}</td>
+      <td class="num">${fmtN(r.alt_max, 1, 'm')}</td>
+      <td class="num">${fmtN(r.speed_max, 1, 'm/s')}</td>
+      <td class="num">${fmtDur(r.duration)}</td>
+      <td class="num ${curCls}">${fmtN(cur, 1, 'A')}</td>
+      <td class="num">${r.findings_n ? r.findings_n + '건' : '<span class="muted">–</span>'}</td>
+      <td class="num muted">${(r.size / 1e6).toFixed(1)}M</td>
+    </tr>`;
+  }).join('');
+
+  $('#count').textContent = `${rows.length}개${rows.length !== all.length ? ` / 전체 ${all.length}개` : ''}`;
+  $('#empty').style.display = rows.length ? 'none' : '';
+  document.querySelectorAll('.pick').forEach((c) => c.onchange = () => {
+    c.checked ? selected.add(c.dataset.id) : selected.delete(c.dataset.id);
+    $('#cmpBtn').disabled = selected.size !== 2;
+  });
+}
+
+async function load() {
+  // 비행당 한 줄. 같은 비행의 다른 사본은 접는다.
+  const r = await fetch('/api/logs');
+  all = await r.json();
+  render();
+}
+
+document.querySelectorAll('th[data-k]').forEach((th) => th.onclick = () => {
+  const k = th.dataset.k;
+  if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = k === 'name' ? 1 : -1; }
+  render();
+});
+$('#q').oninput = render;
+$('#filter').onchange = render;
+$('#cmpBtn').onclick = () => {
+  const [a, b] = [...selected];
+  location.href = `/compare?a=${a}&b=${b}`;
+};
+
+// ── 업로드 ──────────────────────────────────────────────────────────
+$('#upBtn').onclick = () => $('#upDlg').showModal();
+$('#upCancel').onclick = () => $('#upDlg').close();
+$('#upForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const files = [...$('#upFile').files];
+  const pw = $('#upPw').value;
+  const msg = $('#upMsg');
+  $('#upGo').disabled = true;
+  let ok = 0, dup = 0, fail = 0;
+  for (let i = 0; i < files.length; i++) {
+    msg.textContent = `${i + 1}/${files.length} ${files[i].name} 올리는 중…`;
+    const fd = new FormData();
+    fd.append('password', pw);
+    fd.append('file', files[i]);
+    try {
+      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) { fail++; msg.textContent = d.error || '실패'; if (r.status === 401) break; }
+      else if (d.duplicate) dup++;
+      else if (d.error) { fail++; msg.textContent = `${files[i].name}: ${d.error}`; }
+      else ok++;
+    } catch (err) { fail++; msg.textContent = String(err); }
+  }
+  $('#upGo').disabled = false;
+  if (!fail) {
+    msg.textContent = `완료 — 새로 ${ok}개${dup ? `, 이미 있던 것 ${dup}개` : ''}`;
+    await load();
+  }
+};
+
+load();
+
+// ── 실시간 버튼의 상태 점 ────────────────────────────────────────────
+// 🔴 **현장 노트북은 rim3 다.** 비행 나갈 때 들고 나가는 PC 가 rim3 이고, FC 는
+//    거기에 USB 나 ELRS 백팩으로 붙는다. rim3 가 꺼져 있거나 인터넷이 없으면
+//    점은 회색이다 — 서버 잘못이 아니라 올려 주는 PC 가 없는 것이다.
+//
+// 목록 화면에서는 느리게 본다(10초). 이 점은 "지금 눌러 볼 값어치가 있나" 만
+// 답하면 되고, 실제 계기는 /live 가 5Hz 로 긁는다.
+const LIVE_PING_MS = 10000;
+
+async function liveTick() {
+  const dot = $('#liveDot');
+  const btn = $('#liveBtn');
+  if (!dot || !btn) return;
+  try {
+    const r = await fetch('/api/live/state?track=0', { cache: 'no-store' });
+    const s = await r.json();
+    const on = !!s.live;
+    dot.classList.toggle('on', on);
+    if (on) {
+      const who = s.relay && s.relay.pusher ? ` · ${s.relay.pusher}` : '';
+      const mode = s.d && s.d.mode ? ` · ${s.d.mode}` : '';
+      btn.title = `실시간 수신 중${who}${mode} — 눌러서 보기`;
+    } else if (s.relay && s.relay.age != null) {
+      btn.title = `끊김 — 마지막 수신 ${Math.round(s.relay.age)}초 전`
+        + ' (현장 노트북 rim3 가 꺼졌거나 인터넷이 없다)';
+    } else {
+      btn.title = '지금은 안 뜬다 — 현장 노트북(rim3)이 올리는 중일 때만 켜진다';
+    }
+  } catch {
+    dot.classList.remove('on');
+    btn.title = '상태를 못 읽는다';
+  }
+}
+liveTick();
+setInterval(liveTick, LIVE_PING_MS);
+</script>

@@ -1,0 +1,13 @@
+# 랩서버 user 유닛 — ~/.config/systemd/user/drone-playback.service
+# 웹의 /api/playback/* 를 받는 재생 서버. FC 와 연결 없음(--device none).
+[Unit]
+Description=DRONE01 log playback backend (:4411)
+
+[Service]
+Environment=DRONE_LOG_DIRS=/home/ku/drone01-data/logs
+ExecStart=/home/ku/drone01-venv/bin/python /home/ku/DRONE/tools/live/drone_live.py --device none --http 4411
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

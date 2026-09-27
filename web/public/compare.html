@@ -1,0 +1,153 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>비행 비교 — DRONE01</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/app.css">
+<style>
+  main { padding: 16px 20px 40px; }
+  .heads { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+  .head { background: var(--panel); border: 1px solid var(--border);
+          border-radius: 8px; padding: 12px 14px; }
+  .head.a { border-left: 3px solid var(--c-alt); }
+  .head.b { border-left: 3px solid var(--c-spd); }
+  .head .n { font-weight: 600; }
+  .head .m { color: var(--muted); font-size: 12px; margin-top: 3px; }
+
+  table.cmp td, table.cmp th { padding: 6px 10px; }
+  table.cmp td.k { color: var(--dim); width: 34%; }
+  .bar { height: 6px; border-radius: 3px; background: var(--border-2); position: relative; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; }
+
+  .chart { border-bottom: 1px solid var(--border); margin-top: 6px; }
+  .chart h3 { margin: 0; padding: 6px 2px 0; font-size: 12px; color: var(--dim); }
+  .chart svg { display: block; width: 100%; height: 130px; }
+  .legend { display: flex; gap: 16px; font-size: 12px; margin: 10px 0 4px; }
+  .legend b { font-weight: 600; }
+</style>
+
+<header>
+  <h1><a href="/">DRONE01 비행로그</a></h1>
+  <span class="sub">두 비행 비교</span>
+  <span class="grow"></span>
+  <a class="btn" href="/">목록으로</a>
+</header>
+
+<main>
+  <div class="heads" id="heads"></div>
+  <div id="table"></div>
+  <div class="legend" id="legend"></div>
+  <div id="charts"></div>
+</main>
+
+<script src="/chart.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+const q = new URLSearchParams(location.search);
+const A = q.get('a'), B = q.get('b');
+
+// 시간축 길이가 다른 두 비행을 겹쳐 그린다. 짧은 쪽은 그 지점에서 끊긴다.
+const PAIRS = [
+  { title: '고도 (arm 기준, m)', key: 'alt' },
+  { title: '수평속도 (m/s)', key: 'spd' },
+  { title: '전류 (A)', key: 'cur', thresholds: [{ v: 45, label: '45A', color: '#d29922' }] },
+  { title: '전압 (V)', key: 'volt' },
+];
+
+const ROWS = [
+  ['비행시간', (s) => s.duration, 1, '초'],
+  ['최고고도', (s) => s.alt_max, 1, ' m'],
+  ['최대속도', (s) => s.speed_max, 1, ' m/s'],
+  ['최대전류', (s) => s.cur_max, 1, ' A'],
+  ['평균전류', (s) => s.cur_mean, 1, ' A'],
+  ['셀 최저전압', (s) => s.cell_min, 2, ' V'],
+  ['소모', (s) => s.mah, 0, ' mAh'],
+  ['진동 최대', (s) => s.vib_max, 1, ''],
+  ['GPS 위성', (s) => s.sats, 0, '개'],
+  ['최대 경사(roll)', (s) => s.roll_max, 0, '°'],
+  ['CPU 최대', (s) => s.cpu_max, 0, '%'],
+  ['문제', (s) => (s.findings || []).length, 0, '건'],
+];
+
+async function get(id) {
+  const [s, t] = await Promise.all([
+    fetch(`/api/logs/${id}/sum`).then((r) => r.ok ? r.json() : null),
+    fetch(`/api/logs/${id}/trk`).then((r) => r.ok ? r.json() : null),
+  ]);
+  return { id, sum: s, trk: t };
+}
+
+(async () => {
+  if (!A || !B) { $('#heads').innerHTML = '<p class="muted">비교할 로그 두 개를 목록에서 골라라.</p>'; return; }
+  const rows = await (await fetch('/api/logs')).json();
+  const [a, b] = await Promise.all([get(A), get(B)]);
+  if (!a.sum || !b.sum) { $('#heads').innerHTML = '<p class="muted">읽을 수 없는 로그가 있다.</p>'; return; }
+  const meta = (id) => rows.find((r) => r.id === id) || {};
+
+  $('#heads').innerHTML = [['a', a], ['b', b]].map(([cls, x]) => {
+    const m = meta(x.id);
+    return `<div class="head ${cls}">
+      <div class="n"><a href="/log/${x.id}">${m.name || x.id}</a></div>
+      <div class="m">${(m.utc || '').slice(0, 16).replace('T', ' ')} · ${m.badge || ''} ·
+        ${x.sum.hw || ''} / ${x.sum.sw || ''}</div></div>`;
+  }).join('');
+
+  // 표 — 두 값과 차이, 그리고 큰 쪽 기준 막대
+  let h = '<table class="cmp"><thead><tr><th></th><th class="num">A</th><th class="num">B</th>' +
+          '<th class="num">차이</th><th style="width:34%"></th></tr></thead><tbody>';
+  for (const [label, get_, d, u] of ROWS) {
+    const va = get_(a.sum), vb = get_(b.sum);
+    if (va == null && vb == null) continue;
+    const f = (v) => v == null ? '<span class="muted">–</span>' : v.toFixed(d) + u;
+    let diff = '<span class="muted">–</span>', bar = '';
+    if (va != null && vb != null) {
+      const dv = vb - va;
+      const cls = Math.abs(dv) < 1e-9 ? 'muted' : (dv > 0 ? 'warnc' : 'okc');
+      diff = `<span class="${cls}">${dv > 0 ? '+' : ''}${dv.toFixed(d)}${u}</span>`;
+      const mx = Math.max(Math.abs(va), Math.abs(vb)) || 1;
+      bar = `<div class="bar"><i style="width:${(Math.abs(va) / mx * 100).toFixed(0)}%;
+             background:var(--c-alt);opacity:.85"></i></div>
+             <div class="bar" style="margin-top:3px"><i style="width:${(Math.abs(vb) / mx * 100).toFixed(0)}%;
+             background:var(--c-spd);opacity:.85"></i></div>`;
+    }
+    h += `<tr><td class="k">${label}</td><td class="num">${f(va)}</td>
+          <td class="num">${f(vb)}</td><td class="num">${diff}</td><td>${bar}</td></tr>`;
+  }
+  $('#table').innerHTML = h + '</tbody></table>';
+
+  $('#legend').innerHTML =
+    `<span><b style="color:var(--c-alt)">━</b> ${meta(a.id).name || 'A'}</span>` +
+    `<span><b style="color:var(--c-spd)">━</b> ${meta(b.id).name || 'B'}</span>`;
+
+  // 겹쳐 그리기 — 두 trk 를 하나의 가상 trk 로 합친다 (긴 쪽 기준 시간축)
+  const dur = Math.max(a.trk.dur, b.trk.dur);
+  const hz = Math.min(a.trk.hz, b.trk.hz);
+  const n = Math.round(dur * hz) + 1;
+  const resample = (trk, key) => {
+    const src = trk[key];
+    if (!src) return null;
+    const out = new Array(n).fill(null);
+    for (let i = 0; i < n; i++) {
+      const j = Math.round((i / hz) * trk.hz);
+      out[i] = j < src.length ? src[j] : null;
+    }
+    return out;
+  };
+
+  $('#charts').innerHTML = PAIRS.map((p, i) =>
+    `<div class="chart"><h3>${p.title}</h3><svg id="cc${i}"></svg></div>`).join('');
+
+  PAIRS.forEach((p, i) => {
+    const merged = { hz, n, dur, modes: [], events: [] };
+    merged.A = resample(a.trk, p.key);
+    merged.B = resample(b.trk, p.key);
+    if (!merged.A && !merged.B) return;
+    drawChart(document.getElementById('cc' + i), merged, {
+      series: [
+        { key: 'A', color: getComputedStyle(document.documentElement).getPropertyValue('--c-alt').trim(), label: 'A', axis: 'left' },
+        { key: 'B', color: getComputedStyle(document.documentElement).getPropertyValue('--c-spd').trim(), label: 'B', axis: 'left' },
+      ],
+      thresholds: p.thresholds,
+    });
+  });
+})();
+</script>

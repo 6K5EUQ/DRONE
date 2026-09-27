@@ -1,0 +1,700 @@
+/* 라이브 트래킹 레이아웃. 팔레트·폰트는 /app.css (로그 뷰어와 공용) 를 쓴다.
+   여기서는 배치와 라이브 전용 부품(HUD·스트립·상태밴드)만 정의한다. */
+
+/* 🔴 헤더를 없앴다 (2026-09-05). 상단 한 줄이 통째로 계기 자리로 갔다 —
+   링크 상태·통계·시간창은 전부 우하단 바(.msgs .hd)로 내렸다.
+   body 는 여전히 세로 flex 다: main 이 화면 전체를 정확히 가져간다.
+   (예전에 calc(100vh - 49px) 로 박았다가 실제 헤더가 55px 이라 6px 넘쳐
+    숫자 스트립이 스크롤바도 없이 잘렸다. 숫자를 박지 마라.) */
+html { height: 100%; }
+body { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+
+/* 🔴 HUD 좌(크게) · 차트 우.
+   minmax 하한 560px = 좌우 테이프(각 62~92px)가 중앙 피치 사다리 라벨을 안 먹는 최소.
+   minmax 하한 380px = 차트 3단이 각자 최소 150px 를 갖고도 축 라벨이 읽히는 최소.
+   min-width/min-height:0 이 없으면 그리드 자식의 기본 auto 최소크기 때문에
+   숫자 스트립이 화면 밖으로 밀려 조용히 사라진다. */
+main {
+  display: grid;
+  /* 🔴 화면을 네 칸으로 **정확히 4등분**한다 (2026-09-11):
+       HUD | 지도
+       데이터 | 그래프
+     가로 1:1, 세로도 1:1 (#hudPane·#chartPane 의 grid-template-rows). */
+  grid-template-columns: 1fr 1fr;
+  flex: 1; min-height: 0;
+}
+#hudPane, #chartPane { min-width: 0; min-height: 0; }
+
+/* 🔴 지도 : HUD = 1 : 3, **이 줄 안에서만**. 아래 계기판(고도·배터리·모터)은
+   이 분할과 무관하게 hudPane 폭을 그대로 쓴다.
+   지도 하한 130px = 궤적과 기체 아이콘이 겹쳐 보이지 않는 최소.
+   HUD 하한 420px = 좌우 테이프가 중앙 피치 사다리 라벨을 안 먹는 최소. */
+#mapPane { min-width: 0; min-height: 0; }
+
+/* ── 지도 ─────────────────────────────────────────────────────
+   로그 뷰어(log.html)와 같은 Leaflet·같은 타일을 쓴다. */
+#mapPane {
+  /* 🔴 z-index 를 반드시 준다 (2026-09-12). position:relative 만으로는 쌓임
+     맥락이 안 생겨서, Leaflet 이 제 안에서 쓰는 z-index 가 **전역으로 샌다** —
+     타일 200 / 오버레이 400 / 마커 600 / 팝업 700 / 컨트롤 800·1000 이라
+     재생 창(#pbPick, 50)과 하단 바(#pbBar, 40)를 통째로 덮었다.
+     여기에 값을 주면 그 숫자들이 이 칸 안에서만 겨루고, 바깥과는 아래 1 로만
+     비교된다. */
+  position: relative; overflow: hidden; z-index: 1;
+  border-right: 1px solid var(--border); background: #0d1117;
+}
+/* 지도는 우측 칸 위쪽이다 (2026-09-10). HUD 와 같은 높이를 갖도록
+   #chartPane 이 행 높이를 좌측 #hudPane 과 같은 비율로 나눈다.
+   위쪽 4px 는 #hudBox 의 border-top 과 같은 값 — 두 칸의 그림이 같은 y 에서 시작한다. */
+/* 위 4px 은 #hudBox 의 border-top 과 같은 값이라 두 그림이 같은 y 에서 시작한다.
+   좌·우에도 같은 폭을 준다 — 지도가 칸 가장자리에 밀착돼 답답하다는 지적
+   (좌측 칸에 있던 때와 같은 처리, 2026-09-11). */
+#mapPane { border: 4px solid var(--panel); border-bottom: 1px solid var(--border); }
+#lmap { width: 100%; height: 100%; background: #0d1117; }
+/* 🔴 타일의 채도·밝기를 낮춘다 (2026-09-10). 계기판 전체가 무채색 + 경고색만
+   쓰는데 위성 사진만 채도가 높아 눈이 자꾸 그쪽으로 끌렸다 — 「색이 보이는
+   것 자체가 신호」 라는 이 화면의 규칙을 지도가 혼자 깨고 있었다.
+   배경이 조용해지면 **궤적(파랑)과 기체(흰색)가 오히려 더 잘 보인다.**
+   활주로·건물 윤곽은 그대로 읽힌다. */
+#lmap .leaflet-tile { filter: saturate(.45) brightness(.72); }
+/* Leaflet 이 기본으로 흰 배경을 깐다 — 어두운 판에서 눈이 아프다. */
+#lmap .leaflet-container { background: #0d1117; }
+/* 저작권 표기는 좁은 칸에서 두 줄을 먹는다. 작게 눌러 둔다. */
+/* 저작권 배지는 좁은 칸에서 두 줄을 먹고 흰 띠로 튄다. 판 색으로 눌러 둔다. */
+#lmap .leaflet-control-attribution {
+  font-size: 8px; padding: 0 3px; line-height: 1.5;
+  background: rgba(13,17,23,.78); color: var(--border-2);
+}
+#lmap .leaflet-control-attribution a { color: var(--border-2); }
+/* 지도 위 버튼을 전부 없앴다 (2026-09-10). 칸이 좁아 버튼이 궤적을 가린다.
+   따라가기는 항상 켜져 있고(손으로 끌면 8초 뒤 복귀), 타일은 위성 고정,
+   줌은 휠·핀치로 한다. */
+
+/* GPS 가 없으면 지도가 빈 회색판이 된다 — 왜 비었는지 말해야 한다.
+   「안 보이는 것」도 정상 동작인 이상 그 사실이 화면에 있어야 한다. */
+#mapEmpty {
+  position: absolute; inset: 0; z-index: 350; display: flex;
+  align-items: center; justify-content: center;
+  background: rgba(13,17,23,.86); color: var(--muted);
+  font-size: 12px; pointer-events: none;
+}
+#mapEmpty[hidden] { display: none; }
+
+/* HUD 줄(#hudTop)이 남는 높이를 다 먹고(1.32fr), 스트립이 나머지(1fr) */
+/* 🔴 행 비율이 곧 "스트립이 어디까지 올라오나" 다.
+   우측은 차트 3개 + 메시지 서랍(124px)이다. 2번째 차트 아랫선은 차트
+   영역의 2/3 지점 — 실측 813px 창에서 459px 이었다.
+   그래서 HUD 를 그 비율로 주고 나머지를 스트립이 갖는다. 숫자로 박으면
+   창 높이가 바뀔 때 어긋나므로 fr 로 나눈다. */
+#hudPane {
+  display: grid; grid-template-rows: 1fr 1fr;
+  border-right: 1px solid var(--border);
+  /* 네 칸 배경을 데이터 패널과 같은 --panel 로 통일한다 (2026-09-11) */
+  background: var(--panel);
+}
+/* 헤더를 없앤 뒤로 기수 테이프가 화면 맨 위 픽셀에 딱 붙는다. 잘리지는
+   않지만(라벨은 테이프 안에 중앙정렬) 숨 쉴 틈이 없어 답답하다. 4px 만 준다.
+   ⚠️ padding 이 아니라 border-top 이다 — padding 을 주면 hudBox 의 실측
+   높이(layout() 이 viewBox 로 쓰는 값)와 SVG 그리는 영역이 어긋난다. */
+#hudBox { position: relative; min-height: 0; overflow: hidden;
+          border-top: 4px solid var(--panel); }
+/* SVG 는 CSS 로 100%/100%, viewBox 는 JS 가 실측 px 로 넣는다 → 배율 항상 1:1.
+   preserveAspectRatio 를 아예 안 쓴다: none 이면 종횡비마다 가로/세로 배율이
+   달라져 45° 뱅크가 30° 로 보이고, meet 는 레터박스, slice 는 테이프를 잘라 먹는다. */
+#hud { display: block; width: 100%; height: 100%; }
+
+/* 배터리 온도 오버레이 — HUD 좌측 하단. 하늘/땅 어느 쪽에 걸쳐도 읽히도록
+   글자에 그림자를 준다. 평소에는 조용히 있다가 뜨거워지면 색으로 말한다. */
+/* 자리를 고정 폭으로 잡고 그 안에서 가운데 정렬한다. 왼쪽 끝에 붙여 두면
+   9.9 -> 10.0 처럼 자릿수가 늘 때 글자가 오른쪽으로 자라 흔들려 보인다. */
+#hudTemp { position: absolute; left: 8px; bottom: 6px;
+           width: 60px; text-align: center;
+           font-size: 13px; font-weight: 700; letter-spacing: .3px;
+           color: #cbd5e1; text-shadow: 0 0 3px #000, 0 0 6px #000;
+           pointer-events: none; font-variant-numeric: tabular-nums; }
+#hudTemp.warn { color: var(--warn); }
+#hudTemp.bad  { color: var(--bad); }
+
+/* SVG 요소에는 HTML 의 [hidden] 이 안 먹는다(UA 스타일시트가 HTML 전용).
+   반드시 클래스로 껐다 켠다. */
+#hud .off { display: none; }
+/* 모든 SVG 글자에 헤일로 — filter 가 아니라 paint-order 다.
+   filter 를 5Hz 회전 그룹에 붙이면 매 프레임 래스터를 다시 굽는다. */
+#hud text {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  paint-order: stroke; stroke: #0d1117; stroke-width: 3px; stroke-linejoin: round;
+}
+/* 🔴 ARM·모드는 하늘/땅 어느 배경 위에 올지 모른다. 헤일로를 두껍게 주고
+   글자를 키워 배경과 상관없이 읽히게 한다 — 갈색 지면 위에서 흐린 회색
+   DISARMED 가 사실상 안 보이던 것을 고쳤다 (2026-09-05). */
+#hud .armTxt  {
+  font-size: 40px; font-weight: 700;
+  stroke: #0d1117; stroke-width: 7px; paint-order: stroke;
+  letter-spacing: 1px;
+}
+#hud .modeTxt {
+  font-size: 26px; font-weight: 700;
+  stroke: #0d1117; stroke-width: 6px; paint-order: stroke;
+}
+#hud .killTxt { font-size: 30px; font-weight: 700; letter-spacing: 1px;
+                stroke: #0d1117; stroke-width: 6px; paint-order: stroke; }
+#hud.small .killTxt { font-size: 22px; stroke-width: 5px; }
+#hud .warnTxt { font-size: 15px; }
+/* 원문 아래 한글 요약. 원문보다 작게 — 읽는 순서가 「영어 → 한글」이 아니라
+   「한글로 뜻 잡고 → 필요하면 원문」이 되도록 색은 같게 두고 크기만 줄인다. */
+#hud .warnKo { font-size: 12px; }
+#hud.small .armTxt  { font-size: 28px; stroke-width: 6px; }
+#hud.small .modeTxt { font-size: 19px; stroke-width: 5px; }
+/* 점멸은 CSS 가 한다 — JS 가 프레임마다 색을 안 건드린다.
+   동시 발생 시 우선순위 상위 하나에만 붙인다. */
+@keyframes hudBlink { 50% { opacity: .25; } }
+#hud .blink { animation: hudBlink 1s step-end infinite; }
+
+/* ── HUD 아래 계기판 ────────────────────────────────────
+   우측 2번째 차트 아랫선까지 올라온다 (2026-09-05). 숫자만 보고 판단하는
+   자리라 칸을 크게 잡는다.
+     속도 · 고도 · 배터리
+     전류 · 위성
+     모터 좌전 · 우전
+     모터 좌후 · 우후 */
+/* 🔴 자리를 명시적으로 박는다. auto-flow 에 맡기면 모터 2×2 가 한 줄로
+   풀려 좌후가 우전 옆에 붙는다 — 기체 배치와 어긋나면 이 블록은 의미가 없다.
+     1행  고도   배터리 위성
+     2행  속도   전류   위치 오차
+     3행  좌전(3칸)      우전(3칸)
+     4행  좌후(3칸)      우후(3칸) */
+#strip {
+  display: grid;
+  /* 12열이다 — 6열로는 모터 줄의 1.5 : 3 : 1.5 를 못 만든다 (2026-09-10).
+     위 두 줄은 4칸씩 세 덩이라 6열일 때와 같은 자리를 지킨다. */
+  grid-template-columns: repeat(12, 1fr);
+  /* 칸 사이 선을 안 넣는다 — gap 1px 로 --border 배경이 비치던 것이 그 선이었다.
+     격자 배경과 칸 배경을 같은 색으로 두면 한 판처럼 읽힌다. */
+  gap: 0;
+  background: var(--panel); border-top: 1px solid var(--border);
+}
+/* 🔴 여기가 실제 배치를 정한다 — HTML 의 DOM 순서가 아니다.
+   grid-area 가 칸마다 행·열을 못 박으므로, index.html 에서 순서를 바꿔도
+   화면은 안 바뀐다. 배치를 고치려면 **이 여섯 줄을 같이 고쳐야 한다.**
+   (2026-09-06 실측으로 물렸다 — DOM 만 바꾸고 한참을 캐시 탓으로 쫓았다.)
+
+     1행  고도    배터리  위성
+     2행  속도    전류    위치오차
+
+   🔴 세로로 짝이 맞는다 — 고도↕속도, 배터리↕전류(전원), 위성↕위치오차(GPS).
+   짝을 깨면 눈이 세로로 못 읽는다.
+
+   🔴 조종 링크 세기·노이즈 칸은 뺐다 (2026-09-15). 12열을 3칸씩 나눠
+   세 열이 된다. */
+#sc-alt  { grid-area: 1 / 1 / 2 / 5; }
+#sc-batt { grid-area: 1 / 5 / 2 / 9; }
+#sc-sats { grid-area: 1 / 9 / 2 / 13; }
+#sc-spd  { grid-area: 2 / 1 / 3 / 5; }
+#sc-cur  { grid-area: 2 / 5 / 3 / 9; }
+#sc-eph  { grid-area: 2 / 9 / 3 / 13; }
+/* 3~4행: 왼쪽 3, 오른쪽 1. 그림이 주인공이라 가로를 넉넉히 준다 —
+   6열 중 4열(1~5)이 그림, 2열(5~7)이 요약 숫자 둘이다.
+   그림은 두 행을 세로로 관통하고, 숫자는 위아래로 나눠 갖는다. */
+/* 🔴 편차 — 기체그림 — 평균 순서다 (2026-09-10). 그림을 가운데 두고 숫자
+   둘이 양옆에서 그것을 설명한다. 숫자를 한쪽에 몰면 그림과 멀어진 값이
+   생기고, 세로로 쌓으면 두 값이 위아래로 멀어 한눈에 같이 안 읽힌다.
+   6열 중 좌 1.5 : 중 3 : 우 1.5 — 그림이 주인공이라 가운데를 넓게 준다. */
+#sc-mspread { grid-area: 3 / 1 / 5 / 4; }
+#sc-frame   { grid-area: 3 / 4 / 5 / 10; }
+#sc-mavg    { grid-area: 3 / 10 / 5 / 13; }
+#strip .sc {
+  background: var(--panel);
+  /* 🔴 여백을 줄여 값에 준다 (2026-09-10). 실측 110px 칸에 값이 36px,
+     세로 여백이 58px 이나 비어 있었다 — 곁눈질로 읽는 계기라 숫자가
+     클수록 좋다. */
+  padding: 4px 6px 6px;
+  /* 라벨·값을 세로로 쌓고 전부 가운데. 값과 단위만 한 줄에 나란히 선다. */
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px; min-width: 0;
+}
+/* 값 + 단위 한 줄. 단위가 값 옆에 붙되 가운데 정렬을 안 깨뜨린다. */
+#strip .sc > b { display: inline-block; }
+#strip .sc[hidden] { display: none; }
+#strip .k { font-size: 13px; color: var(--muted);
+            letter-spacing: .3px; white-space: nowrap; text-align: center; }
+/* 단위는 라벨 옆 괄호 안에 (2026-09-10). 값 아래 따로 두면 세로 공간을
+   먹고, 값에서 눈을 떼야 단위를 읽는다. 이름과 같은 줄이면 한 번에 읽힌다. */
+#strip .k em { font-style: normal; color: var(--border-2); }
+/* 곁눈질로 읽는 값이라 크게. tabular-nums 라 자릿수가 바뀌어도 안 흔들린다.
+   칸이 세로로 커졌으니 글자도 같이 키운다 — 안 키우면 여백만 늘어난다. */
+#strip b {
+  /* 34 → 46px. 칸 265×110 에 82×36 이던 값을 키운다. 자릿수가 가장 많은
+     "위치 오차"(0.19)와 "속도"(22.9)가 기준이다 — 4자리가 안 눌려야 한다. */
+  font-family: var(--mono); font-size: 46px; font-weight: 700; line-height: 1.02;
+  font-variant-numeric: tabular-nums; color: var(--text);
+  min-width: 0; text-align: center;
+}
+/* 단위는 라벨로 올라갔다 (2026-09-10) — 값 아래 <i> 는 더 이상 안 쓴다. */
+
+/* 🔴 색 예산 — 평소엔 전부 무채색이다. 색이 보이는 것 자체가 신호다.
+   구분선을 없앤 뒤로는 칸 배경을 칠하면 그 칸만 네모로 도드라져 격자가
+   되살아난 것처럼 보인다. 색은 **숫자에만** 준다. */
+#strip .sc.warn b { color: var(--warn); }
+#strip .sc.bad  b { color: var(--bad); }
+
+/* ── 모터: 기체 형상 위에 그린다 ─────────────────────────────
+   숫자 넷을 2×2 로 놓던 것을 그림으로 바꿨다 (2026-09-09). 숫자만으로는
+   "48 과 41 중 어느 쪽이 어느 팔인가" 를 매번 머리로 옮겨야 했다.
+   기수가 위인 X 형상에 얹으면 그 변환이 사라진다.
+
+   🔴 색 예산은 그대로다 — 평소 무채색, 이상할 때만 색.
+   다만 **부하 자체는 밝기와 크기로** 항상 보인다. 무채색 안에서의
+   밝기 차이는 "경고" 로 안 읽히므로 색 예산을 안 쓴다. */
+/* 🔴 그림 칸이 격자 높이를 밀어올리면 안 된다.
+   #strip 의 행은 auto 라 자식이 크면 스트립 전체가 커지고, 좁은 창에서
+   화면 밖으로 밀린다 (자체검사 「좁아도 스트립이 화면 안」 이 잡는다).
+   min-height:0 + 절대배치로 SVG 를 칸 안에 가둔다 — 칸 높이는 옆 두 칸
+   (편차·평균)이 정하고 그림은 남는 만큼만 쓴다. */
+/* 🔴 그림 칸이 격자 높이를 밀어올리면 안 된다.
+   #strip 의 행은 auto 라, SVG 를 width/height:100% 로 두면 viewBox 본래
+   크기(300px)를 자기 높이로 주장해 칸(175px)을 125px 넘치고 아래 로터
+   둘이 화면 밖으로 잘린다 (2026-09-09 실측).
+   min-height:0 인 flex 칸 + height:100% 인 SVG 라야 칸이 정한 높이에
+   맞춰 접힌다. viewBox 가 정사각이고 preserveAspectRatio 는 기본값(meet)
+   이라 칸이 가로로 길어져도 그림은 안 찌그러지고 가운데 선다. */
+/* 그림이 칸을 꽉 쓴다 (2026-09-10). 라벨("모터 부하")도 뺐다 — 기수 화살표와
+   네 로터가 그 자체로 무엇인지 말한다. 여백은 잘리지 않을 만큼만. */
+#sc-frame { padding: 2px; min-height: 0; overflow: hidden; }
+/* flex-basis 0 이 핵심이다. flex:1 의 기본 basis 는 auto 라 SVG 가 제
+   본래 높이(viewBox 300px)를 최소치로 주장하고, 그만큼 스트립이 부풀어
+   좁은 창에서 화면 밖으로 밀린다 (자체검사 「좁아도 스트립이 화면 안」).
+   basis 0 이면 남는 높이만 나눠 갖는다 — 칸이 그림 크기를 정하지,
+   그림이 칸 크기를 정하지 않는다. */
+#mframe { flex: 1 1 0; width: 100%; height: auto; min-height: 0; display: block; }
+/* 동체·기수는 배경 수준으로 어둡게. 주인공은 로터다. */
+#mframe .fuse { stroke: var(--border-2); stroke-width: 4; stroke-linecap: round; }
+#mframe .nose { fill: var(--border-2); }
+/* 팔은 부하에 따라 굵어진다 — stroke-width 를 스크립트가 준다. */
+#mframe .arm {
+  stroke: var(--border-2); stroke-width: 3; stroke-linecap: round;
+  transition: stroke-width .18s linear, stroke .18s linear;
+}
+/* 로터: r 과 fill 을 스크립트가 준다. 테두리는 항상 있어서 값이 0이거나
+   데이터가 끊겨도 자리가 남는다 — 사라지면 "모터가 없다" 로 오독된다. */
+#mframe .rot {
+  fill: var(--panel-2); stroke: var(--border-2); stroke-width: 2;
+  transition: r .18s linear, fill .18s linear, stroke .18s linear;
+}
+/* 값은 로터 안에. dominant-baseline 으로 원 중심에 세로 정렬한다. */
+#mframe .mv {
+  font-family: var(--mono); font-size: 17px; font-weight: 700;
+  fill: var(--text); text-anchor: middle; dominant-baseline: central;
+  font-variant-numeric: tabular-nums;
+}
+/* 🔴 색은 **그 모터 자신의 부하**가 정한다 (2026-09-09): 70%↑ 노랑, 80%↑ 빨강.
+   편차로 칠하던 것을 걷어냈다 — 한 로터가 상황마다 다른 이유로 칠해지면
+   색의 뜻이 흔들린다. 편차는 오른쪽 숫자 칸이 색으로 계속 경고한다.
+   테두리뿐 아니라 채움도 물들여야 작은 화면에서 눈에 걸린다. */
+#mframe .rot.warn { stroke: var(--warn); stroke-width: 3.5; }
+#mframe .arm.warn { stroke: var(--warn); }
+#mframe .rot.bad  { stroke: var(--bad);  stroke-width: 4; }
+#mframe .arm.bad  { stroke: var(--bad); }
+/* 값 글자는 흰색을 지킨다 — 채움이 이미 색을 가지므로 글자까지 물들이면
+   원 안에서 대비가 떨어져 숫자가 안 읽힌다. 색은 테두리·채움이 낸다. */
+#mframe .mv.warn, #mframe .mv.bad { fill: #fff; }
+/* 요약 숫자는 크게. 칸이 좁아진 만큼 글자로 채운다 — 곁눈질로 읽는 값이다. */
+/* 모터 요약 칸은 150px 로 더 높다 (세로 여백 91px 이 비어 있었다). */
+#sc-mspread b, #sc-mavg b { font-size: 52px; }
+#sc-mspread .k, #sc-mavg .k { color: var(--dim); }
+
+/* ── 헤더 배지 ───────────────────────────────────────────── */
+.pill {
+  font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--border-2); background: var(--panel-2); color: var(--dim);
+  letter-spacing: .3px; white-space: nowrap;
+}
+.pill-off { color: var(--muted); }
+.pill-live { background: rgba(63,185,80,.15); border-color: var(--ok); color: var(--ok); }
+.pill-warn { background: rgba(210,153,34,.15); border-color: var(--warn); color: var(--warn); }
+.pill-bad { background: rgba(248,81,73,.15); border-color: var(--bad); color: var(--bad); }
+button.on { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+a.btn { display: inline-block; text-decoration: none; }
+
+/* ── 차트 단 ─────────────────────────────────────────────── */
+/* 🔴 좌측 #hudPane 과 **같은 행 비율**(1.32fr : 1fr)을 쓴다. 그래야 지도
+   아랫선이 HUD 아랫선과 정확히 맞는다 (요구: HUD 와 같은 수직 범위).
+   하단 조작 바는 행을 차지하지 않는다 — 행에 넣으면 그 26px 만큼 우측만
+   짧아져 두 아랫선이 어긋난다 (실측 15px). 차트 위에 겹쳐 띄운다. */
+#chartPane { position: relative; display: grid; grid-template-rows: 1fr 1fr; }
+#chartPane > .msgs { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; }
+/* 겹친 바가 마지막 차트의 x축 눈금을 가리지 않게 그만큼 비워 둔다 */
+#charts { padding-bottom: 26px; }
+/* 켠 단이 세로를 나눠 갖는다. 고정 높이로 두면 단을 1~2개만 켰을 때 아래가
+   통째로 빈다.
+   🔴 스크롤바를 만들지 마라 (2026-09-11). overflow-y:auto + .lchart 의
+      min-height:150px 이었는데, 3단부터 379px 영역에 안 들어가 우측에
+      스크롤바가 생겼다. 네 칸 레이아웃에서 그 폭만큼 차트가 좁아지고
+      HUD 와 폭이 어긋난다. 넘치게 두지 말고 나눠 갖게 한다. */
+#charts { overflow: hidden; min-height: 0; background: var(--panel);
+          display: flex; flex-direction: column; }
+
+/* 차트 한 단. 로그 뷰어(log.html)의 .chart 와 같은 뼈대다. */
+.lchart { position: relative; border-bottom: 1px solid var(--border);
+           /* min-height 를 두면 그 값 아래로 안 줄어 넘친다. 7단(최대)까지
+              균등하게 나눠 갖도록 0 으로 둔다 — 얇아져도 전부 보인다. */
+           flex: 1 1 0; min-height: 0; overflow: hidden;
+           display: flex; flex-direction: column;
+           /* 네 칸 배경 통일 — 계기판과 같은 --panel (2026-09-11) */
+           background: var(--panel); }
+/* 높이는 부모(.lchart)가 나눠 준 만큼 쓴다. drawChart 가 clientHeight 를
+   읽어 viewBox 를 잡으므로 CSS 높이가 곧 그림 해상도다.
+   위쪽 18px 는 축 머리말·현재값 자리다. */
+.lchart svg { display: block; width: 100%; flex: 1 1 auto; min-height: 0;
+              padding-top: 18px; }
+/* 커서를 올릴 수 있다는 신호 */
+.lchart svg { cursor: crosshair; }
+
+/* 호버 값 말풍선 — 로그 뷰어(log.html)의 .chart .tip 과 같은 규칙이다.
+   🔴 position:absolute 가 핵심이다. 이게 없으면 flex 자식으로 흘러 단
+   왼쪽 아래에 눌러앉고, JS 가 넣는 left/top 이 아무 효과가 없다.
+   부모 .lchart 에 position:relative 가 걸려 있어 그 기준으로 잡힌다. */
+.lchart .tip {
+  position: absolute; pointer-events: none; z-index: 6; opacity: 0;
+  transition: opacity .08s; background: var(--panel); color: var(--text);
+  border: 1px solid var(--border-2); border-radius: 6px; padding: 5px 8px;
+  font-size: 11px; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  font-variant-numeric: tabular-nums; font-family: var(--mono);
+}
+.lchart .tip .t { color: var(--muted); font-size: 10px; margin-bottom: 3px; }
+.lchart .tip .r { display: flex; align-items: baseline; gap: 8px; line-height: 1.5; }
+.lchart .tip .r .n { flex: 1; color: var(--dim); }
+.lchart .tip .r .d { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.lchart .tip .r b { font-weight: 600; }
+.lchart .tip .r i { font-style: normal; color: var(--muted); }
+
+#charts .empty { padding: 50px 20px; color: var(--muted); text-align: center; font-size: 13px; }
+
+/* 단 선택. 차트 위에 떠 있던 것을 하단 바 안으로 내렸다 (2026-09-05) —
+   그림을 가리지 않고 조작이 한 줄에 모인다. */
+#toc { display: flex; align-items: center; gap: 0 2px; margin-left: 6px; }
+#toc label {
+  display: flex; align-items: center; gap: 4px; cursor: pointer;
+  color: var(--muted); padding: 1px 5px; border-radius: 4px; user-select: none;
+  white-space: nowrap; font-size: 11px; line-height: 1.6;
+}
+#toc label:hover { background: var(--panel-2); color: var(--text); }
+#toc label.on { color: var(--accent); background: var(--panel-2); }
+#toc input { accent-color: var(--accent); margin: 0; flex: 0 0 auto;
+             width: 11px; height: 11px; }
+
+.win { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.win select { padding: 3px 6px; font-size: 11px; }
+
+/* ── 하단 조작 바 ────────────────────────────────────────
+   메시지 목록은 뺐다 (2026-09-10). 링크 상태·기록·재생·시간창은 조작이라 남는다. */
+.msgs {
+  border-top: 1px solid var(--border); overflow: hidden; display: grid;
+  grid-template-rows: 26px; background: var(--panel);
+}
+.msgs .hd {
+  display: flex; align-items: center; gap: 8px; padding: 0 8px;
+  font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border);
+}
+/* 기록 상태 배지. 적는 중에는 붉게 깜빡인다 — 비디오 장비의 관습을 따른다.
+   실내대기는 노랑(경고가 아니라 "아직") 이다. */
+.msgs .hd #recSt {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  padding: 0 4px; border-radius: 3px; border: 1px solid transparent;
+}
+#recSt.rec-on { color: var(--bad); border-color: var(--bad); animation: recblink 2s infinite; }
+#recSt.rec-wait { color: var(--warn); border-color: var(--warn); }
+#recSt.rec-err { color: var(--bad); border-color: var(--bad); }
+@keyframes recblink { 0%,60% { opacity: 1; } 80%,100% { opacity: .45; } }
+/* 움직임에 민감한 사람에게는 깜빡임을 끈다. 색만으로도 뜻이 통한다. */
+@media (prefers-reduced-motion: reduce) { #recSt.rec-on { animation: none; } }
+/* 데이터 원천 배지 — ELRS 는 느린 경로라 눈에 띄게, USB 는 평범하게. */
+/* 배지지만 버튼이다 — 눌러서 경로를 고정한다. 브라우저 기본 테두리를 지워
+   옆의 상태 표시들과 같은 줄에 같은 무게로 앉힌다. */
+#linkSrc { font-weight: 700; letter-spacing: .4px; padding: 0 5px;
+           border-radius: 4px; font-size: 11px;
+           border: 0; background: none; color: inherit;
+           font-family: inherit; line-height: 1.6; cursor: pointer; }
+#linkSrc:hover { outline: 1px solid var(--bd); }
+#linkSrc.src-elrs { color: var(--warn); background: rgba(210,153,34,.14); }
+#linkSrc.src-usb  { color: var(--ok);   background: rgba(63,185,80,.14); }
+/* 고정 중에는 테두리를 둘러, 지금 보이는 경로가 자동 선택이 아니라 조종자가
+   세워 둔 것임을 값이 멈춰 있어도 알 수 있게 한다. */
+#linkSrc.pinned { outline: 1px solid currentColor; }
+.msgs .hd .grow { flex: 1; }
+.msgs .hd button { padding: 0 6px; font-size: 11px; line-height: 1.6; }
+.msgs .hd select {
+  padding: 1px 4px; font-size: 11px; line-height: 1.5;
+  background: var(--bg); color: var(--dim);
+  border: 1px solid var(--border-2); border-radius: 5px;
+}
+.msgs .hd .stats {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 42%;
+}
+
+/* 링크 상태 = 점 하나. 글자로 적으면 하단 바 폭을 먹는데, 조종자가 이 자리에서
+   알아야 할 것은 "붙었나 아닌가" 뿐이다. 색만으로 충분하다.
+   ⚠️ 색맹 대비로 title 에 글자를 남긴다 — 마우스를 올리면 상태가 나온다. */
+.dot { font-size: 13px; line-height: 1; flex: none; color: var(--muted); }
+.dot.live { color: var(--ok); }
+.dot.warn { color: var(--warn); }
+.dot.bad  { color: var(--bad); animation: dotBlink 1s step-end infinite; }
+@keyframes dotBlink { 50% { opacity: .25; } }
+/* 좁은 화면: HUD 위 · 차트 아래. DOM 순서가 이미 HUD 먼저라 order 속임수가 필요 없다. */
+@media (max-width: 900px) {
+  /* 🔴 폰에서는 문서가 **내용만큼 자라야** 한다 (2026-09-17).
+     데스크톱은 `html,body{height:100%}` + `overflow:hidden` 으로 한 화면에
+     가둔다. 그 높이가 폰에도 남아 있으면, 세로로 쌓인 패널이 화면을 넘어도
+     문서는 화면 높이에서 끝난다 — 넘친 부분은 스크롤해도 닿지 못한다.
+     실측: #chartPane 바닥 y=1281 인데 docH=701 이라 **재생 버튼에 영영
+     도달할 수 없었다** (조종자 지적). height 를 풀어야 스크롤이 생긴다. */
+  html, body { overflow: auto; height: auto; min-height: 100%; }
+  body { display: block; }
+  /* flex 자식으로서 눌려 있던 제약도 같이 푼다 — 안 그러면 main 이 자라도
+     문서가 따라 자라지 않는다. */
+  main { grid-template-columns: 1fr; flex: none; min-height: 0; height: auto; }
+  /* 좁으면 지도와 HUD 를 위아래로 쌓는다. 가로로 두면 둘 다 못 쓸 만큼 좁다.
+     🔴 hudTop 의 **행 높이 안에서** 나눈다 — 바깥에 높이를 더하면 스트립이
+     화면 밖으로 밀린다 (자체검사 「좁아도 스트립이 화면 안」 이 잡는다). */
+  #hudPane { border-right: 0; border-bottom: 1px solid var(--border); }
+  /* 🔴 높이는 자식(#hudBox)이 아니라 **행**에 준다. 자식에 56vh 를 주면
+     `1fr` 행이 그만큼 안 자라 hudBox 가 제 부모를 넘치고, 뒤따르는 차트
+     패널이 그 위를 덮어 전류·상태 밴드와 숫자 스트립이 통째로 가려진다
+     (실측: hudPane 447px 안에 hudBox 560px). 행을 키우면 자식은 따라온다. */
+  #hudPane { grid-template-rows: minmax(360px, 56vh) auto; }
+  /* 좁으면 지도와 차트를 위아래로 쌓는다 — 지도는 고정 높이, 나머지가 차트. */
+  #chartPane { height: 92vh; grid-template-rows: minmax(220px, 34vh) 1fr auto; }
+
+  /* 🔴 하단 바를 **겹치기에서 흐름으로 되돌린다** (2026-09-17).
+     데스크톱에서는 `position:absolute` 로 차트 위에 겹쳐 띄운다 — 행을
+     차지하면 우측만 26px 짧아져 HUD 와 아랫선이 어긋나기 때문이다(윗쪽
+     주석). 그런데 폰에서는 패널이 **세로로 쌓여** #chartPane 바닥이
+     화면 밖으로 내려간다. 거기에 absolute 로 붙은 바는 문서 높이에도
+     안 잡혀 **스크롤해도 닿지 못한다** — 재생 버튼이 y=1281 인데 문서가
+     701 이었다 (실측). 아랫선 정렬은 한 칸씩 쌓인 폰에서는 의미가 없으므로
+     여기서만 흐름 배치로 되돌린다. */
+  #chartPane > .msgs { position: static; }
+  /* 겹치지 않으니 x축을 피하려던 여백도 필요 없다. */
+  #charts { padding-bottom: 0; }
+  /* 🔴 #chartPane 은 height:92vh 로 못박혀 있어, 흐름으로 되돌린 하단 바가
+     그 안에 안 들어가고 마지막 줄이 잘린다 (실측: 바 바닥 1301 vs 판 바닥
+     1281). 폰에서는 높이를 내용에 맡긴다 — 어차피 세로로 쌓이므로 고정
+     높이가 지킬 정렬이 없다. */
+  #chartPane { height: auto; }
+
+  /* 🔴 하단 바를 접는다. `display:flex` 만 있고 wrap 이 없어 폰 폭에서
+     한 줄에 밀어 넣다가 끝 요소(재생)가 밖으로 나갔다.
+     체크박스 6 + select 1 + button 2 는 390px 에 한 줄로 못 들어간다. */
+  .msgs .hd { flex-wrap: wrap; row-gap: 4px; padding: 3px 8px; }
+  /* 빈 공간을 밀어내던 스페이서는 접힌 줄에서 한 줄을 통째로 먹는다. */
+  .msgs .hd .grow { flex: 1 1 0; min-width: 0; }
+}
+
+/* ── 재생 바 ────────────────────────────────────────────────────────
+   녹화된 .tlog 를 같은 화면에 흘릴 때만 나온다. 평소에는 hidden 이라
+   행이 0 이 되고, 실시간 화면은 지금까지와 똑같이 보인다.
+
+   ⚠️ .msgs 가 grid 라 행을 명시해야 한다. hidden 인 자식은 grid 행을
+      차지하지 않으므로(display:none) 3행 정의만으로 안전하다. */
+.msgs { grid-template-rows: 26px auto 1fr; }
+
+/* 🔴 폰에서는 그 26px 를 풀어야 한다 (2026-09-17). 하단 바가 두 줄로 접히는데
+   행이 26px + `overflow:hidden` 이면 둘째 줄이 통째로 잘린다 — 맨 끝의 재생
+   버튼이 거기 있다 (실측: .hd 높이 26 인데 내용 46, 버튼이 판 바닥보다 20px
+   아래). 이 규칙은 위 @media 블록보다 **뒤에** 있어야 한다. 앞에 두면 이
+   줄이 다시 26px 로 덮어써서 아무 효과가 없다 — 실제로 그렇게 한 번 놓쳤다. */
+@media (max-width: 900px) {
+  .msgs { grid-template-rows: auto auto 1fr; overflow: visible; }
+}
+#playBar {
+  display: flex; align-items: center; gap: 8px; padding: 3px 8px;
+  font-size: 11px; color: var(--muted);
+  border-bottom: 1px solid var(--border); background: var(--bg);
+}
+#playBar[hidden] { display: none; }
+#playBar select, #playBar button {
+  padding: 1px 6px; font-size: 11px; line-height: 1.6;
+  background: var(--panel); color: var(--dim);
+  border: 1px solid var(--border-2); border-radius: 5px;
+}
+#playPick { flex: none; max-width: 34%; }
+#playSeek { flex: 1; min-width: 80px; accent-color: var(--accent, #58a6ff); }
+#playTime { flex: none; }
+/* 재생 중임을 화면 전체가 말해야 한다 — 지금 값과 과거 값을 헷갈리면
+   위험하다. 상단에 띠를 하나 두른다. */
+body.replaying #chartPane { box-shadow: inset 0 3px 0 var(--warn); }
+body.replaying #playToggle { color: var(--warn); font-weight: 700; }
+/* ── 로그 재생 ──────────────────────────────────────────────────────
+   같은 화면에서 지난 비행을 돌려 본다. 계기·차트는 라이브와 **같은 코드**라
+   여기서는 조작 줄과 고르기 창만 얹는다.
+
+   🔴 재생 바는 켜져 있을 때만 나타난다(`hidden`). 실시간으로 보는 동안
+      화면 아래를 한 줄이라도 뺏으면 안 된다 — 그때는 계기가 전부다. */
+#pbBar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1040;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  background: var(--panel-2); border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+#pbBar[hidden] { display: none; }
+#pbBar button, #pbBar select {
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 3px 8px; font-size: 12px; cursor: pointer;
+}
+#pbBar button:hover, #pbBar select:hover { background: var(--panel-2); }
+#pbPlay { min-width: 34px; font-size: 13px; }
+#pbName {
+  color: var(--dim); font-family: var(--mono); font-size: 11px;
+  max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 시각은 폭이 흔들리면 눈이 따라가기 힘들다 — 고정폭. */
+#pbTime { font-family: var(--mono); color: var(--dim); min-width: 11ch; text-align: right; }
+#pbSeek { flex: 1; min-width: 120px; accent-color: var(--accent); cursor: pointer; }
+
+/* ⚠️ 재생 중 `main` 에 파란 outline 을 두르던 것을 지웠다 (2026-09-12,
+   조종자 지시). 4변 중 **왼쪽 한 변만** 보였다 — 위는 HUD, 오른쪽은 지도의
+   4px 테두리, 아래는 #pbBar 가 덮어서다. 테두리로 안 읽히고 「정체불명의
+   파란 수직선」으로 읽혔다. 재생 중인지는 하단 재생 바가 이미 말한다. */
+body.playback { padding-bottom: 38px; }
+
+/* ── 로그 고르기 ─────────────────────────────────────────────────── */
+/* 🔴 지도(#mapPane)가 쌓임 맥락을 만들기 전에는 Leaflet 의 1000 이 이 창을
+   덮었다. 이제 갇혔지만, 전면 오버레이는 그래도 네 자리로 둔다 — 지도가
+   격리되지 않은 상태로 되돌아가도 살아남게. */
+#pbPick {
+  position: fixed; inset: 0; z-index: 1050;
+  background: rgba(0, 0, 0, .55);
+  display: flex; align-items: center; justify-content: center;
+}
+#pbPick[hidden] { display: none; }
+#pbPick .box {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  width: min(560px, 92vw); max-height: 76vh; display: flex; flex-direction: column;
+}
+#pbPick .hd {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+}
+#pbPick .hd .grow { flex: 1; }
+#pbPick .hd button {
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 3px 8px; font-size: 12px; cursor: pointer;
+}
+#pbList { overflow-y: auto; padding: 4px 0; }
+#pbList .row {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 5px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+}
+/* 배지가 맨 왼쪽이다. 폭을 고정해 이름의 왼쪽 끝이 줄마다 맞는다 —
+   안 맞추면 배지 개수에 따라 이름이 들쭉날쭉해 목록을 훑기 어렵다. */
+#pbList .kinds { min-width: 9ch; }
+#pbList .row:last-child { border-bottom: 0; }
+#pbList .row:hover { background: var(--panel-2); }
+#pbList .nm { font-family: var(--mono); font-size: 11px; flex: 1;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pbList .wh { color: var(--dim); font-size: 11px; }
+#pbList .sz { color: var(--muted); font-size: 11px; min-width: 7ch; text-align: right; }
+#pbList .msg { padding: 10px 12px; color: var(--muted); font-size: 12px; }
+
+/* 통합 목록의 구획 머리 — 실시간 기록 / FC 로그. 두 종류가 한 목록에 서므로
+   어디서 온 파일인지 줄마다 안 써도 되게 한 번만 말한다. */
+#pbList .gh {
+  padding: 8px 12px 3px; font-size: 11px; font-weight: 600;
+  color: var(--dim); border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+}
+#pbList .gh:first-child { padding-top: 4px; }
+
+/* 경로 배지. 한 비행에서 두 링크로 받았으면 두 개가 나란히 선다 —
+   눌러서 그 링크의 기록만 튼다 (어느 쪽이 무엇을 놓쳤나가 요점이다). */
+#pbList .kinds { display: flex; gap: 4px; flex: 0 0 auto; }
+#pbList .kind {
+  font-family: var(--mono); font-size: 10px; line-height: 1.5;
+  padding: 0 5px; border-radius: 3px; cursor: pointer;
+  border: 1px solid var(--border-2); background: var(--panel-2); color: var(--dim);
+}
+#pbList .kind:hover { border-color: var(--muted); }
+/* 색으로 가른다. ELRS 는 조종기 백팩(느리고 성긴 링크), FC 는 USB 브리지
+   직결(빠르다), BIN 은 기체 SD 에서 내려받은 원본이다. */
+#pbList .k-ELRS { color: var(--warn); border-color: var(--warn); }
+#pbList .k-FC   { color: var(--accent); border-color: var(--accent); }
+#pbList .k-BIN  { color: var(--ok); border-color: var(--ok); cursor: default; }
+/* 번호를 추론한 로그. 같은 초록이되 테두리를 점선으로 — FC 가 준 번호와
+   같다는 보장이 없다는 것을 색이 아니라 형태로 말한다 (색맹에게도 보인다). */
+#pbList .k-BINX {
+  color: var(--ok); border-color: var(--ok); border-style: dashed;
+  opacity: .75; cursor: default;
+}
+/* 복구본·원격은 곁다리 표시라 눈에 덜 띄어야 한다. */
+#pbList .k-REC2 { color: var(--warn); border-color: var(--warn); cursor: default; }
+#pbList .k-REM  { color: var(--muted); border-color: var(--border-2); cursor: default; }
+#pbList .msg.warn { color: var(--warn); }
+
+/* ── 분류 배지 — 제목 **오른쪽**에 (2026-09-15) ────────────────────
+   목록 페이지(drone01.bewe.co.kr)와 같은 것을 여기서도 본다. 어느 비행이
+   미션이었는지 RTL 이었는지 모르고 고르면, 틀어 놓고서야 알게 된다.
+
+   🔴 왼쪽 `.kind` 와 다른 자리를 쓴다. 왼쪽은 **파일의 성격**(어느 링크로
+   받았나·원본인가)이고 이쪽은 **비행의 성격**이다. 섞어 놓으면 둘 다 흐려진다.
+
+   색은 목록 페이지(app.css)와 맞춘다 — 두 화면에서 같은 비행이 다른 색이면
+   같은 것인 줄 모른다. */
+#pbList .tags { display: flex; gap: 4px; flex: 0 0 auto; margin-left: 8px; }
+#pbList .tag {
+  font-size: 10px; line-height: 1.6; padding: 0 6px; border-radius: 999px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+#pbList .t-flight { background: #12321c; color: #4ac26b; border-color: #1d572f; }
+#pbList .t-hover  { background: #142c47; color: #6cb6ff; border-color: #1d456f; }
+#pbList .t-ground { background: #21262d; color: #8b949e; border-color: #30363d; }
+#pbList .t-abort  { background: #3a2a12; color: #e3b341; border-color: #5c421c; }
+#pbList .t-noarm  { background: #2d2118; color: #db8b52; border-color: #4a3524; }
+#pbList .t-misn   { background: #2e1065; color: #c4a7ff; border-color: #4c1d95; }
+#pbList .t-rtl    { background: #4a1216; color: #ff6b6b; border-color: #7a1f26; }
+
+
+/* ── 웹(drone01.bewe.co.kr/live)에서만 ─────────────────────────────
+   같은 화면을 웹에서도 쓴다. 로컬 전용 조작은 JS 가 숨기고, 여기서는
+   목록으로 돌아가는 링크만 자리를 잡는다. */
+.weblink {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 12px;
+  padding: 2px 8px 2px 0;
+  white-space: nowrap;
+}
+.weblink:hover { color: var(--text); }
+
+/* ── 침범 경고 ──────────────────────────────────────────────────────
+   🔴 화면 **한가운데**를 가로지른다. 구석의 작은 배지로는 조종 중에 안 보인다.
+   유인기가 1km 안에 들어왔거나 규제 공역에 들어갔을 때만 뜬다.
+   ⚠️ pointer-events:none — 경고가 조종 화면의 클릭을 막으면 안 된다. */
+#zoneAlert {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; flex-direction: column; gap: 10px;
+  align-items: center; justify-content: center;
+  pointer-events: none;
+  background: rgba(120, 0, 0, .18);
+  animation: zaPulse 1s ease-in-out infinite;
+}
+#zoneAlert .zaLine {
+  font: 900 clamp(22px, 4.6vw, 54px)/1.15 ui-monospace, monospace;
+  letter-spacing: 1px; text-align: center;
+  color: #fff; background: rgba(190, 0, 0, .92);
+  border: 3px solid #fff; border-radius: 10px;
+  padding: 14px 34px; max-width: 92vw;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, .6);
+}
+@keyframes zaPulse {
+  0%, 100% { background: rgba(120, 0, 0, .10); }
+  50%      { background: rgba(190, 0, 0, .30); }
+}
+/* 움직임에 민감한 사람에게는 깜빡임을 끈다 — 문구는 그대로 보인다. */
+@media (prefers-reduced-motion: reduce) {
+  #zoneAlert { animation: none; background: rgba(150, 0, 0, .22); }
+}

@@ -1,25 +1,13 @@
 #!/usr/bin/env python3
-"""DRONE(2 kg 쿼드) 전용 라이브 화면.
+"""DRONE01 라이브 화면 — 실시간 계기와 .BIN 로그 재생을 HTTP 로 내준다.
 
-SHADE01 의 `web/live/mav_live.py` 와 **별개 프로그램**이다. 화면(HTML/CSS/JS)은
-SHADE01 것을 그대로 읽어 쓰지만, 파싱은 이 파일이 따로 한다. SHADE01 코드는
-한 줄도 건드리지 않는다.
+    rim3 :4410        FC USB 를 읽어 /api/state (웹의 /live 는 livepush 로 받는다)
+    랩서버 :4411      --device none. 웹의 /api/playback/* 재생만 한다
 
-🔴 왜 따로 만들었나 (2026-09-16)
-   SHADE01 의 live 로 이 기체를 보면 **조용히 틀린 화면**이 나온다. 두 가지다.
+화면(HTML/CSS/JS)은 이 저장소의 web/live/public 과 web/public 이다.
 
-   1. 모터를 MAIN3/4/6/7 에서 읽는다. 그것은 SHADE01(VTOL) 의 출력 배치다.
-      이 기체는 ArduCopter 쿼드라 **MAIN1~4** 다. 겹치는 3,4 만 그려지고
-      나머지 둘은 "—" 로 비었다 — 모터가 안 도는 것처럼 보였다.
-      (2026-09-16 실측: M1=1443 M2=1500 M3=1541 M4=1396 으로 넷 다 살아 있었다)
-
-   2. 배터리를 `BATTERY_STATUS` 우선으로 읽는다. 그것은 PX4 + PM08 DroneCAN
-      전제다. ArduCopter 3.6.12 는 이 메시지를 **껍데기로** 보낸다 —
-      current 0 / remaining 100 / voltages 전부 65535 (2026-09-16 실측).
-      그래서 화면이 늘 100 % · 0.0 A 였다.
-      이 기체는 `SYS_STATUS` 를 봐야 한다 (14811 mV / 13 = 1.3 A / 98 %).
-
-   섞으면 CLAUDE.md 가 금지한 "다른 기체 값을 이 기체 것처럼 쓰기" 가 된다.
+배터리는 `SYS_STATUS` 를 본다 — ArduCopter 3.6.12 는 `BATTERY_STATUS` 를
+껍데기로 보낸다 (current 0 / remaining 100, 2026-09-16 실측).
 
 읽기 전용이다. FC 로 나가는 바이트는 **데이터 스트림 요청뿐**이다 —
 `request_data_stream_send` 는 텔레메트리를 달라는 요청이고 파라미터·명령이
@@ -40,7 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 try:
     from pymavlink import mavutil
 except ImportError:
-    sys.exit("pymavlink 이 없다. ~/.venv-mav/bin/python 으로 실행해라.")
+    sys.exit("pymavlink 이 없다. .venv/bin/python 으로 실행해라 (web/README.md 「rim3」).")
 
 
 # ── 상수 ──────────────────────────────────────────────────────────────
@@ -48,17 +36,13 @@ LINK_TIMEOUT = 3.0          # 이 초 동안 조용하면 화면이 "끊김" 으
 TRACK_MAX = 20000           # 항적 상한. 넘으면 앞에서 버린다
 MSG_MAX = 200               # STATUSTEXT 보관 수
 
-# SHADE01 의 화면 자산을 그대로 쓴다. 같은 JSON 스키마를 내면 그대로 그려진다.
-#
-# 🔴 자산이 **두 디렉터리에 나뉘어** 있다 (2026-09-16 캡처로 규명).
-#    index.html 은 /app.css·/chart.js·/vendor/leaflet/ 을 루트에서 찾는데
-#    그것들은 live/public 이 아니라 web/public 에 있다. 앞쪽만 서빙하면
-#    404 가 나고 **CSS 변수가 통째로 빠져 글자가 전부 검정**으로 나온다
-#    (app.css 에 색 토큰 21개가 있다).
-#    앞에 있는 것이 이긴다 — index.html 은 양쪽에 다 있고 live 쪽이 맞다.
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 화면 자산. 앞에 있는 것이 이긴다 — index.html 은 양쪽에 다 있고 live 쪽이 맞다.
+# /app.css·/chart.js·/vendor 는 web/public 에 있다. 빠지면 CSS 변수가 통째로
+# 빠져 글자가 전부 검정으로 나온다.
 DEFAULT_PUBLIC = [
-    os.path.expanduser('~/SHADE01/web/live/public'),
-    os.path.expanduser('~/SHADE01/web/public'),
+    os.path.join(REPO, 'web', 'live', 'public'),
+    os.path.join(REPO, 'web', 'public'),
 ]
 
 # ArduCopter 비행모드. 🔴 PX4 표와 다르다 — 섞지 마라.
@@ -82,8 +66,7 @@ FIX = {0: 'NO_GPS', 1: 'NO_FIX', 2: '2D', 3: '3D', 4: 'DGPS',
 #      MAIN1=우전/CCW  MAIN2=우후/CW  MAIN3=좌후/CCW  MAIN4=좌전/CW
 #    🔴 이 상수는 그동안 옛(틀린) 매핑을 들고 있었다 — f3ee0e8 정정이
 #       여기 반영이 안 됐었다. 2026-09-17 에 바로잡았다.
-#    화면 라벨은 SHADE01 과 같은 이름(RF/RB/LF/LB)을 쓴다 — 프론트가 그 키를
-#    기대하기 때문이다. 핀 번호만 이 기체 것으로 바꾼 것이다.
+#    화면 라벨은 RF/RB/LF/LB — 프론트가 그 키를 기대한다.
 MOTOR_PINS = (('RF', 1), ('RB', 2), ('LB', 3), ('LF', 4))
 
 
@@ -91,8 +74,8 @@ def dumps_json(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
 
 
-# 재생할 .BIN 이 있는 곳. flights/sd-recovered-* 를 전부 훑는다.
-LOG_DIRS = [os.path.expanduser('~/DRONE/flights')]
+# 재생할 .BIN 이 있는 곳. 하위 폴더까지 훑는다. 랩서버는 웹 업로드 폴더를 준다.
+LOG_DIRS = [p for p in os.environ.get('DRONE_LOG_DIRS', os.path.join(REPO, 'flights')).split(':') if p]
 
 
 def list_logs():
@@ -115,11 +98,10 @@ def list_logs():
 
 
 class LogPlayback:
-    """열어 둔 로그 하나. SHADE01 의 Playback 클래스와 같은 역할이다
-    (mav_live.py) — 이 기체(.BIN)에 맞게 bin_playback 을 쓸 뿐이다.
+    """열어 둔 로그 하나. 굽는 것은 bin_playback 이 한다.
 
     서버가 시간을 흘리지 않는다 — 재생 시각은 브라우저가 정하고,
-    서버는 「이 시각의 프레임을 달라」에 답할 뿐이다 (SHADE01 과 동일 원칙).
+    서버는 「이 시각의 프레임을 달라」에 답할 뿐이다.
     """
 
     def __init__(self):
@@ -313,7 +295,7 @@ class State:
         elif t == 'VFR_HUD':
             # 🔴 키 이름은 화면(live.js)이 정한다. `spd` 로 내면 속도 칸이
             #    영원히 "—" 다 — 프론트는 `groundspeed` 를 읽는다 (2026-09-16
-            #    캡처로 확인). 화면 자산을 SHADE01 과 공유하는 대가다.
+            #    캡처로 확인).
             d['groundspeed'] = round(msg.groundspeed, 2)
             d['airspeed'] = round(msg.airspeed, 2)
             d['hdg'] = msg.heading
@@ -368,7 +350,7 @@ class State:
             d['clip'] = [msg.clipping_0, msg.clipping_1, msg.clipping_2]
 
         elif t == 'SERVO_OUTPUT_RAW':
-            # 🔴 MAIN1~4 다. SHADE01 의 3/4/6/7 이 아니다 — 첫머리 주석 참조.
+            # 🔴 MAIN1~4 다 — MOTOR_PINS 참조.
             #    PWM 1000~2000us 를 0~100 % 로 편다. 900 미만은 "출력 없음".
             out = {}
             for name, pin in MOTOR_PINS:
@@ -441,10 +423,22 @@ class State:
 
 
 # ── MAVLink 수신 스레드 ───────────────────────────────────────────────
+def find_fc():
+    """이 기체의 FC(Pixhawk 2.4.8) USB 경로. USB id 로 고른다 — 다른 FC 는 안 잡는다."""
+    import glob
+    hits = sorted(glob.glob('/dev/serial/by-id/usb-3D_Robotics*v2*-if00'))
+    return os.path.realpath(hits[0]) if hits else None
+
+
 def reader(st, device, baud, stop):
-    """FC 에 붙어 계속 읽는다. 끊기면 다시 붙는다."""
+    """FC 에 붙어 계속 읽는다. 끊기면 다시 붙는다. device='auto' 면 USB id 로 찾는다."""
+    want = device
     while not stop.is_set():
         conn = None
+        device = find_fc() if want == 'auto' else want
+        if device is None:
+            stop.wait(5)
+            continue
         try:
             print('[link] %s 에 붙는다 (baud=%d)' % (device, baud), flush=True)
             conn = mavutil.mavlink_connection(device, baud=baud)
@@ -453,12 +447,9 @@ def reader(st, device, baud, stop):
                 raise RuntimeError('HEARTBEAT 없음')
 
             # 🔴 이 기체가 맞는지 본다. mav_type 2 = 쿼드.
-            #    22(VTOL)이면 SHADE01 이 꽂힌 것이다 — 그 값을 이 화면으로
-            #    그리면 CLAUDE.md 가 금지한 기체 혼동이 된다.
             if hb.type != mavutil.mavlink.MAV_TYPE_QUADROTOR:
                 print('[link] ⚠️ mav_type=%d 다 (쿼드=2 가 아니다). '
-                      'SHADE01 이 꽂혔을 수 있다. 화면을 신뢰하지 마라.'
-                      % hb.type, flush=True)
+                      '화면을 신뢰하지 마라.' % hb.type, flush=True)
 
             st.src = device
             print('[link] 붙었다. sysid=%d type=%d autopilot=%d'
@@ -559,9 +550,7 @@ class Handler(BaseHTTPRequestHandler):
                               'application/json; charset=utf-8')
 
         # ── 로그 재생 (2026-09-17) ───────────────────────────────────
-        # SHADE01 의 /api/logs, /api/playback/* 와 같은 이름·모양을 쓴다 —
-        # 프론트(index.html/app.js)가 SHADE01 것 그대로라 그 쪽이 부르는
-        # 경로를 맞춰야 그려진다. 실제 파싱은 bin_playback.py, 상태는
+        # 프론트(live.js)가 부르는 /api/logs, /api/playback/* 이름·모양이다. 실제 파싱은 bin_playback.py, 상태는
         # 위 LogPlayback 이 한다.
         if path == '/api/logs':
             return self._send(200, dumps_json(
@@ -648,25 +637,20 @@ class Handler(BaseHTTPRequestHandler):
         }.get(os.path.splitext(full)[1], 'application/octet-stream')
         with open(full, 'rb') as fh:
             body = fh.read()
-        # 🔴 탭 제목이 "SHADE01 라이브" 로 뜨면 기체를 오인한다. 원본은
-        #    SHADE01 소유라 못 고치므로 내보낼 때만 바꾼다.
-        if rel.endswith('.html'):
-            body = body.replace('SHADE01 라이브'.encode('utf-8'),
-                                'DRONE 라이브'.encode('utf-8'))
         return self._send(200, body, ctype)
 
 
 def main():
     ap = argparse.ArgumentParser(
         description='DRONE(2kg 쿼드) 전용 라이브 화면 — 읽기 전용')
-    ap.add_argument('--device', default='/dev/ttyACM0',
-                    help='FC 시리얼 경로 (기본 /dev/ttyACM0)')
+    ap.add_argument('--device', default='auto',
+                    help="FC 시리얼 경로. auto=USB id 로 찾는다, none=재생만 (기본 auto)")
     ap.add_argument('--baud', type=int, default=115200)
-    ap.add_argument('--http', type=int, default=4401,
-                    help='HTTP 포트 (기본 4401 — SHADE01 은 4400)')
+    ap.add_argument('--http', type=int, default=4410,
+                    help='HTTP 포트 (기본 4410)')
     ap.add_argument('--public', action='append', default=None,
                     help='화면 자산 경로. 여러 번 줄 수 있고 앞이 이긴다. '
-                         '(기본: SHADE01 의 live/public + web/public)')
+                         '(기본: 이 저장소의 web/live/public + web/public)')
     args = ap.parse_args()
 
     roots = [os.path.realpath(os.path.expanduser(p))
@@ -677,10 +661,10 @@ def main():
 
     st = State()
     stop = threading.Event()
-    th = threading.Thread(target=reader,
-                          args=(st, args.device, args.baud, stop),
-                          daemon=True)
-    th.start()
+    if args.device != 'none':      # none = 재생만 (랩서버)
+        threading.Thread(target=reader,
+                         args=(st, args.device, args.baud, stop),
+                         daemon=True).start()
 
     Handler.st = st
     Handler.public = roots

@@ -1,19 +1,12 @@
-"""ArduCopter .BIN 로그를 재생 프레임으로 굽는다.
-
-SHADE01 의 `web/live/playback.py` 와 같은 역할(`load_flight()`)을
-이 기체(.BIN)에 맞게 새로 한 것 — 그 파일은 PX4 `.ulg` 전용이라 못 쓴다.
-SHADE01 코드는 한 줄도 건드리지 않는다.
+"""ArduCopter .BIN 로그를 재생 프레임으로 굽는다 (drone_live.py 가 쓴다).
 
 🔴 범위를 자세·모터출력·배터리·GPS 로 좁혔다 (2026-09-16 결정).
    EKF 혁신비·진동은 안 낸다 — 필요해지면 여기 추가한다.
 
-반환 모양은 playback.load_flight() 와 맞춘다:
+반환 모양:
     {'name','path','dur','utc','frames':[{'t','d'},...],'messages':[...],
      'home':[lat,lon] 또는 None, 'track':[[lat,lon,alt],...],
      'hz','repaired','pruned'}
-그래야 mav_live.py 의 Playback 클래스가 SHADE01 것이든 이것이든
-똑같이 다룰 수 있다 — 실제로는 drone_live.py 가 별도 서버라 이 모양을
-그 서버 안에서만 쓴다.
 """
 import math
 import os

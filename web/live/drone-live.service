@@ -1,0 +1,12 @@
+# rim3 user 유닛 — ~/.config/systemd/user/drone-live.service
+# FC USB(3D_Robotics…v2)를 읽어 http://localhost:4410. FC 가 없으면 기다린다.
+[Unit]
+Description=DRONE01 live (:4410)
+
+[Service]
+ExecStart=%h/DRONE/.venv/bin/python %h/DRONE/tools/live/drone_live.py --device auto --http 4410
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

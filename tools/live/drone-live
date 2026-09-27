@@ -1,149 +1,17 @@
 #!/usr/bin/env bash
-# DRONE 라이브 화면 런처. 꽂힌 FC 를 보고 이 기체가 맞을 때만 띄운다.
+# DRONE01 라이브 — rim3 의 systemd 유닛(drone-live, drone-livepush)을 켜고 끈다.
 #
-#   ./drone-live            켠다 (포트 4401)
+#   ./drone-live            켠다 → http://localhost:4410
 #   ./drone-live off        끈다
-#   ./drone-live status     지금 뭐가 꽂혔나
+#   ./drone-live status     상태와 꽂힌 USB
 #
-# 🔴 USB 포트는 하나다. SHADE01 의 shade-bridge.service 가 /dev/ttyACM0 를
-#    잡고 있으면 이 스크립트가 못 붙는다. 켤 때 자동으로 멈추고, 끌 때
-#    되돌린다 — CLAUDE.md 「USB 포트 공유」 수칙대로다.
-
+# FC 는 USB id(3D_Robotics…v2)로 찾는다 — 다른 FC 는 안 잡는다. 안 꽂혀 있어도
+# 켜진다 (로그 재생은 된다). 유닛 설치: web/README.md 「rim3」.
 set -u
-
-HERE="$(cd "$(dirname "$0")" && pwd)"
-PY="${MAV_PYTHON:-$HOME/.venv-mav/bin/python}"
-PORT=4401
-PIDFILE="${XDG_RUNTIME_DIR:-/tmp}/drone-live.pid"
-BRIDGEFILE="${XDG_RUNTIME_DIR:-/tmp}/drone-live.bridge-was-active"
-LOGFILE="${XDG_RUNTIME_DIR:-/tmp}/drone-live.log"
-
-# 꽂힌 FC 를 판별한다. 출처: CLAUDE.md 「USB 포트를 SHADE01 과 공유한다」
-#   3D_Robotics...v2.x  = DRONE   (Pixhawk 2.4.8, ArduCopter)
-#   Auterion...v6C.x    = SHADE01 (VTOL, PX4)
-detect() {
-  local ids
-  ids="$(ls /dev/serial/by-id/ 2>/dev/null || true)"
-  if [[ -z "$ids" ]]; then echo "none"; return; fi
-  if grep -qi '3D_Robotics.*v2\.x' <<<"$ids"; then echo "drone"; return; fi
-  if grep -qi 'Auterion.*v6C' <<<"$ids";   then echo "shade01"; return; fi
-  echo "unknown"
-}
-
-serial_path() {
-  for p in /dev/ttyACM0 /dev/ttyACM1 /dev/ttyUSB0; do
-    [[ -e "$p" ]] && { echo "$p"; return; }
-  done
-  echo ""
-}
-
-running() {
-  [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
-}
-
-cmd_status() {
-  local who; who="$(detect)"
-  echo "꽂힌 FC : $who        ($(ls /dev/serial/by-id/ 2>/dev/null | tr '\n' ' ')) "
-  echo "시리얼  : $(serial_path)"
-  if running; then
-    echo "화면    : 켜짐 (pid $(cat "$PIDFILE"))  http://localhost:$PORT"
-  else
-    echo "화면    : 꺼짐"
-  fi
-  echo -n "브리지  : "; systemctl --user is-active shade-bridge.service 2>&1
-  if [[ -f "$BRIDGEFILE" ]]; then
-    echo "          ↑ 이 화면이 멈춘 것이다. 'off' 가 되돌린다."
-  elif ! systemctl --user is-active --quiet shade-bridge.service; then
-    echo "          ↑ 이 화면이 멈춘 게 아니다 (딴 데서 멈췄다)."
-    echo "            되돌리려면: systemctl --user start shade-bridge.service"
-  fi
-  return 0
-}
-
-cmd_off() {
-  if running; then
-    kill "$(cat "$PIDFILE")" 2>/dev/null || true
-    sleep 1
-    rm -f "$PIDFILE"
-    echo "화면을 껐다."
-  else
-    echo "이미 꺼져 있다."
-  fi
-  # 켤 때 브리지를 멈췄다면 되돌린다. 🔴 이걸 빠뜨리면 다른 PC 의 QGC 가
-  #    조용히 안 붙는다 — 되돌리는 것이 수칙이다.
-  if [[ -f "$BRIDGEFILE" ]]; then
-    rm -f "$BRIDGEFILE"
-    systemctl --user start shade-bridge.service && \
-      echo "shade-bridge 를 되돌렸다."
-  fi
-}
-
-cmd_on() {
-  local who; who="$(detect)"
-
-  case "$who" in
-    none)
-      # 🔴 FC 가 없어도 로그 재생은 된다 — 파일만 읽으면 되기 때문이다.
-      #    예전에는 여기서 멈춰 「FC 를 뽑으면 지난 비행도 못 본다」였다
-      #    (2026-09-17). 라이브 계기는 링크가 붙을 때까지 비어 있을 뿐이다.
-      echo "FC 가 안 꽂혀 있다 — 라이브 없이 켠다 (로그 재생은 된다)." ;;
-    shade01)
-      echo "🔴 지금 꽂힌 것은 SHADE01 (VTOL) 이다. 이 화면은 DRONE 전용이다." >&2
-      echo "   SHADE01 은 기존 live 를 써라:  http://localhost:4400" >&2
-      exit 1 ;;
-    unknown)
-      echo "⚠️ 어느 기체인지 못 알아봤다:" >&2
-      ls /dev/serial/by-id/ >&2
-      echo "   그래도 띄우려면:  FORCE=1 $0" >&2
-      [[ "${FORCE:-}" == "1" ]] || exit 1
-      echo "   FORCE=1 이라 그대로 간다. 화면 값을 믿지 마라." >&2 ;;
-  esac
-
-  if running; then
-    echo "이미 켜져 있다. http://localhost:$PORT"; exit 0
-  fi
-
-  # 🔴 FC 가 없어도 켠다 (2026-09-17). 로그 재생은 파일만 있으면 되는데
-  #    예전에는 여기서 멈춰 「FC 를 뽑으면 지난 비행도 못 본다」였다.
-  #    라이브 계기는 링크가 붙을 때까지 비어 있을 뿐이다.
-  local dev; dev="$(serial_path)"
-  if [[ -z "$dev" ]]; then
-    echo "FC 가 안 꽂혀 있다 — 라이브 없이 켠다 (로그 재생은 된다)."
-    dev="/dev/ttyACM0"     # 나중에 꽂히면 drone_live.py 가 알아서 붙는다
-  fi
-
-  # 포트는 하나다. 브리지가 잡고 있으면 비켜 달라고 한다.
-  if systemctl --user is-active --quiet shade-bridge.service; then
-    echo "shade-bridge 가 $dev 를 잡고 있다 — 잠시 멈춘다."
-    systemctl --user stop shade-bridge.service
-    touch "$BRIDGEFILE"      # 끌 때 되돌리라는 표시
-    sleep 2
-  fi
-
-  [[ -x "$PY" ]] || { echo "python 이 없다: $PY" >&2; exit 1; }
-
-  nohup "$PY" "$HERE/drone_live.py" --device "$dev" --http "$PORT" \
-      >"$LOGFILE" 2>&1 &
-  echo $! > "$PIDFILE"
-  sleep 2
-
-  if running; then
-    echo "켰다 → http://localhost:$PORT"
-    echo "로그 : $LOGFILE"
-    [[ -f "$BRIDGEFILE" ]] && \
-      echo "⚠️ shade-bridge 를 멈춘 상태다. '$0 off' 로 끄면 되돌린다."
-  else
-    echo "띄우기 실패. 로그:" >&2
-    cat "$LOGFILE" >&2
-    rm -f "$PIDFILE"
-    cmd_off >/dev/null 2>&1
-    exit 1
-  fi
-}
-
 case "${1:-on}" in
-  on|"")   cmd_on ;;
-  off)     cmd_off ;;
-  status)  cmd_status ;;
-  *) echo "쓰기: $0 [on|off|status]" >&2; exit 1 ;;
+  on)     systemctl --user start drone-live drone-livepush && echo "켰다 → http://localhost:4410" ;;
+  off)    systemctl --user stop drone-live drone-livepush && echo "껐다" ;;
+  status) systemctl --user --no-pager -n 3 status drone-live drone-livepush
+          echo; ls /dev/serial/by-id/ 2>/dev/null || echo "USB 없음" ;;
+  *)      echo "쓰기: $0 [on|off|status]" >&2; exit 1 ;;
 esac

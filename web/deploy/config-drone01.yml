@@ -1,0 +1,9 @@
+# cloudflared ingress — ~/.cloudflared/config-drone01.yml 로 복사해 쓴다.
+# 🔴 리포가 public 이므로 실제 터널 UUID 는 여기 적지 않는다. 설치할 때 채운다.
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /home/ku/.cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+
+ingress:
+  - hostname: drone01.bewe.co.kr
+    service: http://localhost:4310
+  - service: http_status:404

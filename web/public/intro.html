@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<title>DRONE01 소개</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/app.css">
+<style>
+/* 기체 소개 — 제원만. 값은 README·components/*/README.md 에서 옮긴다. 부품을 바꾸면 여기도 고쳐라. */
+.wrap { max-width: 720px; margin: 0 auto; padding: 48px 16px 64px; }
+.hero h1 { font-size: 44px; font-weight: 800; letter-spacing: .02em; margin: 0; }
+.hero p { color: var(--dim); font-size: 16px; margin: 6px 0 32px; }
+.spec { border: 1px solid var(--border-2); border-radius: 10px; background: var(--panel); }
+.spec div { display: flex; justify-content: space-between; gap: 16px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.spec div:first-child { border-top: 0; }
+.spec span { color: var(--dim); white-space: nowrap; }
+.spec b { font-weight: 600; text-align: right; }
+nav { display: flex; gap: 8px; margin-top: 24px; flex-wrap: wrap; }
+nav a { border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 14px; color: var(--text); text-decoration: none; }
+nav a:hover { border-color: var(--accent); }
+</style>
+<div class="wrap">
+  <section class="hero">
+    <h1>DRONE01</h1>
+    <p>쿼드콥터 · 2 kg 급</p>
+  </section>
+  <section class="spec">
+    <div><span>형식</span><b>멀티로터 쿼드 X</b></div>
+    <div><span>비행제어기</span><b>Pixhawk 2.4.8 · ArduCopter 3.6.12</b></div>
+    <div><span>모터</span><b>GT DRONE 3508-380KV × 4</b></div>
+    <div><span>ESC</span><b>GT DRONE EC-X3 30&nbsp;A × 4</b></div>
+    <div><span>프롭</span><b>12 × 4.5</b></div>
+    <div><span>배터리</span><b>4S 2,900&nbsp;mAh</b></div>
+    <div><span>목표 중량</span><b>2&nbsp;kg 이하</b></div>
+  </section>
+  <nav>
+    <a href="/cockpit">콕핏</a>
+    <a href="/">비행 기록</a>
+    <a href="/live">실시간</a>
+  </nav>
+</div>
+</html>

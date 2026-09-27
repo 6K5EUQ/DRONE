@@ -1,0 +1,20 @@
+# /etc/systemd/system/lab-drone01.service 로 복사한다.
+[Unit]
+Description=DRONE01 flight-log viewer (drone01.bewe.co.kr)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ku
+WorkingDirectory=/home/ku/DRONE/web
+EnvironmentFile=/home/ku/DRONE/web/.env
+ExecStart=/home/ku/.local/bin/node20 server.js
+ExecStartPre=/usr/bin/test -x /home/ku/drone01-venv/bin/python
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/home/ku/drone01-data/server.log
+StandardError=append:/home/ku/drone01-data/server.log
+
+[Install]
+WantedBy=multi-user.target

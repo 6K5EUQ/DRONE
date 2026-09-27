@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """FC 의 로그 하나를 MAVLink 로 내려받는다.
 
-    ~/.venv-mav/bin/python tools/logdl.py <ID> <크기bytes> <저장경로>
+    .venv/bin/python tools/logdl.py <ID> <크기bytes> <저장경로>
 
 크기는 tools/loglist.py 가 찍어 준 값을 그대로 넣는다. 누락된 구간은
 자동으로 다시 요청한다.
 
-🔴 포트는 하나다. shade-bridge / drone-live / QGC 를 먼저 내려야 한다.
+🔴 포트는 하나다. drone-live / QGC 를 먼저 내려야 한다.
 ⚠️ 큰 로그(2MB+)는 USB 가 중간에 끊기면 실패한다 — 실제로 ID 11(2.45MB)이
    그렇게 실패했다 (2026-09-16). 받은 뒤 반드시 파싱으로 검증한다.
 """

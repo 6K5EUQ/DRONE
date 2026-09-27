@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """FC 에 남아 있는 로그 목록을 MAVLink 로 받는다 (SD 카드를 안 빼도 된다).
 
-    ~/.venv-mav/bin/python tools/loglist.py
+    .venv/bin/python tools/loglist.py
 
 🔴 time_utc 를 믿지 마라. 이 FC 는 RTC 가 없어 2000-01-01 근처로 찍힌다
    (2026-09-16 실측). 어느 로그가 새것인지는 **ID 번호**로 판단한다.
-🔴 포트는 하나다. shade-bridge / drone-live / QGC 를 먼저 내려야 한다.
+🔴 포트는 하나다. drone-live / QGC 를 먼저 내려야 한다.
 """
 from pymavlink import mavutil
 import time, datetime
