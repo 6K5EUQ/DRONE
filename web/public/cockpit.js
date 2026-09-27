@@ -37,16 +37,16 @@ const BAYS = {
     ['비행제어기', 'Pixhawk 2.4.8 · STM32F427'],
     ['펌웨어', 'ArduCopter 3.6.12'] ] },
   gps: { name: 'GPS', rows: [
-    ['GPS', 'u-blox'],
+    ['GPS', 'M8N (u-blox)'],
     ['컴퍼스', '외장 GPS 모듈'] ] },
 };
 const TAB_INFO = {
   sum: { name: '제원', rows: [
-    ['형식', '쿼드 X'], ['프롭', '12 × 4.5'], ['목표 중량', '2 kg 이하'] ] },
+    ['형식', '쿼드 X · S500 계열'], ['프롭', '12 × 4.5'], ['목표 중량', '2 kg 이하'] ] },
   pwr: { name: '동력', bays: ['power'], rows: [
     ['모터', 'GT DRONE 3508-380KV × 4'], ['ESC', 'GT DRONE EC-X3 30 A × 4'], ['프롭', '12 × 4.5 2엽'] ] },
   nav: { name: '항법', bays: ['fc', 'gps'], rows: [
-    ['비행제어기', 'Pixhawk 2.4.8 · STM32F427'], ['펌웨어', 'ArduCopter 3.6.12'], ['GPS', 'u-blox'] ] },
+    ['비행제어기', 'Pixhawk 2.4.8 · STM32F427'], ['펌웨어', 'ArduCopter 3.6.12'], ['GPS', 'M8N (u-blox)'] ] },
   bat: { name: '전원', bays: ['battery', 'power'], rows: [
     ['배터리', '4S 2,900 mAh 20C'], ['ESC', 'EC-X3 30 A × 4'] ] },
   rec: null,
@@ -464,7 +464,10 @@ const FLY_HOLD = 0.9, FLY_SETTLE = 1.1;   // 들어온 자세를 쥐고 있는 �
 function launch() {
   if (fly.t >= 0) return;
   fly.t = 0;
-  fly.p = -cam.tilt * 0.9;   // 밑에서 보면 올라가고 위에서 보면 내려간다 — 보는 각도대로 멀어진다
+  // 기본 시점에서 누르면 살짝 들며 수평으로 나간다. 사용자가 위·아래로 돌린 만큼만
+  // 그쪽으로 기운다 — 기본 시점이 위에서 내려다보므로 카메라 각도를 그대로 쓰면
+  // 늘 기수를 숙이고 내려간다.
+  fly.p = 0.12 - (cam.tilt - VIEWS.intro.tilt) * 0.9;
   goal.on = false; cam.vYaw = cam.vTilt = 0;
   canvas.style.cursor = '';
 }
