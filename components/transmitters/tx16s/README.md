@@ -23,10 +23,7 @@ SD 카드 전체를 읽어 상태를 파악했다.
 버전으로 나왔고, 그 칩 자체가 ELRS 를 지원하지 않는 하드웨어다. 설정 메뉴로 전환
 불가 — **하드웨어 추가 구매 없이는 ELRS 사용 불가.**
 
-같은 EdgeTX 라인의 [SHADE01 Boxer](../../../../SHADE01/components/transmitters/radiomaster-boxer/README.md)
-는 구매 시 "ELRS 버전"을 선택해 내장 모듈 자체가 다르다
-(`internalModule: TYPE_CROSSFIRE`) — "상위 기종이라 더 잘 됨"이 아니라
-**애초에 고른 내장 모듈 옵션이 다른 것**. TX16S 라인업에도 ELRS 내장 버전(TX16S Max 등)이
+TX16S 라인업에도 ELRS 내장 버전(TX16S Max 등)이
 존재하나, 이 개체가 그 버전은 아니다.
 
 ### ELRS 를 쓰려면

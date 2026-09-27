@@ -45,8 +45,7 @@ PX4 문서는 FMUv3 를 *"Identical to FMUv2, but usable flash doubled to 2MB"* 
 - [ ] 그 버전의 `px4_fmu-v3_default.px4` 를 구할 수 있는지 확인
       (QGC 의 펌웨어 목록에 안 뜨면 GitHub 릴리스에서 직접 받는다)
 
-🔴 **SHADE01 의 v1.17.0 커스텀 빌드는 이 보드에 못 올린다.**
-그건 FMUv6C 타깃이다. 빌드 절차를 가져오지 마라.
+🔴 **FMUv6C 전용 빌드는 이 보드(FMUv3)에 못 올린다.**
 
 ---
 
@@ -212,9 +211,7 @@ ArduCopter 의 Motor1~4 순서와 PX4 의 Motor1~4 순서가 **같다는 보장�
 
 ### 전환하면 좋은 점
 
-- SHADE01 의 도구·감각이 통한다 (`.ulg` 로그, PX4 파라미터 체계)
 - PX4 v1.15/v1.16 은 ArduCopter 3.6.12(2019년)보다 훨씬 최신이다
-- 두 기체를 같은 방식으로 다룰 수 있다
 
 ### 전환하면 나쁜 점
 

@@ -37,7 +37,6 @@ Pixhawk 2.4.8 의 고질적 문제는 초기 STM32F427 리비전의 실리콘 �
 | 호버 추력값 | ✅ `MOT_THST_HOVER=0.540` 실측 보유 | 🔴 없음 |
 | PID | ✅ 조정 이력 있음 | 🔴 기본값부터 |
 | 펌웨어 신규성 | ⚠️ V3.6.12 는 2019년 — 매우 구형 | ⚠️ PX4 도 FMUv3 는 v1.15~v1.16 이 마지막 |
-| SHADE01 경험 | 🔴 스택이 달라 거의 안 통함 | ✅ 도구·감각이 그대로 |
 | 최신 ArduCopter | 🟢 4.5.x 까지 FMUv3 지원 (축소 빌드) | — |
 
 🔶 **미결정.** [절차서 02 FC 셋업](../../../docs/procedures/02-fc-setup.md) 에서 결론 낸다.
@@ -60,7 +59,7 @@ Pixhawk 2.4.8 의 고질적 문제는 초기 STM32F427 리비전의 실리콘 �
 | 로그 | microSD (FAT32) |
 | 전원 | 전원모듈(PM) 또는 서보레일 5 V |
 
-⚠️ **MPU6000 은 진동에 약하다.** SHADE01 의 ICM-42688-P 보다 노이즈 바닥이 높다.
+⚠️ **MPU6000 은 진동에 약하다.**
 **방진 마운트가 선택이 아니라 필수**다.
 
 ---
@@ -261,4 +260,4 @@ SD 카드의 `.BIN` 10개. **GPS fix 0 / 위성 0, 최고고도 1.51 m** — 실
 
 - 원본 로그: SD 카드 `APM/LOGS/00000001.BIN` ~ `00000010.BIN`, `LASTLOG.TXT`=10
 - 파라미터 스냅샷: [`params/params_20260914_from-log10.param`](../../../params/params_20260914_from-log10.param) (838개)
-- 파싱 도구: `pymavlink` (`~/.venv-mav/bin/python`)
+- 파싱 도구: `pymavlink` (저장소 루트 `.venv/bin/python`)

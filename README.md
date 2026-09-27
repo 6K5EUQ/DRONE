@@ -5,30 +5,6 @@
 
 ---
 
-## 🔴 SHADE01 과의 관계 — 완전 독립 모델이다
-
-이 저장소는 `~/SHADE01` 과 **아무 부품도, 아무 설정도 공유하지 않는다.**
-
-| | SHADE01 | DRONE (이 저장소) |
-|---|---|---|
-| 기체 | Makeflyeasy Striver Mini VTOL 4+1, 2100 mm | 쿼드콥터 (프레임 미확정) |
-| 형식 | VTOL 고정익 (`MAV_TYPE=22`) | 순수 멀티로터 쿼드 (`MAV_TYPE=2`) |
-| 중량 | 7 kg 급, MTOW < 7.5 kg | **2 kg 이하 목표** |
-| FC | Holybro Pixhawk 6C Mini (FMUv6C, STM32H743) | **Pixhawk 2.4.8 (PX4v3, STM32F427)** |
-| 펌웨어 | PX4 v1.17.0 커스텀 자체 빌드 | 🔴 **ArduCopter V3.6.12** (현재 실물 상태) |
-| 모터 | MFE M4112 KV460 / X4120 KV430 | GT DRONE 3508-380KV |
-| ESC | MFE ESC 650 50A / 6S 100A | GT DRONE EC-X3 30A OPTO |
-| 배터리 | Fullymax 6S 16000 mAh | 6S 2900 mAh 70C / 4S 2900 mAh 20C |
-
-**차용해도 되는 것:** 문서 작성 방식, 절차서 구조, 로그 분석 관점, 안전 사고방식.
-**차용하면 안 되는 것:** 파라미터 값, 추력·전류 수치, 펌웨어 바이너리, failsafe 설정값,
-캘리브레이션 결과, 비행 이력. 기체가 다르면 숫자도 다르다.
-
-SHADE01 문서에서 값을 가져올 때는 **반드시 출처와 함께 "SHADE01 값 — 이 기체 미검증"**
-이라고 표시한다. 검증 없이 옮긴 값은 문서에 남기지 않는다.
-
----
-
 ## 현재 상태 (2026-09-14)
 
 🔶 **설계 단계.** 조립 시작 전. **실비행 이력 없음** (실내 지상시험 10회만 존재).
@@ -78,6 +54,7 @@ SD 카드 조사(2026-09-14) 결과, **이 보드는 새것이 아니다.**
 | `components/` | 부품별 사양·배선 문서 (`<카테고리>/<벤더-모델>/README.md`) |
 | `flights/` | 비행별 분석 기록 (`YYYY-MM-DD-<slug>.md`) |
 | `params/` | FC 파라미터 스냅샷 (`params_YYYYMMDD-HHMMSS.params`) |
+| `web/` | [drone01.bewe.co.kr](https://drone01.bewe.co.kr) — 비행로그·실시간·콕핏. 설치·배포는 [web/README.md](web/README.md) |
 | `tools/` | 로그 회수(`loglist.py`·`logdl.py`), 라이브·재생 화면(`live/`), 정적 뷰어(`logview/`) |
 | `FC_CHANGELOG.md` | FC 상태를 바꾼 모든 작업의 이력 — **바꾸기 전에 읽고, 바꾼 뒤에 쓴다** |
 

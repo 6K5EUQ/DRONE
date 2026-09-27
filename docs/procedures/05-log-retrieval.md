@@ -10,19 +10,12 @@
 
 ---
 
-## 🔴 먼저 알 것 — 이 기체의 제약 세 가지
+## 🔴 먼저 알 것 — 세 가지
 
-### 1. SHADE01 웹(shade01.bewe.co.kr)에는 못 올린다
+### 1. 웹은 drone01.bewe.co.kr 이다
 
-그 서버는 **PX4 `.ulg` 전용**이다. 확인한 것(2026-09-16):
-
-- `web/extract.py`·`web/tools/uploadable.py` 가 `pyulog` 로만 읽는다
-- `outdoor_enough()` 가 **위성 15기 이상 · eph 1.0 m 이하**를 요구한다 —
-  실내 로그는 자동으로 거부된다 (이 기체 로그는 전부 GPS fix=1·위성 0)
-- 기체 구분이 없어 SHADE01 비행 이력에 섞인다
-
-억지로 넣으면 "잘린 메시지에서 조용히 멈추는" 장애 이력이 그쪽 주석에 있다.
-→ **그래서 이 저장소에 따로 만들었다** (아래 C·D 항).
+받은 `.BIN` 은 [drone01.bewe.co.kr](https://drone01.bewe.co.kr) 에 올린다 (공용 비밀번호 필요).
+인터넷 없는 현장에서는 [`tools/logview/`](../../tools/logview/README.md) 로 본다.
 
 ### 2. FC 에 시계(RTC)가 없다
 
@@ -35,7 +28,7 @@
 ### 3. USB 포트는 하나다
 
 `/dev/ttyACM0` 를 **한 프로그램만** 쓸 수 있다. 로그를 받으려면
-`shade-bridge`·`drone-live`·QGC 를 전부 내려야 한다.
+`drone-live`·QGC 를 전부 내려야 한다.
 
 ```bash
 fuser -v /dev/ttyACM0      # 누가 쥐고 있나
@@ -51,27 +44,22 @@ fuser -v /dev/ttyACM0      # 누가 쥐고 있나
 ```bash
 ls /dev/serial/by-id/
 #  usb-3D_Robotics_PX4_FMU_v2.x_*  → DRONE (Pixhawk 2.4.8)  ✅
-#  usb-Auterion_PX4_FMU_v6C.x_*    → SHADE01 (건드리지 마라)
 ```
 
 - [ ] 포트를 쥔 것을 내린다
 
 ```bash
-systemctl --user stop shade-bridge.service
-cd ~/DRONE/tools/live && ./drone-live off
+~/DRONE/tools/live/drone-live off
 # QGC 가 떠 있으면 종료한다
 fuser -v /dev/ttyACM0          # 아무것도 안 나와야 한다
 ```
-
-⚠️ `shade-bridge` 는 `Restart=always` 라 **재부팅·재로그인하면 혼자 다시 뜬다.**
-받다가 갑자기 실패하면 이것부터 다시 확인한다.
 
 ---
 
 ## B. 로그 목록 받기
 
 ```bash
-~/.venv-mav/bin/python ~/DRONE/tools/loglist.py
+~/DRONE/.venv/bin/python ~/DRONE/tools/loglist.py
 ```
 
 출력 예 (2026-09-16 실측):
@@ -109,7 +97,7 @@ cd ~/DRONE
 
 for pair in "12:218150" "13:317285" "14:813672"; do
   id="${pair%%:*}"; size="${pair##*:}"
-  ~/.venv-mav/bin/python tools/logdl.py "$id" "$size" \
+  .venv/bin/python tools/logdl.py "$id" "$size" \
       "flights/sd-recovered-$(date +%Y%m%d)/$(printf '%08d' $id).BIN"
 done
 ```
@@ -127,7 +115,7 @@ done
 ```bash
 cd ~/DRONE/flights/sd-recovered-YYYYMMDD
 for f in *.BIN; do
-  ~/.venv-mav/bin/python -c "
+  ~/DRONE/.venv/bin/python -c "
 from pymavlink import mavutil
 m = mavutil.mavlink_connection('$f'); n=0; fw=None
 while True:
@@ -151,8 +139,8 @@ done
 ## D. 브라우저로 재생하기
 
 ```bash
-cd ~/DRONE/tools/live && ./drone-live
-# → http://localhost:4401
+~/DRONE/tools/live/drone-live on    # A 에서 내린 것을 복구
+# → http://localhost:4410
 ```
 
 화면 아래 **「재생」** 을 누르면 `~/DRONE/flights/` 안의 `.BIN` 이 전부 뜬다.
@@ -163,13 +151,6 @@ cd ~/DRONE/tools/live && ./drone-live
 
 🟢 **FC 가 안 꽂혀 있어도 재생은 된다** (2026-09-17 부터).
 "FC 가 안 꽂혀 있다 — 라이브 없이 켠다" 가 뜨면 정상이다.
-
-### 끝나면 되돌린다
-
-```bash
-cd ~/DRONE/tools/live && ./drone-live off    # shade-bridge 도 같이 복구된다
-systemctl --user is-active shade-bridge.service   # active 확인
-```
 
 ---
 
