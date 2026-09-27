@@ -4,7 +4,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-<title>DRONE01 콕핏</title>
+<title>DRONE01</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="DRONE01 기체 상태 화면 — 3D 기체와 실시간 텔레메트리·비행 기록.">
 <link rel="preload" href="/model/drone01.glb" as="fetch" crossorigin>
@@ -94,6 +94,7 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
 #calls { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
 .call { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); transition: opacity .35s; }
 .call .k { font-size: 11px; font-weight: 600; letter-spacing: .1em; color: var(--dim); }
+.call .k:empty { display: none; }
 .call .v { margin-top: 3px; background: var(--track); color: #262628; font-weight: 600; font-size: 15px; padding: 5px 10px; border-radius: 3px; white-space: nowrap; }
 .call .v.warn { background: #f6d77a; } .call .v.bad { background: var(--bad); color: #fff; }
 .call i { width: 1px; height: 44px; background: var(--dim); opacity: .7; }
@@ -118,6 +119,11 @@ body.intro #htag, .main.mapmode #htag { display: none; }
 #loading { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 120px; height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; z-index: 1; }
 #loading i { display: block; height: 100%; width: 0; background: var(--acc); transition: width .2s; }
 
+/* 로고 — 시작 페이지는 기체 아래 가운데(날아가면 사라진다), 대시보드는 도크 왼쪽 */
+#brandIntro { position: absolute; left: 50%; bottom: 40px; width: 150px; height: 30px; transform: translateX(-50%); color: var(--muted); z-index: 2; pointer-events: none; opacity: 0; transition: opacity .4s; }
+body.intro:not(.launch) #brandIntro { opacity: 1; }
+.dock a.brand-dock { width: auto; padding: 0 10px; }
+.dock .brand { width: 104px; height: 21px; color: #fff; display: block; }
 /* ── 도크 — 라이트 모드에서도 검정 ── */
 .dock { grid-column: 1 / -1; background: #000; color: #fff; display: flex; align-items: center; padding: 0 20px; gap: 4px; }
 .dock a { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 10px; color: #cfcfd2; }
@@ -292,11 +298,12 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".8"/><circle cx="4" cy="12" r=".8"/><circle cx="4" cy="18" r=".8"/></symbol>
   <symbol id="i-live" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 12l3 3 5-6"/></symbol>
-  <symbol id="i-plane" viewBox="0 0 24 24"><path d="M12 2.5c1 0 1.5 1 1.5 2.5v4.5l8 4v2l-8-2v4.5l2.5 2v1.5L12 20.5 8 21.5V20l2.5-2v-4.5l-8 2v-2l8-4V5c0-1.5.5-2.5 1.5-2.5z"/></symbol>
   <symbol id="i-time" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12"/><path d="M7 3c0 5 10 5 10 9s-10 4-10 9"/><path d="M17 3c0 5-10 5-10 9s10 4 10 9"/></symbol>
   <symbol id="i-count" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></symbol>
   <symbol id="i-bat" viewBox="0 0 24 24"><rect x="2.5" y="7" width="17" height="10" rx="2"/><path d="M21.5 10.5v3"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.8" r=".6"/></symbol>
+  <!-- SHADE SIGNALS 워드마크 — shade-signals.com 의 wordmark.js 가 그리는 자형 그대로 -->
+  <symbol id="i-brand" viewBox="81.5 14.0 1237.1 243.0"><g fill="currentColor" fill-rule="evenodd" transform="translate(83.46,0)"><path d="M37.95,16 L26.01,18.02 L20.04,20.04 L16.06,21.95 L13.00,23.97 L11.01,25.99 L9.02,28.01 L7.03,30.04 L5.05,31.94 L3.06,35.99 L1.07,41.94 L0,50.03 L1.07,58.00 L3.06,65.97 L5.96,70.02 L9.02,73.95 L11.01,75.97 L14.07,77.99 L16.98,80.02 L20.96,82.04 L26.93,83.94 L115.08,85.97 L121.04,87.99 L123.95,90.01 L126.10,92.04 L128.08,95.96 L127.01,103.94 L123.95,107.98 L121.96,110.01 L117.07,112.03 L1.07,114.05 L1.07,122.02 L1.07,130.00 L1.07,134.04 L119.97,134.04 L128.08,132.02 L132.06,130.00 L136.04,127.97 L138.95,125.95 L141.09,124.05 L143.08,122.02 L145.07,120.00 L147.06,115.96 L149.05,112.03 L151.04,103.94 L151.04,95.96 L149.97,87.99 L147.98,83.94 L145.99,80.02 L144.00,77.99 L142.01,75.97 L140.02,73.95 L136.96,72.04 L134.05,70.02 L129.00,68.00 L123.03,65.97 L39.02,63.95 L31.06,62.05 L28.00,60.03 L24.94,55.98 L24.02,48.01 L26.01,43.96 L28.00,41.94 L31.06,40.03 L35.96,38.01 L145.99,31.94 L145.99,23.97 L145.07,16 Z"></path><path d="M270.96,16 L295.96,16 L295.96,63 L397.92,63 L397.92,16 L422.92,16 L422.92,135 L397.92,135 L397.92,88 L295.96,88 L295.96,135 L270.96,135 Z"></path><path d="M612.47,16 L625.47,16 L709.00,135 L684.00,135 L618.97,49.75 L553.95,135 L528.95,135 Z"></path><path d="M818.95,16 L912.34,16 C961.03,16 979.96,39.8 979.96,75.5 C979.96,111.2 961.03,135 912.34,135 L818.95,135 Z M843.95,41 L843.95,110 L912.34,110 C931.27,110 954.96,104.06 954.96,75.5 C954.96,46.94 931.27,41 912.34,41 Z"></path><path d="M1098.01,16 L1233.07,16 L1233.07,41 L1123.01,41 L1123.01,63 L1223.62,63 L1223.62,88 L1123.01,88 L1123.01,110 L1233.07,110 L1233.07,135 L1098.01,135 Z"></path></g><g fill="currentColor" fill-rule="evenodd" transform="translate(280.50,0)"><path d="M16.11,198 L11.04,198.96 L8.51,199.93 L6.82,200.85 L5.52,201.81 L4.67,202.78 L3.83,203.75 L2.98,204.72 L2.14,205.63 L1.29,207.57 L0.45,210.42 L0,214.30 L0.45,218.12 L1.29,221.94 L2.53,223.87 L3.83,225.75 L4.67,226.72 L5.97,227.69 L7.21,228.66 L8.90,229.63 L11.43,230.54 L48.86,231.51 L51.39,232.48 L52.63,233.45 L53.54,234.42 L54.38,236.30 L53.93,240.12 L52.63,242.06 L51.78,243.03 L49.70,243.99 L0.45,244.96 L0.45,248.78 L0.45,252.60 L0.45,254.54 L50.94,254.54 L54.38,253.57 L56.07,252.60 L57.76,251.63 L59.00,250.66 L59.91,249.75 L60.75,248.78 L61.60,247.81 L62.44,245.88 L63.29,243.99 L64.13,240.12 L64.13,236.30 L63.68,232.48 L62.83,230.54 L61.99,228.66 L61.14,227.69 L60.30,226.72 L59.45,225.75 L58.15,224.84 L56.92,223.87 L54.77,222.90 L52.24,221.94 L16.56,220.97 L13.19,220.05 L11.89,219.09 L10.59,217.15 L10.20,213.33 L11.04,211.39 L11.89,210.42 L13.19,209.51 L15.27,208.54 L61.99,205.63 L61.99,201.81 L61.60,198 Z"></path><path d="M145.02,198 L157.02,198 L157.02,255 L145.02,255 Z"></path><path d="M295.03,198 L242.42,198 L231.02,209.4 L231.02,243.6 L242.42,255 L295.03,255 L295.03,220.5 L259.82,220.5 L259.82,232.5 L283.03,232.5 L283.03,243 L243.02,243 L243.02,210 L295.03,210 Z"></path><path d="M378.02,198 L390.02,198 L432.03,232.2 L432.03,198 L444.03,198 L444.03,255 L432.03,255 L390.02,220.8 L390.02,255 L378.02,255 Z"></path><path d="M547.38,198 L553.62,198 L590.00,255 L578.00,255 L550.50,214.2 L523.00,255 L511.00,255 Z"></path><path d="M654.98,198 L666.98,198 L666.98,243 L708.96,243 L708.96,255 L654.98,255 Z"></path><path d="M790.84,198 L785.85,198.96 L783.35,199.93 L781.69,200.85 L780.41,201.81 L779.58,202.78 L778.74,203.75 L777.91,204.72 L777.08,205.63 L776.25,207.57 L775.42,210.42 L774.97,214.30 L775.42,218.12 L776.25,221.94 L777.46,223.87 L778.74,225.75 L779.58,226.72 L780.86,227.69 L782.07,228.66 L783.74,229.63 L786.23,230.54 L823.10,231.51 L825.60,232.48 L826.82,233.45 L827.71,234.42 L828.54,236.30 L828.10,240.12 L826.82,242.06 L825.98,243.03 L823.94,243.99 L775.42,244.96 L775.42,248.78 L775.42,252.60 L775.42,254.54 L825.15,254.54 L828.54,253.57 L830.21,252.60 L831.87,251.63 L833.09,250.66 L833.99,249.75 L834.82,248.78 L835.65,247.81 L836.48,245.88 L837.31,243.99 L838.15,240.12 L838.15,236.30 L837.70,232.48 L836.87,230.54 L836.03,228.66 L835.20,227.69 L834.37,226.72 L833.54,225.75 L832.26,224.84 L831.04,223.87 L828.93,222.90 L826.43,221.94 L791.29,220.97 L787.96,220.05 L786.68,219.09 L785.40,217.15 L785.02,213.33 L785.85,211.39 L786.68,210.42 L787.96,209.51 L790.01,208.54 L836.03,205.63 L836.03,201.81 L835.65,198 Z"></path></g></symbol>
 </svg>
 
 <script>if (!location.hash) document.body.classList.add('intro');</script>
@@ -381,6 +388,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
       <button data-t="pf">점검</button>
     </nav>
     <div id="loading"><i></i></div>
+    <svg class="brand" id="brandIntro" role="img" aria-label="SHADE SIGNALS"><use href="#i-brand"/></svg>
     <canvas id="view"></canvas>
     <div id="map"></div>
     <a class="maplink" href="/live">상세 화면</a>
@@ -400,7 +408,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
   <div id="info" hidden></div>
 
   <nav class="dock">
-    <a href="/cockpit" class="on" title="콕핏"><svg class="i"><use href="#i-plane"/></svg></a>
+    <a href="/cockpit" class="brand-dock" title="SHADE SIGNALS"><svg class="brand" role="img" aria-label="SHADE SIGNALS"><use href="#i-brand"/></svg></a>
     <span class="grow"></span>
     <a href="/intro" title="소개"><svg class="i"><use href="#i-info"/></svg></a>
     <a href="/" title="비행 기록"><svg class="i"><use href="#i-list"/></svg></a>

@@ -331,7 +331,7 @@ const CALLS = {
   sum: () => [],
   // 회전 방향은 tools/live/drone_live.py MOTOR_PINS (2026-09-16 실측) 기준
   pwr: (d) => { const m = d.motors || {}; const f = (k) => m[k] != null ? `${Math.round(m[k])}% · ${ROT_DIR[k]}` : ROT_DIR[k];
-    return [['LF', 'LF', f('LF'), thr(m.LF)], ['RF', 'RF', f('RF'), thr(m.RF)], ['LB', 'LB', f('LB'), thr(m.LB)], ['RB', 'RB', f('RB'), thr(m.RB)],
+    return [['LF', '', f('LF'), thr(m.LF)], ['RF', '', f('RF'), thr(m.RF)], ['LB', '', f('LB'), thr(m.LB)], ['RB', '', f('RB'), thr(m.RB)],
             ]; },
   nav: (d) => [['gps', 'GPS', d.sats != null ? `${d.sats}기 · ${num(d.eph, 1)}m` : '—', lvl(d.sats, 8, 5)],
                ],
@@ -349,7 +349,7 @@ function renderCalls() {
   let want = sel || mode !== '3d' || !tab ? [] : CALLS[tab](D());
   if (!sel && mode === '3d' && tab !== 'pwr') {
     const m = D().motors || {};
-    for (const k of ['LF', 'RF', 'LB', 'RB']) if (thr(m[k])) want.push([k, k, `${Math.round(m[k])}%`, thr(m[k])]);
+    for (const k of ['LF', 'RF', 'LB', 'RB']) if (thr(m[k])) want.push([k, '', `${Math.round(m[k])}%`, thr(m[k])]);
   }
   const keep = new Set();
   for (const [a, k, v, c] of want) {
@@ -409,21 +409,24 @@ function updatePred() {
   pred.rel = unwrap(chi - yaw);
   pred.climb = d.climb || 0;
 }
-// 바닥 위의 길 — Tesla 처럼 가장자리 선이 또렷하고 속은 옅다. 기체 밑에서
-// 스며 나와 앞으로 흐려진다. 기체와 같이 돈다 (craft 안에 둔다).
-const PRED_W = 0.16;
+// 예측 경로 — 세 겹이다.
+//   공중 길: 기수 앞에서 기체 높이로 나가 상승률만큼 오르내린다. 0.5초마다 화살촉.
+//   땅 그림자: 같은 길을 땅에 옅게. 높이 떠 있어도 어디 위를 지나는지 보인다.
+//   끝 기둥: 3초 뒤 자리에서 땅까지 선 하나 — 공중 길과 땅 그림자를 잇는다.
+// 길이는 3초 앞까지(더 길면 화면 밖으로 나간다), 땅과 같은 축척(G). 기체와 같이 돈다 (craft 안에 둔다).
+const PRED_W = 0.22, PRED_SEC = 3, PRED_TICK = 0.5, PRED_NOSE = 0.36;
 function predTexture() {
   const W = 512, H = 64, c = document.createElement('canvas'); c.width = W; c.height = H;
   const x = c.getContext('2d');
-  x.fillStyle = 'rgba(62,106,225,.32)'; x.fillRect(0, 0, W, H);          // 속
+  x.fillStyle = 'rgba(62,106,225,.30)'; x.fillRect(0, 0, W, H);          // 속
   x.fillStyle = 'rgba(62,106,225,.95)'; x.fillRect(0, 0, W, 5); x.fillRect(0, H - 5, W, 5);   // 가장자리
-  x.globalCompositeOperation = 'destination-in';                          // 길이 방향으로 스며 나와 흐려진다
+  x.globalCompositeOperation = 'destination-in';                          // 길이 방향으로 흐려진다
   const g = x.createLinearGradient(0, 0, W, 0);
-  g.addColorStop(0, 'rgba(0,0,0,.35)'); g.addColorStop(0.08, 'rgba(0,0,0,1)'); g.addColorStop(0.6, 'rgba(0,0,0,.8)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  g.addColorStop(0, 'rgba(0,0,0,.5)'); g.addColorStop(0.06, 'rgba(0,0,0,1)'); g.addColorStop(0.7, 'rgba(0,0,0,.75)'); g.addColorStop(1, 'rgba(0,0,0,0)');
   x.fillStyle = g; x.fillRect(0, 0, W, H);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
 }
-function ribbon() {
+function ribbon(order) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array((PRED_N + 1) * 2 * 3), 3));
   const uv = new Float32Array((PRED_N + 1) * 4), idx = [];
@@ -433,31 +436,84 @@ function ribbon() {
   }
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(idx);
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: predTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide }));
-  m.frustumCulled = false; m.renderOrder = 1; craft.add(m);
+  m.frustumCulled = false; m.renderOrder = order; craft.add(m);
   return m;
 }
-const predPath = ribbon();
+const predPath = ribbon(2);     // 공중 길
+const predShadow = ribbon(1);   // 땅 그림자
+const predTicks = (() => {      // 0.5초마다 화살촉
+  const g = new THREE.BufferGeometry();
+  const n = Math.round(PRED_SEC / PRED_TICK);
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 9), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 12), 4));
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  m.frustumCulled = false; m.renderOrder = 3; craft.add(m);
+  return m;
+})();
+const predPost = (() => {       // 끝 기둥
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const m = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x3e6ae1, transparent: true, depthWrite: false }));
+  m.frustumCulled = false; craft.add(m);
+  return m;
+})();
+const predPts = Array.from({ length: PRED_N + 1 }, () => ({ x: 0, y: 0, z: 0, dx: 0, dz: 1 }));
 function drawPred(k) {
   pred.on += ((pred.show ? 1 : 0) - pred.on) * k;
-  predPath.visible = pred.on > 0.01;
-  if (!predPath.visible) return;
-  predPath.material.opacity = pred.on;
-  // 5초 앞까지 — 땅과 같은 축척(G)이라 땅 위에 제 길이로 놓인다
-  const L = Math.max(0.7, Math.min(40, pred.v * 5 * G));
-  const turn = THREE.MathUtils.degToRad(Math.max(-160, Math.min(160, pred.omega * L / G / Math.max(pred.v, 0.5))));
+  const vis = pred.on > 0.01;
+  predPath.visible = predShadow.visible = predTicks.visible = predPost.visible = vis;
+  if (!vis) return;
+  const L = Math.max(0.7, Math.min(40, pred.v * PRED_SEC * G));
+  const turn = THREE.MathUtils.degToRad(Math.max(-160, Math.min(160, pred.omega * PRED_SEC)));
   const rel = THREE.MathUtils.degToRad(pred.rel);
-  // 기수 앞에서 출발해 앞으로. 오른쪽 선회 = -x (좌익이 +x).
-  // 기수 방향과 진행 방향이 다르면(옆바람·옆걸음) 처음부터 그만큼 틀어져 나간다.
-  let x = 0, z = 0.36;   // 기수 바로 앞 바닥
-  const pa = predPath.geometry.attributes.position.array, y = floorY + 0.004;
+  const rise = Math.max(-10, Math.min(10, pred.climb)) * PRED_SEC * G;   // 그동안 오르내리는 높이
+  // 기수 앞에서 출발. 오른쪽 선회 = -x (좌익이 +x). 기수와 진행 방향이 다르면
+  // (옆바람·옆걸음) 처음부터 그만큼 틀어져 나간다.
+  let x = 0, z = PRED_NOSE;
   for (let i = 0; i <= PRED_N; i++) {
     const s = i / PRED_N;
-    const th = rel * Math.min(1, s * 4) + turn * s * s;   // 곧게 나가다 점점 휜다
-    const dx = -Math.sin(th), dz = Math.cos(th), w = PRED_W / 2 * (1 + (FLOOR - floorY) * 0.15);
-    pa.set([x + dz * w, y, z - dx * w, x - dz * w, y, z + dx * w], i * 6);
-    x += dx * L / PRED_N; z += dz * L / PRED_N;
+    const th = rel * Math.min(1, s * 4) + turn * s;          // 선회율 그대로 — 끝에서 ω·PRED_SEC 만큼 돈다
+    const p = predPts[i];
+    p.dx = -Math.sin(th); p.dz = Math.cos(th); p.x = x; p.z = z; p.y = rise * s;
+    x += p.dx * L / PRED_N; z += p.dz * L / PRED_N;
   }
-  predPath.geometry.attributes.position.needsUpdate = true;
+  const fill = (mesh, yOf, w) => {
+    const a = mesh.geometry.attributes.position.array;
+    for (let i = 0; i <= PRED_N; i++) {
+      const p = predPts[i], y = yOf(p);
+      a.set([p.x + p.dz * w, y, p.z - p.dx * w, p.x - p.dz * w, y, p.z + p.dx * w], i * 6);
+    }
+    mesh.geometry.attributes.position.needsUpdate = true;
+  };
+  const depth = FLOOR - floorY, air = depth > 0.2;          // 땅에 붙어 있으면 공중 길 = 땅 길
+  const yAir = (p) => (air ? 0 : floorY + 0.006) + (air ? p.y : 0);
+  fill(predPath, yAir, PRED_W / 2);
+  predPath.material.opacity = pred.on;
+  predShadow.visible = air;
+  if (air) {
+    fill(predShadow, () => floorY + 0.004, PRED_W / 2 * (1 + depth * 0.1));
+    predShadow.material.opacity = pred.on * 0.35;
+  }
+  // 화살촉 — 0.5초 간격. 간격이 곧 속도다 (넓으면 빠르다).
+  const ta = predTicks.geometry.attributes.position.array, tc = predTicks.geometry.attributes.color.array;
+  const NT = Math.round(PRED_SEC / PRED_TICK);
+  for (let n = 1; n <= NT; n++) {
+    const p = predPts[Math.round(n / NT * PRED_N)], y = yAir(p) + 0.002;
+    const hw = PRED_W * 0.38, len = PRED_W * 0.5;
+    const tipX = p.x + p.dx * len / 2, tipZ = p.z + p.dz * len / 2, bx = p.x - p.dx * len / 2, bz = p.z - p.dz * len / 2;
+    ta.set([tipX, y, tipZ, bx + p.dz * hw, y, bz - p.dx * hw, bx - p.dz * hw, y, bz + p.dx * hw], (n - 1) * 9);
+    const a = pred.on * (1 - (n - 1) / NT * 0.7);
+    for (let v = 0; v < 3; v++) tc.set([1, 1, 1, a], ((n - 1) * 3 + v) * 4);   // 흰 화살촉 — 파란 띠 위에서 읽힌다
+  }
+  predTicks.geometry.attributes.position.needsUpdate = true; predTicks.geometry.attributes.color.needsUpdate = true;
+  // 끝 기둥
+  predPost.visible = air;
+  if (air) {
+    const e = predPts[PRED_N];
+    predPost.geometry.attributes.position.array.set([e.x, yAir(e), e.z, e.x, floorY + 0.004, e.z]);
+    predPost.geometry.attributes.position.needsUpdate = true;
+    predPost.material.opacity = pred.on * 0.5;
+  }
 }
 
 // ── 첫 화면 → 대시보드 — 쿼드라 제자리에서 수직으로 떠올라 사라지면 대시보드가
@@ -468,6 +524,7 @@ const FLY_SETTLE = 0.6;   // 내려앉은 뒤 착지 흔들림이 가라앉는 �
 function launch() {
   if (fly.t >= 0) return;
   fly.t = 0;
+  document.body.classList.add('launch');   // 로고를 거둔다
   goal.on = false; cam.vYaw = cam.vTilt = 0;
   canvas.style.cursor = '';
 }
