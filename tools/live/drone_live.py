@@ -449,10 +449,13 @@ def reader(st, device, baud, stop):
             if hb is None:
                 raise RuntimeError('HEARTBEAT 없음')
 
-            # 🔴 이 기체가 맞는지 본다. mav_type 2 = 쿼드.
-            if hb.type != mavutil.mavlink.MAV_TYPE_QUADROTOR:
-                print('[link] ⚠️ mav_type=%d 다 (쿼드=2 가 아니다). '
-                      '화면을 신뢰하지 마라.' % hb.type, flush=True)
+            # 🔴 이 기체가 맞는지 본다 — ArduCopter(autopilot 3) 쿼드(type 2) 가 아니면
+            #    화면에 올리지 않고 끊는다. 30초 뒤 다시 본다.
+            if hb.autopilot != mavutil.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA or hb.type != mavutil.mavlink.MAV_TYPE_QUADROTOR:
+                print('[link] 이 기체 FC 가 아니다 (autopilot=%d type=%d) — 30초 뒤 다시'
+                      % (hb.autopilot, hb.type), flush=True)
+                stop.wait(30)
+                continue                            # finally 가 닫는다
 
             st.src = device
             print('[link] 붙었다. sysid=%d type=%d autopilot=%d'

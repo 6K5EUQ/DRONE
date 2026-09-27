@@ -11,14 +11,14 @@
    그렇게 실패했다 (2026-09-16). 받은 뒤 반드시 파싱으로 검증한다.
 """
 from pymavlink import mavutil
+from fcport import open_fc
 import time, sys, os
 
 log_id = int(sys.argv[1])
 size = int(sys.argv[2])
 outpath = sys.argv[3]
 
-m = mavutil.mavlink_connection('/dev/ttyACM0', source_system=250, source_component=190)
-m.wait_heartbeat(timeout=15)
+m = open_fc(source_system=250, source_component=190)   # 이 기체 FC 만 (USB id + 하트비트)
 
 CHUNK = 90  # MAVLink1 LOG_DATA payload max
 data = bytearray(size)

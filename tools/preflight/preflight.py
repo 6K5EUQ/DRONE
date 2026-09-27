@@ -85,9 +85,9 @@ def connect(explicit):
             if hb:
                 break
         if hb:
-            # 이 기체가 맞는지 확인 — mav_type 2 = 쿼드
-            if hb.type != 2:
-                notes.append('%s: 연결은 됐지만 쿼드가 아니다 (mav_type=%d)' % (why, hb.type))
+            # 이 기체가 맞는지 확인 — ArduCopter(autopilot 3) 쿼드(type 2)
+            if hb.autopilot != 3 or hb.type != 2:
+                notes.append('%s: 이 기체 FC 가 아니다 (autopilot=%d type=%d)' % (why, hb.autopilot, hb.type))
                 continue
             return m, why, time.time() - t0, notes
         notes.append('%s: 하트비트 없음' % why)

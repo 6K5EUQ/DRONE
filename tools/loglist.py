@@ -8,10 +8,10 @@
 🔴 포트는 하나다. drone-live / QGC 를 먼저 내려야 한다.
 """
 from pymavlink import mavutil
+from fcport import open_fc
 import time, datetime
 
-m = mavutil.mavlink_connection('/dev/ttyACM0', source_system=250, source_component=190)
-m.wait_heartbeat(timeout=15)
+m = open_fc(source_system=250, source_component=190)   # 이 기체 FC 만 (USB id + 하트비트)
 print(f"연결 OK sysid={m.target_system}")
 
 entries = {}
