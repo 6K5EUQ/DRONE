@@ -455,30 +455,23 @@ function drawPred(k) {
   predPath.geometry.attributes.position.needsUpdate = true;
 }
 
-// ── 첫 화면 → 대시보드 — 기체가 기수 방향으로 날아가 사라지면 대시보드가 열리고,
-// 같은 방향으로 뒤에서 다시 들어와, 선회하며 대시보드 시점에 선다.
-// 돌려 둔 시점에서 출발하므로 돌린 만큼 선회가 커진다. 좌표는 기체 기준(+z 기수).
-const fly = { t: -1, p: 0, from: null, to: null, floor: 1 };
-const FLY_OUT = 0.8, FLY_IN = 1.2, FLY_Z = 7;
-const FLY_HOLD = 0.9, FLY_SETTLE = 1.1;   // 들어온 자세를 쥐고 있는 시간, 선 뒤 자세가 가라앉는 시간
+// ── 첫 화면 → 대시보드 — 쿼드라 제자리에서 수직으로 떠올라 사라지면 대시보드가
+// 열리고, 위에서 수직으로 내려와 내려앉는다. 좌표는 기체 기준(+y 위).
+const fly = { t: -1, from: null, to: null, floor: 1 };
+const FLY_SPOOL = 0.3, FLY_OUT = 1.1, FLY_IN = 1.4, FLY_H = 4;
+const FLY_SETTLE = 0.6;   // 내려앉은 뒤 착지 흔들림이 가라앉는 시간
 function launch() {
   if (fly.t >= 0) return;
   fly.t = 0;
-  // 기본 시점에서 누르면 살짝 들며 수평으로 나간다. 사용자가 위·아래로 돌린 만큼만
-  // 그쪽으로 기운다 — 기본 시점이 위에서 내려다보므로 카메라 각도를 그대로 쓰면
-  // 늘 기수를 숙이고 내려간다.
-  fly.p = 0.12 - (cam.tilt - VIEWS.intro.tilt) * 0.9;
   goal.on = false; cam.vYaw = cam.vTilt = 0;
   canvas.style.cursor = '';
 }
 function flyStep(dt) {
   if (fly.t < 0) return;
   fly.t += dt;
-  const p = fly.p;
-  if (fly.t < FLY_OUT) {                      // 기수를 보는 각도로 틀며 가속해 나간다
-    const s = fly.t / FLY_OUT, a = p * Math.min(1, s * 2.5), r = FLY_Z * s * s * s;
-    flyG.position.set(0, 0.3 * s * s + r * Math.sin(a), r * Math.cos(a));
-    flyG.rotation.x = -a - 0.2 * s;
+  if (fly.t < FLY_OUT) {                      // 로터를 올린 뒤 수직으로 가속 상승
+    const s = Math.max(0, (fly.t - FLY_SPOOL) / (FLY_OUT - FLY_SPOOL));
+    flyG.position.set(0, FLY_H * s * s, 0);
     return;
   }
   if (intro) {                                // 화면 밖 — 이때 대시보드를 연다
@@ -489,23 +482,16 @@ function flyStep(dt) {
     setView(); goal.on = false;
     fly.to = { yaw: goal.yaw, tilt: goal.tilt, dist: goal.dist };
   }
-  const u = fly.t - FLY_OUT, s = Math.min(1, u / FLY_IN), e = 1 - (1 - s) ** 3;   // 감속하며 들어온다
-  const f = fly.from, g = fly.to, turn = g.yaw - f.yaw;
-  if (s < 1) { cam.yaw = f.yaw + turn * e; cam.tilt = f.tilt + (g.tilt - f.tilt) * e; cam.dist = f.dist + (g.dist - f.dist) * e; }
-  const r = FLY_Z * (1 - e);                  // 나간 각도 그대로 뒤에서 들어온다
-  flyG.position.set(0, 0.3 * (1 - e) - r * Math.sin(p), -r * Math.cos(p));
-  // 자세 — 날아온 자세 그대로 들어와, 선 뒤 살짝 넘쳤다가 가라앉는다. flyG 는
-  // 덧붙는 몫이라 0 이 되면 attitude 만 남는다 — 링크가 없으면 수평, 있으면 FC 자세.
-  const h = u < FLY_HOLD ? 1 : Math.exp(-4.5 * (u - FLY_HOLD)) * Math.cos(7 * (u - FLY_HOLD));
-  flyG.rotation.x = -(p + 0.12) * h;
-  flyG.rotation.z = -Math.max(-0.7, Math.min(0.7, turn * 0.5)) * (1 - s) ** 2;   // 선회율만큼 기울었다 선회가 끝나며 편다 (+x 좌익)
-  if (u >= FLY_IN + FLY_SETTLE) { fly.t = -1; flyG.rotation.set(0, 0, 0); }
+  const u = fly.t - FLY_OUT, s = Math.min(1, u / FLY_IN), e = 1 - (1 - s) ** 3;   // 감속하며 내려온다
+  const f = fly.from, g = fly.to;
+  if (s < 1) { cam.yaw = f.yaw + (g.yaw - f.yaw) * e; cam.tilt = f.tilt + (g.tilt - f.tilt) * e; cam.dist = f.dist + (g.dist - f.dist) * e; }
+  // 착지 — 다리가 닿으며 살짝 눌렸다 편다
+  const k = u - FLY_IN, bump = k > 0 ? -0.012 * Math.exp(-7 * k) * Math.sin(14 * k) : 0;
+  flyG.position.set(0, FLY_H * (1 - e) + bump, 0);
+  if (u >= FLY_IN + FLY_SETTLE) { fly.t = -1; flyG.position.set(0, 0, 0); }
 }
-// 바닥 — 날아가는 동안은 치운다 (위에서 보다 누르면 바닥을 뚫고 내려간다).
-// 들어와 자세가 가라앉기 시작하면 다시 깔린다.
-function flyFloor(k) {
-  const off = fly.t >= 0 && fly.t - FLY_OUT < FLY_HOLD + 0.3;
-  fly.floor += ((off ? 0 : 1) - fly.floor) * k;
+// 바닥 — 수직 이착륙이라 치우지 않는다. 그림자는 뜬 만큼 옅어진다.
+function flyFloor() {
   grid.material.opacity = fly.floor;
   ground.material.opacity = 0.24 * fly.floor * Math.max(0, 1 - (FLOOR - floorY) / 3);
   blob.position.z = flyG.position.z;   // 그림자는 바닥에 남아 따라가고, 뜬 만큼 옅어진다
@@ -603,7 +589,7 @@ function frame() {
   timer.update();
   const dt = Math.min(timer.getDelta(), 0.05);
   const ease = (r) => 1 - Math.exp(-dt * r);
-  flyStep(dt); flyFloor(ease(4)); groundStep(dt, ease);
+  flyStep(dt); flyFloor(); groundStep(dt, ease);
   if (goal.on) {
     const k = ease(3.2);
     cam.yaw += (goal.yaw - cam.yaw) * k; cam.tilt += (goal.tilt - cam.tilt) * k; cam.dist += (goal.dist - cam.dist) * k;
