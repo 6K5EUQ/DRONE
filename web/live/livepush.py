@@ -33,20 +33,13 @@ import urllib.request
 
 # 서버로 올리는 주기.
 #
-# 🔴 1.0 → 0.1 (2026-09-11). 공개 화면이 1Hz 로 갱신돼 기체를 90° 꺾으면
-#    30/60/90 세 프레임만 잡혔다 — 조종자 보고. FC 는 USB 로 ATTITUDE 를
-#    100Hz 로 주고 트래커는 15.6Hz 로 내주는데, 이 중계가 1Hz 로 깎고 있었다.
-#    브라우저 폴(POLL_MS)만 올려도 소용없다 — 소스가 1Hz 면 20번 중 19번이
-#    같은 값이다.
+# 공개 화면이 1Hz 면 빠른 자세 변화가 몇 프레임으로 뭉개진다. 브라우저 폴
+# (POLL_MS)만 올려도 소용없다 — 소스가 1Hz 면 폴 대부분이 같은 값이다.
 #
-# ⚠️ 데이터를 먹는다. 현장은 LTE 테더링이다 — 실측 프레임 1139 B (항적 증분
-#    포함, gzip 전) 이므로 10Hz 면 **약 11 KB/s = 시간당 40 MB** 다. 1Hz 때는
-#    시간당 4 MB 였다. 한 편이 10~20분이니 편당 7~14 MB 쯤 된다.
-#    데이터가 아까우면 유닛에서 `--interval 0.2` (5Hz) 로 낮춰라 — 조종기
-#    텔레메트리와 같은 급이고 체감 차이는 크지 않다.
+# ⚠️ 데이터를 먹는다. 현장 회선이 모바일 테더링이면 10Hz 는 프레임 크기 ×10 /s
+#    다. 아까우면 `--interval 0.2` (5Hz) 로 낮춰라.
 #
-# ⚠️ 0.1 보다 더 내리지 마라. rim3 LTE 실측 왕복이 keep-alive 로 **104ms**
-#    다. 주기가 그보다 짧으면 루프가 쉬지 못하고 요청만 쌓인다.
+# ⚠️ 주기를 왕복 시간보다 짧게 잡지 마라 — 루프가 쉬지 못하고 요청만 쌓인다.
 DEFAULT_INTERVAL = 0.1
 
 # 로컬 트래커에서 읽을 때/서버로 올릴 때의 타임아웃.
@@ -72,39 +65,13 @@ def _get_local(base, since):
 
 # 🔴 User-Agent 를 반드시 우리 것으로 바꾼다. 기본값(`Python-urllib/3.x`)은
 #    **Cloudflare 가 막는다** — 서버에 닿지도 못하고 `error code: 1010` 과
-#    함께 403 이 돌아온다 (실측 2026-09-06). 키가 틀린 것처럼 보이는데
-#    키와 아무 상관이 없어서, 모르면 한참 헤맨다.
+#    함께 403 이 돌아온다. 키가 틀린 것처럼 보이는데 키와 아무 상관이 없다.
 USER_AGENT = 'drone01-livepush/1.0'
 
 
-def _apply_pin(base, want):
-    """웹에서 고른 수신 경로를 트래커에 전한다.
-
-    🔴 이것이 서버 -> 트래커로 흐르는 **유일한** 값이고, 담기는 것은
-       'USB' / 'ELRS' / 'auto' 셋뿐이다. 여기서 검사해 그 밖의 것은 버린다 —
-       서버가 무엇을 돌려주든 이 프로세스가 트래커에 거는 요청은 세 가지로
-       고정된다.
-
-    🔴 FC 와는 무관하다. 트래커가 이미 듣고 있는 두 스트림 중 무엇을 화면에
-       그릴지를 고르는 것뿐이고, 트래커는 여전히 소켓에 쓰는 코드가 0줄이다.
-
-    실패해도 조용히 넘어간다 — 중계가 멈추면 안 된다.
-    """
-    if want not in ('USB', 'ELRS', 'auto'):
-        return
-    try:
-        url = '%s/api/link?pin=%s' % (base.rstrip('/'), want)
-        req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
-        with urllib.request.urlopen(req, timeout=LOCAL_TIMEOUT):
-            pass
-    except Exception:
-        pass
-
-
-# 🔴 연결을 재사용한다 (2026-09-11). urlopen 은 POST 마다 TCP+TLS 를 새로
-#    연다 — rim3 LTE 실측으로 왕복 **211ms** 였다. 0.1초 주기에서는 왕복이
-#    주기보다 길어 루프가 쉬지 못하고, 실효가 10Hz 가 아니라 ~4.7Hz 가 된다.
-#    keep-alive 로 재면 **104ms** 다 (같은 회선, 같은 시각).
+# 🔴 연결을 재사용한다. urlopen 은 POST 마다 TCP+TLS 를 새로 연다 — 모바일
+#    회선에서는 그 왕복이 0.1초 주기보다 길어져 실효 주기가 절반 아래로 떨어진다.
+#    keep-alive 면 왕복이 TLS 핸드셰이크만큼 준다.
 _conn = {'c': None, 'host': None}
 
 
@@ -229,11 +196,6 @@ def main():
             #    다시 보낸다 — 지도에 궤적이 통째로 빠지는 것을 막는다.
             nxt = resp.get('track_n')
             since = int(nxt) if isinstance(nxt, int) else st.get('track_n', since)
-            # 웹에서 수신 경로를 골랐으면 응답에 실려 온다. 서버는 이것을 한
-            # 번만 들려보내므로, 반영한 뒤 조종자가 여기 앞에서 직접 바꿔도
-            # 웹이 덮어쓰지 않는다.
-            if 'pin' in resp:
-                _apply_pin(args.src, resp['pin'])
         except urllib.error.HTTPError as e:
             if not warned_push:
                 print('서버가 거절했다 (%s %s) — 키가 맞나?'

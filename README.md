@@ -37,8 +37,7 @@ SD 카드 조사(2026-09-14) 결과, **이 보드는 새것이 아니다.**
 - 🟢 **4S 설정** — `MOT_BAT_VOLT_MAX/MIN = 16.8/13.2 V`
 - 🔴 **배터리 failsafe 임계가 잘못됐다** — `BATT_LOW_VOLT=14.4 V` 는 4S 에 너무 높다.
   지상시험이 이것 때문에 계속 중단됐다
-- ⚠️ **센서가 구형** — MPU6000 + LSM303D + L3GD20 + MS5611.
-  6C Mini 의 ICM-42688-P 보다 노이즈가 크다 → **방진 마운트 필수**
+- ⚠️ **센서가 구형** — MPU6000 + LSM303D + L3GD20 + MS5611 → **방진 마운트 필수**
 - 🔶 **이전 기체의 이력을 모른다** — 어떤 프레임·프롭에 붙어 있었는지 불명
 
 → 상세: [components/fc/pixhawk-2.4.8/README.md](components/fc/pixhawk-2.4.8/README.md)

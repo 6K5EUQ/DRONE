@@ -25,7 +25,7 @@
 //      로컬 트래커 (rim3 :4410)      → /api/state
 //      drone01.bewe.co.kr  /live     → /api/live/state   (rim3 가 밀어 올린 것)
 //    화면·계기·차트는 완전히 같아야 하므로 파일을 나누지 않고, **어느 API 를
-//    두드릴지만** 갈라 놓는다. 웹에서는 재생·기록이 없다 (로컬 전용이다).
+//    두드릴지만** 갈라 놓는다.
 const ON_WEB = location.pathname.startsWith('/live');
 const API_STATE = ON_WEB ? '/api/live/state' : '/api/state';
 
@@ -39,14 +39,6 @@ const PPU_ALT = 8;                    // 고도 px/m — AH=807 이면 ±50m 가
 const PPD_HDG = 8.0;                  // 기수 px/도
 const PPU_VSI = 22;                   // 상승률 px/(m/s)
 const OVER = 2600;                    // 하늘/땅 오버스캔 반폭 (4K 반대각선의 1.7배)
-
-// 지오펜스 천장선은 없다 (2026-09-05 제거). FC 에서 펜스를 껐다 —
-// GF_ACTION 2→0, GF_MAX_HOR_DIST 150→0, GF_MAX_VER_DIST 50→0.
-// 근거는 FC_CHANGELOG.md 「2026-09-05 14:16」: GF_ACTION=2(Hold) 가 비행 #184
-// 조종 불능의 직접 원인이었고, 참조 함대 18대 전원이 펜스를 안 쓴다.
-// 🔴 다시 넣지 마라 — 서버가 GF_* 를 안 보내므로 여기 박은 숫자는 FC 와
-//    조용히 어긋난다. 실제로 그렇게 어긋나 없는 천장선을 빨갛게 그리고 있었다.
-//    펜스를 되살리려면 drone_live.py 가 FENCE_* 를 실기에서 읽어 보내야 한다.
 
 const HDG_H = 34;                     // 상단 기수 테이프 높이
 
@@ -69,9 +61,9 @@ let hoverT = null;                    // 커서가 붙잡고 있는 시각 (없�
 //
 // 폴 한 번이 격자 한 칸이다. 값이 없으면 null 을 넣는다 — 건너뛰면 시간축이
 // 밀려 20분 뒤 그래프가 실제보다 짧아진다.
-// 🔴 격자 주파수는 POLL_MS 에 매달지 마라. 2026-09-11 에 폴을 5Hz→20Hz 로
-//    올렸는데, 여기까지 따라 올라가면 1시간 버퍼가 18000→72000 칸이 되고
-//    차트 시간축이 4배로 늘어난다. 격자는 벽시계 5Hz 로 고정한다.
+// 🔴 격자 주파수는 POLL_MS 에 매달지 마라. 폴(20Hz)을 따라 올라가면 1시간
+//    버퍼가 18000→72000 칸이 되고 차트 시간축이 4배로 늘어난다. 격자는
+//    벽시계 5Hz 로 고정한다.
 const HZ = CHART_HZ;                  // 5Hz
 const KEEP_N = 3600 * HZ;             // 1시간치까지 들고 있는다
 // 폴 몇 번에 한 칸이냐 — 20Hz 폴 / 5Hz 격자 = 4
@@ -93,9 +85,7 @@ const WARN_KO = [
   ['Crash: Disarming',                '🔴 충돌 감지, 시동 꺼짐'],
 ];
 
-// 🔴 **긴 키를 먼저 본다.** `Geofence` 가 `Geofence: exceeding maximum altitude`
-//    보다 앞에 있으면 구체적인 쪽을 가로채 "지오펜스 경계" 로 뭉개진다 —
-//    실제로 4건이 그랬다. 목록 순서에 기대지 않도록 여기서 정렬해 둔다.
+// 긴 키를 먼저 본다 — 짧은 접두가 구체적인 문구를 가로채지 않게.
 const WARN_KO_SORTED = [...WARN_KO].sort((a, b) => b[0].length - a[0].length);
 
 /** 경고 원문 → 한글 한 줄. 모르는 문구면 ''. */
@@ -207,10 +197,8 @@ function buildHUD() {
   h.arm = el('text', { x: 0, y: 0, 'text-anchor': 'middle', class: 'armTxt' }, h.center);
   h.mode = el('text', { x: 0, y: 34, 'text-anchor': 'middle', class: 'modeTxt', fill: 'var(--text)' }, h.center);
   // 🔴 경고는 피치 사다리와 안 겹치게 내리되, **HUD 밖으로 나가면 안 된다.**
-  //    처음엔 y=65·96 이라 −10°·−15° 가로대에 잘렸고, 그렇다고 y=186 까지
-  //    내리니 이번엔 짧아진 HUD 아래로 56px 넘쳐 통째로 안 보였다
-  //    (실측 2026-09-05: hudBot=439 인데 warnBot=495).
-  //    y=78·108 이면 −13°·−18° 자리다 — 그 구간 가로대는 짧은 대(30px)뿐이라
+  //    너무 올리면 −10°·−15° 가로대에 잘리고, 너무 내리면 짧은 HUD 아래로
+  //    넘쳐 통째로 안 보인다. y=78·108 이면 −13°·−18° 자리다 — 그 구간 가로대는 짧은 대(30px)뿐이라
   //    폭 400px 판이 통째로 덮는다. 판이 겹침을 해결하므로 y 를 더 내릴 이유가 없다.
   // 🔴 비상정지. arm/모드 위에 겹쳐 놓는 것이 아니라 **둘을 숨기고 대신** 뜬다
   //    (아래 update 참조). 모터가 끊긴 상태에서 ARMED 와 비행모드를 같이
@@ -229,7 +217,7 @@ function buildHUD() {
   h.warnBg = el('rect', { x: -200, y: 92, width: 400, height: 26, rx: 4,
                           fill: '#0d1117', opacity: .92, class: 'off' }, h.center);
   h.warn = el('text', { x: 0, y: 110, 'text-anchor': 'middle', class: 'warnTxt', fill: 'var(--bad)' }, h.center);
-  // 🔴 원문 아래 한글 한 줄 (2026-09-15). FC 가 내는 영어를 그대로만 띄우면
+  // 🔴 원문 아래 한글 한 줄. FC 가 내는 영어를 그대로만 띄우면
   //    현장에서 무슨 뜻인지 생각하는 동안 시간이 간다. 원문은 그대로 두고
   //    (검색·문서 대조에 그게 필요하다) 아래에 요약만 붙인다.
   h.warnKo = el('text', { x: 0, y: 126, 'text-anchor': 'middle', class: 'warnKo',
@@ -250,10 +238,9 @@ function buildHUD() {
   h.spdBox = el('rect', { fill: '#0d1117', opacity: .92, stroke: 'var(--c-spd)', 'stroke-width': 1.5 }, svg);
   h.spdApex = el('polygon', { fill: '#0d1117', opacity: .92, stroke: 'var(--c-spd)', 'stroke-width': 1.5 }, svg);
   h.spdVal = el('text', { 'text-anchor': 'end', 'font-size': 22, fill: '#e6edf3' }, svg);
-  // 머리말·단위 (2026-09-10 복귀). 9/5 에 눈금과 겹친다고 뺐었는데, 무슨 값인지
-  // 테이프만 보고 못 읽는다는 지적이 있었다. 눈금 위에 판을 깔아 겹침을 막는다.
-  // ⚠️ 좌측은 **대지속도**다 — 피토관은 고장품이라 이 자리에 오면 안 된다
-  //    (web/live/README.md 「고장 센서 격리」).
+  // 머리말·단위. 무슨 값인지 테이프만 보고 읽혀야 한다. 눈금 위에 판을 깔아
+  // 겹침을 막는다.
+  // ⚠️ 좌측은 **대지속도**다 — 이 기체에는 대기속도 센서가 없다.
   h.spdHdrBg = el('rect', { fill: '#0d1117', opacity: .96, rx: 3 }, svg);
   h.spdHdr = el('text', { 'text-anchor': 'end', 'font-size': 11, 'font-weight': 700,
                           fill: 'var(--c-spd)', 'letter-spacing': '.5px' }, svg);
@@ -436,7 +423,7 @@ const CHARTS = [
   // minSpan — 축이 최소한 이만큼은 담는다. 없으면 지상 정지 중 ±1cm 노이즈가
   // 화면을 가득 채우고 눈금이 `0 / -0 / 0` 이 된다 (실측 rim3: climb -0.0013).
   // 값이 실제로 안 움직이면 **평평하게 보이는 것이 사실**이다.
-  // 🔴 고도와 속도를 한 칸에 둔다 (2026-09-11, 조종자 지시). 보조자가 기본으로
+  // 🔴 고도와 속도를 한 칸에 둔다. 보조자가 기본으로
   //    보는 것은 이 칸과 자세 둘뿐이고, 둘을 나란히 놓으면 「높이 대 빠르기」가
   //    한눈에 읽힌다. 상승률은 뺐다 — 고도선의 기울기가 같은 것을 말한다.
   //    속도는 **GPS 속도**(GLOBAL_POSITION_INT 의 vx·vy 합성, EKF 융합)다.
@@ -447,18 +434,19 @@ const CHARTS = [
     thresholds: [{ v: 30, label: '30m', color: '#d29922' }] },
   { id: 'k-pwr', title: '전력', on: false, series: [
       { key: 'cur', color: 'var(--c-cur)', label: '전류', axis: 'left', weight: 2, unit: 'A', minSpan: 10, nonNeg: true },
-      // 6S 는 만충 25.2V·저전압 21.0V 라 폭이 4V 면 비행 전체가 담긴다.
+      // 4S 는 만충 16.8V·하한 13.2V(MOT_BAT_VOLT_MIN) 라 폭이 2V 면 비행 대부분이 담긴다.
       { key: 'volt', color: 'var(--c-volt)', label: '전압', axis: 'right', unit: 'V', minSpan: 2 }],
-    // 60A — 조종자가 정한 경계 (2026-09-10). 45A(XT90 연속 정격)는 호버만 해도
-    // 넘겨서 선이 늘 그래프 아래 깔려 있었다. 60 은 9/5 최대 90.2A 로 가는 길목이다.
-    thresholds: [{ v: 60, label: '60A', color: '#d29922' }] },
+    // 모터 연속 14 A × 4 = 56 A (docs/design/01) — 그 7할인 40A 에 선을 긋는다.
+    thresholds: [{ v: 40, label: '40A', color: '#d29922' }] },
   { id: 'k-att', title: '자세', on: true, series: [
       { key: 'roll', color: '#d55e00', label: '롤', axis: 'left', weight: 2, unit: '°', minSpan: 20 },
       { key: 'pitch', color: '#e69f00', label: '피치', axis: 'left', weight: 2, unit: '°', minSpan: 20 }] },
   { id: 'k-vib', title: '진동', on: false, series: [
-      { key: 'vib', color: '#f0883e', label: '진동(최대축)', axis: 'left', weight: 2, minSpan: 6, nonNeg: true }],
-    // 5 — 이 기체의 실측 정상치가 평균 2.5 / 최대 5.0 (README). 30 은 화면 밖이었다.
-    thresholds: [{ v: 5, label: '5', color: '#d29922' }] },
+      { key: 'vib', color: '#f0883e', label: '진동(최대축)', axis: 'left', weight: 2, unit: 'm/s²', minSpan: 6, nonNeg: true }],
+    // VIBRATION 은 m/s² 다. ArduCopter 기준 30 넘으면 주의, 60 넘으면 위치 추정이
+    // 흔들린다 (log.html 진동 단과 같은 값).
+    thresholds: [{ v: 30, label: '30', color: '#d29922' },
+                 { v: 60, label: '60', color: '#f85149' }] },
   { id: 'k-gps', title: 'GPS', on: false, series: [
       { key: 'sats', color: '#3fb950', label: '위성 수', axis: 'left', weight: 2, minSpan: 6, nonNeg: true },
       { key: 'eph', color: '#f85149', label: '위치 오차', axis: 'right', unit: 'm', minSpan: 2, nonNeg: true }] },
@@ -566,7 +554,7 @@ function buildToc() {
 
 /** 마우스를 올린 지점에 세로 커서선을 세운다.
  *
- * 값 말풍선은 안 띄운다 (2026-09-05) — 지금 값은 왼쪽 계기판이 크게 말하고,
+ * 값 말풍선은 안 띄운다 — 지금 값은 왼쪽 계기판이 크게 말하고,
  * 없는 값까지 `전류 –A` 처럼 적어 두면 화면에 쓰레기만 는다. 커서선은
  * 남긴다: 여러 단을 세로로 훑을 때 같은 시각을 짚어 주는 것이 그 선이다.
  *
@@ -593,7 +581,7 @@ function bindHover(c) {
     hoverT = t;                       // 흘러가는 것을 멈춘다 (renderCharts 가 읽는다)
 
     // 그 시각의 값. 🔴 **값이 있는 계열만** 적는다 — 배터리를 안 물린
-    // 지상에서 `전류 –A` 같은 빈 줄이 뜨던 것을 고쳤다 (2026-09-05).
+    // 지상에서 `전류 –A` 같은 빈 줄이 뜨면 안 된다.
     if (!tip) return;
     const i = Math.max(0, Math.min(trk.n - 1, Math.round(t * trk.hz)));
     const rows = [];
@@ -679,10 +667,6 @@ function bearing(from, to) {
 function render(s) {
   pollN++;
   const d = s.d || {};
-  // 재생 바는 값 렌더와 무관하게 항상 최신 상태로 둔다 — 아래 조기반환
-  // 경로가 여럿이라 여기서 먼저 부른다.
-  if (typeof renderPlay === 'function') renderPlay(s.play);
-
   // ② 링크·프리즈·경고 만료 — 조기반환과 무관하게 항상 돈다.
   const changed = s.seq !== lastSeq;
   if (changed) { lastSeq = s.seq; lastSeqPoll = pollN; }
@@ -710,66 +694,6 @@ function render(s) {
   show(h.freeze, !!frz);
   show(h.freezeTxt, !!frz);
   if (frz) setText(h.freezeTxt, frz);
-
-  // 데이터 원천. ELRS(조종기 백팩) 인지 USB(FC 직결) 인지 — 갱신 주기가
-  // 크게 달라서 화면에 드러나야 한다 (수치: drone_live.py 「낡은 실측값」).
-  const ls = $('linkSrc');
-  const kind = s.link || null;
-  const pin = s.pin || null;
-  // 고정 여부까지 키에 넣는다 — 경로가 그대로여도 고정 상태가 바뀌면 다시 그린다.
-  const lkey = String(kind) + '/' + String(pin);
-  if (ls.dataset.k !== lkey) {
-    ls.dataset.k = lkey;
-    // 고정 중이면 자물쇠를 붙여, 지금 보이는 것이 자동 선택이 아니라 조종자가
-    // 세워 둔 경로임을 드러낸다. 고정한 경로가 죽어 값이 멈춰도 그것이 고장이
-    // 아니라 선택의 결과임을 알아야 한다.
-    setText(ls, (kind || '—') + (pin ? ' 🔒' : ''));
-    ls.className = (kind === 'ELRS' ? 'src-elrs' : kind === 'USB' ? 'src-usb' : '')
-                 + (pin ? ' pinned' : '');
-    const age = (s.links || {})[kind];
-    ls.title = (kind === 'ELRS' ? '조종기 ELRS 백팩 경유 (느리다)'
-             : kind === 'USB' ? 'FC USB 직결 브리지 경유'
-             // 🔴 재생은 실시간이 아니다. 같은 계기를 쓰므로 여기서 분명히 말한다.
-             : kind === 'LOG' ? '로그 재생 중 — 실시간이 아니다'
-             : '데이터 없음')
-             + (pin ? ' — 고정됨' : ' — 자동')
-             + (age != null ? ' (' + age.toFixed(1) + 's 전)' : '')
-             + '\n눌러서 자동 → ELRS → USB';
-  }
-
-  // 기록 상태. 야외 판정(GPS 3D fix + 위성 6기)을 통과한 arm 구간만 적으므로
-  // **안 찍히는 것도 정상 동작**이다 — 그 사실이 화면에 있어야 조종자가
-  // 착륙한 뒤에야 파일이 없는 것을 알아채는 일이 없다.
-  // 🔴 재생 중에도 기록기는 실기를 보고 계속 돈다. 그래서 재생 여부와 무관하게
-  //    이 칸은 실제 기록 상태를 말한다 (s.rec 은 서버가 실기 기준으로 만든다).
-  const rc = $('recSt');
-  const rs = s.rec;
-  let rtx = '', rcl = '', rti = '';
-  if (rs && rs.on) {
-    if (rs.rec) {
-      // 어느 경로로 적고 있나. 둘 다면 'REC ELRS+FC'.
-      rtx = 'REC ' + (rs.kinds || []).join('+');
-      rcl = 'rec-on';
-      rti = (rs.files || []).map((f) => f.name).join('\n')
-        + (rs.dur ? '\n' + mmss(rs.dur) : '');
-    } else if (rs.waiting) {
-      rtx = '실내대기';
-      rcl = 'rec-wait';
-      rti = 'ARM 했지만 GPS 가 야외 기준(3D fix · 위성 6기)에 못 미쳐 안 적는다.\n'
-        + 'fix 가 잡히면 그 시점부터 적기 시작한다.';
-    } else if (rs.error) {
-      rtx = '기록 오류';
-      rcl = 'rec-err';
-      rti = rs.error;
-    }
-  }
-  if (rc.dataset.tx !== rtx) {
-    rc.dataset.tx = rtx;
-    setText(rc, rtx);
-    rc.className = rcl;
-    rc.hidden = !rtx;
-  }
-  if (rti && rc.title !== rti) rc.title = rti;
 
   // 하단 바는 좁다. 송신 주소는 title 로 밀고 숫자만 남긴다.
   const stEl = $('stats');
@@ -804,11 +728,8 @@ function render(s) {
 
   // ── 자세. 🔴 roll/pitch 에 CSS transition 이나 보간을 넣지 마라 —
   //    주 자세계에 100~200ms 지연이 생겨 계기가 과거를 보여준다.
-  //    ⚠️ 여기 있던 「데이터가 5Hz 니 화면도 5Hz 다. 끊겨 보이면 고칠 곳은
-  //    텔레메트리 레이트지 화면이다」는 **틀렸다** (2026-09-11 정정). USB 는
-  //    ATTITUDE 를 100Hz 로 준다 — 실측. 끊긴 건 링크가 아니라 POLL_MS=200 이
-  //    그걸 5Hz 로 버리고 있어서였다. ELRS 에서 extras.txt 로 레이트를 올려도
-  //    화면이 안 부드러워진 이유가 이것이다. 폴을 20Hz 로 올려 고쳤다.
+  //    ⚠️ 폴 주기가 화면 갱신의 상한이다. 텔레메트리가 빨라도 폴이 5Hz 면
+  //    화면은 5Hz 로 끊긴다 — 그래서 폴을 20Hz 로 둔다.
   const roll = d.roll || 0, pitch = d.pitch || 0;
   // 기수를 들면(pitch +) 수평선은 **아래로** 내려간다. 부호를 빼먹으면 계기가 거꾸로 돈다.
   const rt = `rotate(${(-roll).toFixed(2)})`, pt = `translate(0,${(pitch * PPD_PITCH).toFixed(1)})`;
@@ -866,7 +787,7 @@ function render(s) {
     if (edgeR) show(edgeR, out && dd > 0);
     if (!out) setAttr(node, 'transform', `translate(${(cx + dd * PPD_HDG).toFixed(1)},0)`);
   };
-  // 코스 마커 — 🔴 에어스피드가 고장이라 기수와 코스의 벌어짐이 바람에 밀리는
+  // 코스 마커 — 🔴 대기속도 센서가 없어 기수와 코스의 벌어짐이 바람에 밀리는
   // 각을 아는 유일한 수단이다. 호버에서 atan2 는 노이즈이므로 gs<1.5 면 숨긴다.
   const moving = gs != null && gs >= 1.5 && d.vx != null && d.vy != null;
   place(h.course, null, null, moving ? wrap360(Math.atan2(d.vy, d.vx) * 180 / Math.PI) : null);
@@ -935,21 +856,21 @@ function render(s) {
   //    비행 중 곁눈질로 읽는 값만 남긴다 — 나머지는 우측 차트에 있다.
   //
   // 🔴 색 예산은 그대로다: 평소엔 전부 무채색이고, 색이 보이는 것 자체가 신호다.
-  //    (--c-cur 이 --bad 와 같은 #f85149 라 그걸 기본색으로 쓰면 30A 정상
-  //     비행 내내 새빨갛고 정작 60A 초과가 안 튄다.)
+  //    (--c-cur 이 --bad 와 같은 #f85149 라 그걸 기본색으로 쓰면 정상
+  //     비행 내내 새빨갛고 정작 한계 초과가 안 튄다.)
   const sc = (id, cls) => { const e = $(id); if (e) e.className = 'sc' + (cls ? ' ' + cls : ''); };
 
+  // 모터 연속 14 A × 4 = 56 A (docs/design/01) 를 넘으면 빨강, 그 7할(40 A)에서 노랑.
   setText($('st-cur'), fmt(d.cur));
-  sc('sc-cur', d.cur > 60 ? 'bad' : d.cur > 45 ? 'warn' : '');
+  sc('sc-cur', d.cur > 56 ? 'bad' : d.cur > 40 ? 'warn' : '');
 
   setText($('st-batt'), d.batt_pct != null ? String(d.batt_pct) : '—');
   sc('sc-batt', d.batt_pct != null && d.batt_pct < 20 ? 'bad'
     : d.batt_pct != null && d.batt_pct < 35 ? 'warn' : '');
 
-  // 6S 리튬 기준. 45도를 넘으면 수명이 급히 깎이고 60도는 위험 구간이다.
   // 배터리 온도는 계기판이 아니라 HUD 좌측 하단에 겹쳐 둔다 — 평소 볼 일이
   // 없고 뜨거워질 때만 눈에 들어오면 되는 값이라, 계기판 칸을 하나 쓰기에는
-  // 아깝다. 6S 리튬 기준 45도를 넘으면 수명이 급히 깎이고 60도는 위험이다.
+  // 아깝다. 리튬 배터리는 45도를 넘으면 수명이 급히 깎이고 60도는 위험이다.
   // 값이 없으면 0.0 을 찍는다. 배터리를 뽑으면 BATTERY_STATUS 가 발행되지
   // 않아 이 칸이 비는데, 자리를 감췄다 되살리면 HUD 구석이 깜빡여 오히려
   // 눈에 걸린다. 0.0 은 실제 온도로 읽힐 수 없는 값이라 "아직 안 온다" 로
@@ -968,7 +889,7 @@ function render(s) {
   sc('sc-sats', d.fix != null && d.fix < 3 ? 'bad' : (d.sats != null && d.sats < 8) ? 'warn' : '');
 
   // eph — fix 가 3D 를 유지한 채 이 값이 먼저 부푸는 것이 위치 열화의 첫 징후다.
-  // 실측 평소 0.15~0.23m. 1m 넘으면 노랑, 3m 넘으면 빨강.
+  // 1m 넘으면 노랑, 3m 넘으면 빨강. 🔶 미검증 — 이 기체 실비행 평소값이 아직 없다.
   setText($('st-eph'), d.eph != null ? d.eph.toFixed(2) : '—');
   sc('sc-eph', d.eph != null && d.eph > 3 ? 'bad' : d.eph != null && d.eph > 1 ? 'warn' : '');
 
@@ -981,7 +902,7 @@ function render(s) {
 
 // ── 지도 ────────────────────────────────────────────────────────────
 // HUD 는 자세를 말하지만 **어디 있는지**를 말하지 않는다. 비행 중 위치 감이
-// 안 잡힌다는 것이 이 칸이 생긴 이유다 (2026-09-10).
+// 안 잡힌다는 것이 이 칸이 생긴 이유다.
 //
 // 로그 뷰어(log.html)와 **같은 Leaflet·같은 타일**을 쓴다 — 지난 비행과 지금
 // 비행을 같은 그림으로 읽어야 눈이 안 흔들린다.
@@ -991,7 +912,7 @@ function render(s) {
 //    주는 길을 이미 갖고 있다 (`snapshot(since, want_track)`). 매 폴 몇 개씩만
 //    받으므로 대역폭 문제가 없다.
 const MAX_ZOOM = 20;
-// 🔴 기본 줌 — "50m 급" (2026-09-10 요청).
+// 🔴 기본 줌 — "50m 급".
 //    지도 칸이 좁고(실측 155px) 세로로 길어(455px) 가로·세로 배율이 크게
 //    다르다. 실측 (위도 35.18, 155×455px):
 //
@@ -1006,10 +927,10 @@ const MAX_ZOOM = 20;
 //
 //    ⚠️ Esri 위성은 z18 까지만 실제 타일을 준다 — z19 는 마지막 타일을
 //    확대한 것이라 흐리다. 궤적·기체 아이콘은 벡터라 선명하다.
-// 🔴 지도 칸이 우측 넓은 칸으로 옮겨지며(2026-09-10) 같은 z19 에서 가로 실거리가
+// 🔴 지도 칸이 우측 넓은 칸이라 같은 z19 에서 가로 실거리가
 //    74m → 115m 로 늘었다. 한 단 올려 "화면 가로 100m 이내" 규칙을 지킨다.
 const ZOOM_50M = 20;
-// 🔴 위성 사진만 쓴다 (2026-09-10). OSM 은 흰 바탕이라 어두운 계기판 옆에서
+// 🔴 위성 사진만 쓴다. OSM 은 흰 바탕이라 어두운 계기판 옆에서
 //    그 칸만 밝게 튀고, 비행장에서는 활주로·장애물이 지도보다 사진에 더 잘
 //    보인다. 전환 버튼도 없앴다 — 좁은 칸에서 버튼이 궤적을 가린다.
 let lmap = null, tiles = {};
@@ -1025,7 +946,7 @@ const TRACK_KEEP = 20000;
 let trkPts = [];
 let trkHave = 0;          // 서버 기준 지금까지 받은 점 개수
 let mapReady = false;
-// 🔴 따라가기는 **항상 켜져 있다** (2026-09-10). 토글 버튼을 없앴다 —
+// 🔴 따라가기는 **항상 켜져 있다**. 토글 버튼을 없앴다 —
 //    비행 중에 기체가 화면 밖으로 나가 있는 상태가 정상일 이유가 없고,
 //    좁은 칸에서 버튼 하나가 계기 자리를 먹는다.
 //    다만 손으로 지도를 끌어 주변을 볼 수는 있어야 하므로, 드래그하면
@@ -1045,7 +966,7 @@ function initMap() {
   //    검사가 끝나지 않는다 (실측: 180초를 줘도 "검사 중…"). `?notiles=1` 로
   //    타일만 끈다 — 지도·마커·궤적·레이아웃은 그대로 검사된다.
   const noTiles = new URLSearchParams(location.search).has('notiles');
-  // 🔴 +/− 버튼을 안 붙인다 (2026-09-10). 칸이 좁아 버튼이 궤적을 가리고,
+  // 🔴 +/− 버튼을 안 붙인다. 칸이 좁아 버튼이 궤적을 가리고,
   //    줌은 기본값(50m 급)이 맞춰져 있어 평소 건드릴 일이 없다.
   //    필요하면 휠·핀치로 조절된다 — scrollWheelZoom 은 그대로 살아 있다.
   lmap = L.map(box, { zoomControl: false, attributionControl: true });
@@ -1350,7 +1271,7 @@ function renderMap(s) {
 
   // 항적 증분. track_from 이 0 이면 "처음부터 다시" 라는 뜻이다(서버 주석).
   // 🔴 재생은 빈 배열이라도 갈아끼운다 — 로그 초반(항적 0점)에 라이브 항적이
-  //    남아 있으면 로그 위에 실내 표류 꼬리가 파란 선으로 보인다 (2026-09-10).
+  //    남아 있으면 로그 위에 실내 표류 꼬리가 파란 선으로 보인다.
   trkNowRef = s.playback ? (typeof s.pos === 'number' ? s.pos : 0) : null;
   if (Array.isArray(s.track) && (s.track.length || s.playback)) {
     const now = Date.now() / 1000;
@@ -1361,7 +1282,7 @@ function renderMap(s) {
       const lo = Array.isArray(p) ? p[1] : p && p.lon;
       // 🔴 시각은 **서버가 준 것**을 쓴다 (p[3], unix 초). 받은 시각을 붙이면
       //    새로고침 때 5533점이 한 묶음으로 와서 전부 같은 시각이 되고,
-      //    시간 창이 하나도 못 자른다 (2026-09-10 실측). 옛 서버가 시각을
+      //    시간 창이 하나도 못 자른다. 옛 서버가 시각을
       //    안 주면 지금 시각으로 떨어뜨린다 — 그때는 안 잘리지만 안 깨진다.
       const ts = (Array.isArray(p) && typeof p[3] === 'number') ? p[3] : now;
       if (typeof la === 'number' && typeof lo === 'number'
@@ -1373,7 +1294,7 @@ function renderMap(s) {
   }
   // 🔴 차트의 시간 창(1분/3분/10분/전체)과 **같은 구간**을 그린다.
   //    지도만 전체를 그리면 "차트는 1분인데 지도는 20분" 이라 두 계기가
-  //    서로 다른 시간을 말한다 (2026-09-10).
+  //    서로 다른 시간을 말한다.
   drawTrack();
   if (typeof s.track_n === 'number') trkHave = s.track_n;
 
@@ -1428,13 +1349,15 @@ function renderMap(s) {
 //   2. **치우침**: 편차가 벌어졌을 때 **최대·최소인 놈만** 색을 받는다.
 //      한쪽만 무리하는 것이 무게중심·프롭 손상·모터 열화의 첫 신호다.
 const MOTORS = ['LF', 'RF', 'LB', 'RB'];
-// 편차 임계 — 실측 근거 (2026-09-09 강풍 세션 6편): 무풍 3~4%p, 강풍 8~10%p.
-// 20%p 는 그 두 배가 넘는 값이라 "기체가 한쪽을 억지로 붙들고 있다" 로 읽는다.
+// 🔶 실비행 전 — 아래 임계는 전부 이 기체 실비행으로 아직 검증하지 않았다.
+// 편차 임계. 20%p 면 "기체가 한쪽을 억지로 붙들고 있다" 로 읽는다.
 const SPREAD_WARN = 10, SPREAD_BAD = 20;
-// 🔴 개별 모터 부하 임계. 호버가 65%(MPC_THR_HOVER=0.65)인 기체라
-//    70% 는 "여유가 줄기 시작했다", 80% 는 "여유가 얼마 안 남았다" 다.
-//    그 위 20%p 안에서 제어 여력이 끝나므로 80% 부터가 실제 경계다.
+// 🔴 개별 모터 부하 임계. 이 기체 호버는 약 54%(MOT_THST_HOVER=0.540,
+//    components/fc/pixhawk-2.4.8/README.md) 라 70% 는 "여유가 줄기 시작했다",
+//    80% 는 "여유가 얼마 안 남았다" 다.
 const MOT_WARN = 70, MOT_BAD = 80;
+// 평균 임계. 넷이 다 같이 호버(54%)보다 11%p·21%p 위면 기체 전체의 추력 여유가 준다.
+const MAVG_WARN = 65, MAVG_BAD = 75;
 
 function renderMotors(mt) {
   // render() 의 sc 는 그 함수 안의 지역 상수다 — 여기서는 안 보인다.
@@ -1467,7 +1390,7 @@ function renderMotors(mt) {
     //    40~90% 를 반지름 9~22 로 펴서 그 구간의 차이를 크게 만든다.
     //    (하한·상한 밖은 잘라 붙인다 — 원이 사라지거나 칸을 넘지 않게.)
     const f = Math.max(0, Math.min(1, (v - 40) / 50));
-    // viewBox 가 280×100 이라 반지름도 그 스케일이다 (2026-09-10 확대).
+    // viewBox 가 280×100 이라 반지름도 그 스케일이다.
     rot.setAttribute('r', (13 + f * 12).toFixed(1));
     // 밝기로도 부하를 준다. 평소엔 무채색 회색조라 색 예산을 안 쓴다 —
     // 14%(어두움) ~ 66%(밝음) 사이를 오간다.
@@ -1495,9 +1418,8 @@ function renderMotors(mt) {
   setText($('st-mspread'), spread == null ? '—' : spread.toFixed(1));
   sc('sc-mspread', lvl);
   setText($('st-mavg'), avg == null ? '—' : avg.toFixed(0));
-  // 평균은 "얼마나 힘든가" 다. 호버 65% 가 이 기체의 정상(MPC_THR_HOVER=0.65)
-  // 이라, 85% 를 넘으면 추력 여유가 얼마 안 남았다는 뜻이다.
-  sc('sc-mavg', avg == null ? '' : avg > 90 ? 'bad' : avg > 85 ? 'warn' : '');
+  // 평균은 "얼마나 힘든가" 다.
+  sc('sc-mavg', avg == null ? '' : avg > MAVG_BAD ? 'bad' : avg > MAVG_WARN ? 'warn' : '');
 }
 
 // ── 데모 피드 ───────────────────────────────────────────────────────
@@ -1507,7 +1429,6 @@ function demoState(n) {
   const q = new URLSearchParams(location.search);
   const t = n / 5;
   const fx = (k, v) => (q.has(k) ? parseFloat(q.get(k)) : v);
-  const fx2 = (k) => q.get(k);
   const hdg = fx('hdg', wrap360(t * 24));
   const gs = fx('gs', 12 + 11 * Math.sin(t / 7));
   return {
@@ -1522,17 +1443,10 @@ function demoState(n) {
       return [35.181 + Math.sin(u / 20) * 3e-4, 128.554 + Math.cos(u / 20) * 3e-4, 45];
     }),
     home: [35.181, 128.554],   // 실제 비행장 — 위성 타일이 의미 있게 보인다
-    // 기록 상태. ?rec=on|wait|off 로 세 갈래를 강제해 자체검사가 실측한다.
-    // 기본은 실제와 같은 모양 — arm 이면 두 경로로 적는 중.
-    rec: fx2('rec') === 'off' ? { on: true, rec: false, waiting: false }
-      : fx2('rec') === 'wait' ? { on: true, rec: false, waiting: true }
-      : { on: true, rec: true, kinds: ['ELRS', 'FC'], dur: t,
-          files: [{ kind: 'ELRS', name: 'demo_ELRS.tlog' },
-                  { kind: 'FC', name: 'demo_FC.tlog' }] },
-    messages: n > 25 && n < 40 ? [{ t: 1757000000, sev: 'CRIT', text: 'demo: Preflight Fail: Attitude failure (roll)' }] : [],
+    messages: n > 25 && n < 40 ? [{ t: 1757000000, sev: 'CRIT', text: 'demo: PreArm: Compass not calibrated' }] : [],
     d: {
       armed: (n % 300) > 60, landed: (n % 300) > 100 ? 2 : 1,
-      mode: fx('auto', 0) ? 'AUTO.MISSION' : 'POSCTL',
+      mode: fx('auto', 0) ? 'AUTO' : 'LOITER',
       // ?sys=8 로 비상정지 화면을 띄운다 — 자체검사가 그렇게 확인한다.
       system_status: fx('sys', 4),
       lat: 35.181 + Math.sin(t / 20) * 3e-4, lon: 128.554 + Math.cos(t / 20) * 3e-4,
@@ -1540,21 +1454,17 @@ function demoState(n) {
       vx: Math.cos(t / 7) * gs, vy: Math.sin(t / 7) * gs,
       groundspeed: gs, climb: 3 * Math.cos(t / 9), hdg, yaw: hdg,
       roll: fx('roll', 55 * Math.sin(t / 5)), pitch: fx('pitch', 22 * Math.sin(t / 6.5)),
-      throttle: 52, load: 41,
-      volt: fx('volt', 23.4), cur: fx('cur', 35 + 32 * Math.sin(t / 11)),
-      batt_pct: 63, mah: 4820,
-      fix: 4, sats: 27, eph: 0.19, eph_ekf: 0.4,
-      vibe: [2.5, 3.1, 4.4], ekf: { pos: 1, vel: 1, hgt: 1 }, ekf_ratio: { vel: 0.3 },
-      rssi: 200, wp_seq: 3, wp_dist: 27.4, xtrack: -2.1,
-      // 링크 — ?dbm=N 으로 색 경로를 강제한다. 기본은 실측을 닮은 -68dBm.
-      link_dbm: Math.round(fx('dbm', -68)),
-      radio_noise: Math.round(fx('noise', 8)),
+      thr: 54, load: 41,
+      volt: fx('volt', 15.6), cur: fx('cur', 20 + 12 * Math.sin(t / 11)),
+      batt_pct: 63,
+      fix: 3, sats: 14, eph: 0.8,
+      vibe: [8.5, 9.1, 14.4], ekf_ratio: { vel: 0.3 },
       // 모터 — 형상 계기를 데모로 검증하려면 값이 있어야 한다.
-      // 기본은 실측을 닮은 모양: 평균 60% 대에 편차 몇 %p.
+      // 기본은 호버(MOT_THST_HOVER≈0.54) 근처에 편차 몇 %p.
       // ?spread=N 으로 편차를 강제해 자체검사가 색·크기를 실측한다.
       motors: (() => {
         const sp = fx('spread', 4);              // 최대−최소 %p
-        const base = fx('mavg', 62);             // 평균 %
+        const base = fx('mavg', 54);             // 평균 %
         const w = Math.sin(t / 3) * 1.5;         // 살아 있게 흔든다
         return { LF: base + sp / 2 + w, RF: base + sp / 6 - w,
                  LB: base - sp / 6 + w, RB: base - sp / 2 - w };
@@ -1664,12 +1574,10 @@ async function pbStart(name) {
     if (info.state === 'ready') {
       ulpb.on = true; ulpb.t = 0; ulpb.dur = info.dur; ulpb.name = info.name;
       ulpb.series = await (await fetch('/api/playback/series', { cache: 'no-store' })).json();
-      // 반대 방향도 막는다 — tlog 재생이 돌고 있으면 서버에서 내린다.
-      if (!pb.bar.hidden) { try { await pbApi('unload'); } catch (e) {} pb.bar.hidden = true; pbPlaying = false; }
       document.body.classList.add('playback');
       $('pbBar').hidden = false;
       $('pbPick').hidden = true;
-      $('pbName').textContent = info.name + (info.repaired ? ' (복구됨)' : '');
+      $('pbName').textContent = info.name;
       $('pbSeek').value = '0';
       lastMode = null;
       pbPlay();
@@ -1702,175 +1610,43 @@ function pbExit() {
   poll();                    // 멈춰 있던 실시간 폴을 다시 돈다
 }
 
-/** 통합 재생 목록.
+/** 재생 목록 — FC 로그(.BIN)만. 이름과 크기 한 줄씩.
  *
- * 두 종류가 한 목록에 선다:
- *   실시간 기록  logs/live/*.tlog  — 이 PC 가 받아 적은 것. 한 비행에서
- *                ELRS 백팩과 FC USB 로 각각 받으므로 파일이 둘 나온다.
- *   FC 로그      labserver 의 *.BIN — 기체 SD 에서 내려받은 정본.
- *
- * 🔴 재생 방식은 둘이 다르다. tlog 는 서버가 State 를 과거 프레임으로 채워
- *    흘리고, BIN 은 브라우저가 시각을 정해 긁는다. 고르는 사람에게 그 차이는
- *    사정이지 선택지가 아니므로 **목록은 하나**로 둔다.
- *
- * 🔴 **줄에 이름은 하나다.** 예전에는 왼쪽에 시각, 오른쪽에 파일명, 또 크기를
- *    따로 적어 같은 사실이 세 번 나왔다. 이름 하나(`00000012.BIN`)가
- *    번호·날짜·시각을 다 담으므로 그것만 쓴다.
+ * 🔴 **두 서버가 같은 경로에 다른 모양을 준다.**
+ *      로컬 drone_live.py : {logs:[...], error}
+ *      웹   server.js   : [...]   ← 웹 목록 페이지의 카탈로그
+ *    웹서버 쪽 모양은 목록 페이지도 쓰므로 바꾸지 않고 여기서 받아 준다.
  */
 async function pbShowPicker() {
   $('pbPick').hidden = false;
   $('pbList').innerHTML = '<div class="msg">불러오는 중…</div>';
 
-  // 둘을 같이 긁는다. 한쪽이 죽어도 나머지는 보여야 한다 — 실시간 기록만
-  // 있고 .BIN 를 아직 안 내려받은 상태가 정상이다.
-  const [recs, logs] = await Promise.all([
-    fetch('/api/recordings', { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
-    fetch('/api/logs', { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
-  ]);
+  const logs = await fetch('/api/logs', { cache: 'no-store' })
+    .then((r) => r.json()).catch(() => null);
+  const rows = Array.isArray(logs) ? logs : (logs && logs.logs) || [];
+  if (!rows.length) {
+    $('pbList').innerHTML = '<div class="msg">' + ((logs && logs.error) || '재생할 것이 없다.') + '</div>';
+    return;
+  }
 
   const box = document.createElement('div');
-  let n = 0;
-
-  // 배지 한 칸. **줄 맨 왼쪽**에 선다 — 목록을 훑을 때 종류가 먼저 보여야
-  // 이름을 읽을지 말지 정한다.
-  const badge = (kind, text, title, onclick) => {
-    const b = document.createElement(onclick ? 'button' : 'span');
-    b.className = 'kind k-' + kind;
-    b.textContent = text || kind;
-    if (title) b.title = title;
-    if (onclick) b.onclick = (e) => { e.stopPropagation(); onclick(); };
-    return b;
-  };
-
-  // 비행 분류 — 목록 페이지와 같은 이름·색을 쓴다. 두 화면에서 같은 비행이
-  // 다르게 보이면 같은 것인 줄 모른다.
-  const TAGLABEL = { flight: '실비행', hover: '호버', ground: '지상',
-                     abort: '즉시 disarm', noarm: 'arm 없음',
-                     misn: '미션', rtl: 'RTL' };
-
-  const mkrow = (badges, name, right, tags) => {
+  for (const e of rows) {
     const row = document.createElement('div');
     row.className = 'row';
-    const kb = document.createElement('span');
-    kb.className = 'kinds';
-    for (const b of badges) kb.appendChild(b);
-    row.appendChild(kb);
     const nm = document.createElement('span');
     nm.className = 'nm';
-    nm.textContent = name;
+    nm.textContent = e.name;
     row.appendChild(nm);
-    // 🔴 제목 **오른쪽**에 붙는다 (사용자 지시 2026-09-15). 왼쪽 배지는 파일의
-    //    성격(어느 링크·원본인가), 이쪽은 비행의 성격이다.
-    if (tags && tags.length) {
-      const tb = document.createElement('span');
-      tb.className = 'tags';
-      for (const t of tags) {
-        const el = document.createElement('span');
-        el.className = 'tag t-' + t;
-        el.textContent = TAGLABEL[t] || t;
-        tb.appendChild(el);
-      }
-      row.appendChild(tb);
-    }
-    if (right) {
+    if (e.size != null) {
       const r = document.createElement('span');
       r.className = 'wh';
-      r.textContent = right;
+      r.textContent = (e.size / 1e6).toFixed(1) + 'MB';
       row.appendChild(r);
     }
+    row.onclick = () => pbStart(e.name);
     box.appendChild(row);
-    n++;
-    return row;
-  };
-
-  // ── 실시간 기록 (비행 단위 한 줄) ──────────────────────────────
-  // 이쪽은 머리말을 남긴다. .BIN 와 성격이 달라서 — 이 PC 가 받아 적은
-  // 것이고 텔레메트리로 나온 것만 들어 있다 — 섞이면 오해한다.
-  if (recs && recs.items && recs.items.length) {
-    const h = document.createElement('div');
-    h.className = 'gh';
-    h.textContent = '실시간 기록 (.tlog)';
-    box.appendChild(h);
-    for (const g of recs.items) {
-      // 경로 배지. 파일이 둘이면 **고를 수 있어야 한다** — 어느 링크가
-      // 무엇을 놓쳤나를 보려고 나눠 적은 것이므로 한쪽만 골라 트는 일이
-      // 그대로 목적이다.
-      const bs = g.files.map((f) => badge(
-        f.kind, f.kind, f.name + '  (' + (f.size / 1e6).toFixed(1) + 'MB)',
-        () => recStart(f.name, g.label, f.kind)));
-      const row = mkrow(bs, g.label + '  ' + (g.size / 1e6).toFixed(1) + 'MB');
-      row.onclick = () => recStart(g.files[0].name, g.label, g.files[0].kind);
-    }
-  }
-
-  // ── FC 로그 (.BIN) ────────────────────────────────────────────
-  // 🔴 머리말이 없다. 이름이 `<번호>.BIN` 이라 무엇인지 이름만 봐도
-  //    안다 — 설명을 한 줄 더 얹으면 목록만 밀린다 (사용자 지시 2026-09-06).
-  //
-  // 🔴 **두 서버가 같은 경로에 다른 모양을 준다** (2026-09-07 수정).
-  //      로컬 drone_live.py : {logs:[...], source, error}   ← logsource.catalog()
-  //      웹   server.js   : [...]                          ← 웹 목록 페이지의 카탈로그
-  //    `logs.logs` 만 보던 동안 웹에서는 늘 undefined 라 이 블록이 통째로
-  //    건너뛰어졌고, 랩서버에 .BIN 가 56개인데 「재생할 것이 없다」가 떴다.
-  //    웹서버 쪽 모양은 목록 페이지도 쓰므로 바꾸지 않고 여기서 받아 준다.
-  const logRows = Array.isArray(logs) ? logs : (logs && logs.logs) || [];
-  if (logRows.length) {
-    for (const e of logRows) {
-      const bs = [];
-      // 번호를 추론한 것은 흐리게 — FC 가 준 번호와 같다는 보장이 없다.
-      // exact/local 은 로컬 카탈로그에만 있는 값이다. 웹 모양(배열)에서는
-      // undefined 이므로 **모르는 것을 단정하지 않는다** — 배지를 안 붙인다.
-      const known = e.exact !== undefined;
-      bs.push(badge(!known || e.exact ? 'BIN' : 'BINX', 'bin',
-        !known ? '' : e.exact ? 'FC 가 준 번호다' :
-          '번호는 추론한 것이다 (원본 이름 ' + e.name + ')'));
-      // 복구본은 **같은 제목**을 쓰고 배지로만 가른다 (사용자 지시).
-      if (e.recovered || e.repaired) bs.push(badge('REC2', '복구', '_repair() 가 살려낸 사본'));
-      if (known && !e.local) bs.push(badge('REM', '원격', 'labserver 에 있다 — 재생하면 받아 온다'));
-      // 웹 카탈로그에는 disp(정리한 표시 이름)가 없다. 이름을 그대로 쓴다.
-      // 🔴 로컬 카탈로그(drone_live.py)는 이 필드를 안 준다 — 파일명만 훑기
-      //    때문이다. 없으면 배지 없이 그대로 간다. 모르는 것을 지어내지 않는다.
-      const tags = [];
-      if (e.badge && e.badge !== 'unknown' && e.badge !== 'err') tags.push(e.badge);
-      for (const a of (e.auto || [])) tags.push(a);
-      const row = mkrow(bs, e.disp || e.name,
-                        (e.size / 1e6).toFixed(1) + 'MB', tags);
-      row.onclick = () => pbStart(e.name);
-    }
-  }
-
-  if (!n) {
-    const err = (recs && recs.error) || (logs && logs.error) || '재생할 것이 없다.';
-    $('pbList').innerHTML = '<div class="msg">' + err + '</div>';
-    return;
-  }
-  // 목록이 어디서 왔는지. 🔴 목록은 **정본만** 따른다 — 정본에 못 붙으면
-  // 로컬 사본으로 대신하지 않고 비운다. 그래야 화면에 뜬 것이 곧 정본이다.
-  if (!Array.isArray(logs) && logs && logs.source === 'down' && logs.error) {
-    const w = document.createElement('div');
-    w.className = 'msg warn';
-    w.textContent = '⚠️ ' + logs.error;
-    box.insertBefore(w, box.firstChild);
   }
   $('pbList').replaceChildren(box);
-}
-
-/** 실시간 기록(.tlog) 하나를 튼다. 통합 피커에서만 부른다. */
-async function recStart(name, label, kind) {
-  // 🔴 두 재생을 동시에 켜지 않는다. BIN 재생은 폴을 멈추고 자기 타이머로
-  //    그리므로, tlog 재생(서버가 /api/state 로 흘린다)과 겹치면 한 계기에
-  //    두 시각이 섞인다.
-  if (ulpb.on) pbExit();
-  const r = await pbApi('load?name=' + encodeURIComponent(name));
-  if (!r) {
-    $('pbList').innerHTML = '<div class="msg">열지 못했다: ' + name + '</div>';
-    return;
-  }
-  setText($('playName'), label + ' · ' + kind);
-  pb.bar.hidden = false;
-  $('pbPick').hidden = true;
-  pbPlaying = true;          // 이제부터 상태는 재생 서버에서 받는다
-  await pbApi('play');
 }
 
 // ── 폴 루프 ─────────────────────────────────────────────────────────
@@ -1891,18 +1667,12 @@ async function poll() {
     return;
   }
   try {
-    // 🔴 항적은 **증분으로** 받는다 (2026-09-10, 지도가 생기면서 바뀌었다).
-    //    예전에는 `track=0` 으로 아예 안 받았다 — 지도가 없었고, 전량을 받으면
+    // 🔴 항적은 **증분으로** 받는다. 예전에는 `track=0` 으로 아예 안 받았다 — 지도가 없었고, 전량을 받으면
     //    40분 비행에서 폴마다 수백 KB 였기 때문이다. 서버는 `since=` 로 그 뒤의
     //    점만 주는 길을 이미 갖고 있어(`snapshot(since, want_track)`), 매 폴
     //    몇 개씩만 오간다. 전량을 다시 받는 것은 서버가 track_from=0 을
     //    보낼 때뿐이다("처음부터 다시").
-    // 🔴 tlog 재생 중에는 **재생 서버**의 상태를 본다. 웹에서 평소 폴하는
-    //    `/api/live/state` 는 rim3 가 밀어 올린 **실시간** 값이라, 재생을
-    //    틀어도 화면이 지금 기체를 계속 그린다 (2026-09-07 수정).
-    //    로컬은 한 프로세스가 둘 다 쥐고 있어 `/api/state` 하나로 끝난다.
-    const src = (ON_WEB && pbPlaying) ? '/api/play-state' : API_STATE;
-    const r = await fetch(src + '?since=' + trkHave, { cache: 'no-store' });
+    const r = await fetch(API_STATE + '?since=' + trkHave, { cache: 'no-store' });
     if (r.ok) render(await r.json());
   } catch (e) {
     // 서버가 죽었을 때도 점으로 말한다 — 깜빡이는 빨강.
@@ -1916,13 +1686,9 @@ async function poll() {
 }
 
 // ── 기동 ────────────────────────────────────────────────────────────
-// 웹(drone01.bewe.co.kr/live)에서는 로컬 전용 기능을 숨긴다. 재생·기록은 현장
-// 노트북(rim3)의 파일을 다루는 것이라 웹에는 그 파일이 없다 — 버튼만 남겨 두면
-// 눌렀을 때 조용히 아무 일도 안 일어난다.
-// 🔴 웹과 로컬은 **UI 가 완전히 같아야 한다.** 예전에는 웹에서 재생 버튼을
-//    숨기고 「← 로그 목록」 링크를 끼워 두 화면이 갈렸는데, 이제 랩서버도
-//    같은 drone_live.py 로 재생을 서비스하므로(server.js 가 /api/playback/* 을
-//    :4411 로 넘긴다) 웹에서도 그대로 재생된다. 분기를 없앤다.
+// 🔴 웹과 로컬은 **UI 가 완전히 같아야 한다.** 랩서버도 같은 drone_live.py 로
+//    재생을 서비스하므로(server.js 가 /api/playback/* 을 :4411 로 넘긴다)
+//    웹에서도 그대로 재생된다.
 //
 //    남는 차이는 **목록에 뜨는 파일**뿐이다 — 웹은 랩서버의 .BIN, 로컬은
 //    그 PC 가 가진 것. 조작·배치·버튼은 한 벌이다.
@@ -1948,27 +1714,6 @@ new ResizeObserver(() => {
 doLayout();
 
 $('win').onchange = (e) => { winSec = +e.target.value; renderCharts(); drawTrack(); };
-
-// 데이터 원천 배지를 누르면 경로를 고정한다: 자동 → ELRS → USB → 자동.
-// 🔴 순서를 뒤집었다 (2026-09-11). 기본 우선이 ELRS 로 바뀌었으므로
-//    (drone_live.py 의 LINK_PRIORITY), 고정 순서도 그것을 따라간다 —
-//    첫 번째 누름이 "지금 자동으로 고른 그 경로" 를 굳히는 동작이어야
-//    누를 때마다 그림이 튀지 않는다.
-//
-// 🔴 읽기 전용은 그대로다. 이 요청은 서버가 이미 듣고 있는 두 스트림 중
-//    무엇을 그릴지만 바꾼다 — FC 로 나가는 바이트는 없다.
-$('linkSrc').onclick = async () => {
-  const cur = $('linkSrc').dataset.k || '';
-  const pin = cur.split('/')[1];
-  const next = pin === 'null' || pin === 'undefined' ? 'ELRS'
-             : pin === 'ELRS' ? 'USB' : 'auto';
-  try {
-    await fetch('/api/link?pin=' + next);
-  } catch (e) {
-    // 서버가 잠깐 안 받아도 화면은 계속 돌아야 한다. 다음 폴에서 실제 상태가
-    // 다시 내려오므로 여기서 낙관적으로 고쳐 그리지 않는다.
-  }
-};
 
 // ── 재생 조작 ───────────────────────────────────────────────────────
 $('pbOpen').onclick = pbShowPicker;
@@ -1996,76 +1741,5 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'ArrowRight') { ulpb.t = Math.min(ulpb.dur, ulpb.t + 5); pbRender(); }
 });
 
-// 🔴 poll() 은 이 파일 **맨 끝**에서 부른다 — 여기서 부르면 안 된다.
-//    render() 가 첫 줄에서 renderPlay() 를 부르고, renderPlay() 는 아래
-//    `const pb` 를 읽는다. 그 선언보다 먼저 돌면 TDZ ReferenceError 가 나고,
-//    그 예외가 poll() 안에서 터지므로 **다음 setTimeout 이 안 걸린다** —
-//    화면이 통째로 빈 채 폴이 한 번 만에 영영 멈춘다 (실측: pollN 이 1 에서
-//    안 늘고 계기·차트가 전부 빔). 예외가 콘솔에 안 뜨는 것도 이 때문이다.
-
-// ── 재생 ────────────────────────────────────────────────────────────
-// 서버가 State 를 과거 프레임으로 채우므로, 이 코드는 **조작만** 한다.
-// 값을 그리는 것은 위의 render() 가 그대로 한다 — 재생 전용 렌더 경로를
-// 만들면 실시간 그림과 조용히 갈라진다.
-const pb = {
-  bar: $('playBar'), name: $('playName'), toggle: $('playToggle'),
-  seek: $('playSeek'), time: $('playTime'), speed: $('playSpeed'),
-  exit: $('playExit'),
-  dragging: false,
-};
-
-// 파일을 고르는 것은 통합 피커(pbShowPicker/recStart)가 한다 — 여기에는
-// 목록도 열기 버튼도 없다. 이 절은 **조작만** 맡는다.
-
-// mmss() 는 위 로그 재생 절에 함수 선언으로 하나만 둔다 — 두 재생 기능이
-// 같은 이름을 각각 선언하면 SyntaxError 로 페이지가 통째로 죽는다.
-
-// tlog 재생이 열려 있나. 웹에서 상태를 어느 서버에서 받을지 가른다.
-let pbPlaying = false;
-
-async function pbApi(path) {
-  try {
-    const r = await fetch('/api/play/' + path, { cache: 'no-store' });
-    return r.ok ? await r.json() : null;
-  } catch (e) { return null; }
-}
-
-// 재생/일시정지를 한 버튼으로 — 서버가 알려 준 지금 상태의 반대를 부른다.
-pb.toggle.onclick = async () => {
-  const cur = pb.toggle.dataset.playing === '1';
-  await pbApi(cur ? 'pause' : 'play');
-};
-
-pb.seek.oninput = () => { pb.dragging = true; };
-pb.seek.onchange = async () => {
-  const dur = +pb.seek.dataset.dur || 0;
-  await pbApi('seek?t=' + (dur * pb.seek.value / 1000));
-  pb.dragging = false;
-};
-pb.speed.onchange = () => pbApi('speed?v=' + pb.speed.value);
-pb.exit.onclick = async () => {
-  await pbApi('unload');
-  pb.bar.hidden = true;
-  pbPlaying = false;
-  setText(pb.name, '');
-};
-
-// render() 가 매 폴 부른다 — 서버가 준 play 상태를 UI 에 반영한다.
-function renderPlay(p) {
-  document.body.classList.toggle('replaying', !!p);
-  if (!p) { pb.toggle.dataset.playing = '0'; return; }
-  if (pb.bar.hidden) pb.bar.hidden = false;   // 다른 창에서 걸었어도 보이게
-  // 다른 탭이 걸어 둔 재생이면 이름칸이 비어 있다. 서버가 파일명을 주므로
-  // 그것으로 채운다 — 무엇을 보고 있는지 모른 채 계기만 도는 일이 없게.
-  if (!pb.name.textContent) {
-    setText(pb.name, (p.name || '').replace(/_KST_?/, ' ').replace(/\.tlog$/, ''));
-  }
-  pb.toggle.dataset.playing = p.playing ? '1' : '0';
-  setText(pb.toggle, p.playing ? '❚❚' : '▶');
-  setText(pb.time, mmss(p.pos) + ' / ' + mmss(p.dur));
-  pb.seek.dataset.dur = p.dur;
-  if (!pb.dragging && p.dur > 0) pb.seek.value = Math.round(p.pos / p.dur * 1000);
-}
-
-// 기동은 마지막이다 — 위의 const 선언(pb 등)이 전부 초기화된 뒤라야 한다.
+// 기동은 마지막이다 — 위의 const 선언이 전부 초기화된 뒤라야 한다.
 poll();

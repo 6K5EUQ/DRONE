@@ -358,7 +358,7 @@ def check_live(r, tel):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--conn', help='mavlink 연결 문자열. 안 주면 시리얼→브리지 순으로 찾는다')
+    ap.add_argument('--conn', help='mavlink 연결 문자열. 안 주면 이 기체의 FC USB 를 USB id 로 찾는다')
     ap.add_argument('--json', action='store_true')
     a = ap.parse_args()
 

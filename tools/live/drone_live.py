@@ -261,7 +261,7 @@ class State:
             #    PX4 처럼 main/sub 로 쪼개 읽으면 안 된다.
             d['mode'] = COPTER_MODE.get(msg.custom_mode,
                                         'MODE_%d' % msg.custom_mode)
-            d['sys_status'] = msg.system_status
+            d['system_status'] = msg.system_status   # 화면(live.js) 이 읽는 이름
 
         elif t == 'SYS_STATUS':
             # 🔴 이 기체의 배터리 정본이다. BATTERY_STATUS 가 아니다 —
@@ -331,13 +331,16 @@ class State:
             d['eph'] = None if msg.eph in (0, 65535, 9999) else \
                 round(msg.eph / 100.0, 2)
 
+        elif t == 'EXTENDED_SYS_STATE':
+            d['landed'] = msg.landed_state   # 1 지상 · 2 공중 (화면의 공중/지상 표시)
+
         elif t == 'EKF_STATUS_REPORT':
             # 🔴 화면은 `ekf_ratio` 를 읽는다 (live.js:584). `ekf` 로 내면
             #    EKF 칸이 안 그려진다.
             d['ekf_ratio'] = {
                 'vel': round(msg.velocity_variance, 3),
                 'pos': round(msg.pos_horiz_variance, 3),
-                'hgt': round(msg.pos_vert_variance, 3),
+                'alt': round(msg.pos_vert_variance, 3),
                 'mag': round(msg.compass_variance, 3),
             }
             d['ekf_flags'] = msg.flags

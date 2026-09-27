@@ -95,8 +95,8 @@ input[type=text], input[type=password], input[type=search], select {
   font-size: 11px; font-weight: 600; white-space: nowrap;
   border: 1px solid transparent;
 }
-/* 🔴 misn·rtl 은 자동 모드를 **시도한** 로그다 (2026-09-13). 크기가 작아도
-   남긴다 — 2026-09-11 미션 3회 실패가 0.73MB 라 지워졌던 일이 있다.
+/* 🔴 misn·rtl 은 자동 모드(AUTO·RTL)를 **시도한** 로그다. 크기가 작아도
+   남긴다 — 실패한 시도는 로그가 작아 지워지기 쉽다.
    눈에 띄는 색을 준다: 흔치 않고, 볼 이유가 큰 로그다. */
 .badge.misn    { background: #2e1065; color: #c4a7ff; border-color: #4c1d95; }
 /* RTL 은 빨강 — 복귀는 대개 뭔가를 중단하고 돌아온 것이라 눈에 걸려야 한다.

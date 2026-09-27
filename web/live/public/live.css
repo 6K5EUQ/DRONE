@@ -1,7 +1,7 @@
 /* 라이브 트래킹 레이아웃. 팔레트·폰트는 /app.css (로그 뷰어와 공용) 를 쓴다.
    여기서는 배치와 라이브 전용 부품(HUD·스트립·상태밴드)만 정의한다. */
 
-/* 🔴 헤더를 없앴다 (2026-09-05). 상단 한 줄이 통째로 계기 자리로 갔다 —
+/* 🔴 헤더를 없앴다. 상단 한 줄이 통째로 계기 자리로 갔다 —
    링크 상태·통계·시간창은 전부 우하단 바(.msgs .hd)로 내렸다.
    body 는 여전히 세로 flex 다: main 이 화면 전체를 정확히 가져간다.
    (예전에 calc(100vh - 49px) 로 박았다가 실제 헤더가 55px 이라 6px 넘쳐
@@ -16,7 +16,7 @@ body { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
    숫자 스트립이 화면 밖으로 밀려 조용히 사라진다. */
 main {
   display: grid;
-  /* 🔴 화면을 네 칸으로 **정확히 4등분**한다 (2026-09-11):
+  /* 🔴 화면을 네 칸으로 **정확히 4등분**한다:
        HUD | 지도
        데이터 | 그래프
      가로 1:1, 세로도 1:1 (#hudPane·#chartPane 의 grid-template-rows). */
@@ -34,7 +34,7 @@ main {
 /* ── 지도 ─────────────────────────────────────────────────────
    로그 뷰어(log.html)와 같은 Leaflet·같은 타일을 쓴다. */
 #mapPane {
-  /* 🔴 z-index 를 반드시 준다 (2026-09-12). position:relative 만으로는 쌓임
+  /* 🔴 z-index 를 반드시 준다. position:relative 만으로는 쌓임
      맥락이 안 생겨서, Leaflet 이 제 안에서 쓰는 z-index 가 **전역으로 샌다** —
      타일 200 / 오버레이 400 / 마커 600 / 팝업 700 / 컨트롤 800·1000 이라
      재생 창(#pbPick, 50)과 하단 바(#pbBar, 40)를 통째로 덮었다.
@@ -43,15 +43,14 @@ main {
   position: relative; overflow: hidden; z-index: 1;
   border-right: 1px solid var(--border); background: #0d1117;
 }
-/* 지도는 우측 칸 위쪽이다 (2026-09-10). HUD 와 같은 높이를 갖도록
+/* 지도는 우측 칸 위쪽이다. HUD 와 같은 높이를 갖도록
    #chartPane 이 행 높이를 좌측 #hudPane 과 같은 비율로 나눈다.
    위쪽 4px 는 #hudBox 의 border-top 과 같은 값 — 두 칸의 그림이 같은 y 에서 시작한다. */
 /* 위 4px 은 #hudBox 의 border-top 과 같은 값이라 두 그림이 같은 y 에서 시작한다.
-   좌·우에도 같은 폭을 준다 — 지도가 칸 가장자리에 밀착돼 답답하다는 지적
-   (좌측 칸에 있던 때와 같은 처리, 2026-09-11). */
+   좌·우에도 같은 폭을 준다 — 지도가 칸 가장자리에 밀착되면 답답하다. */
 #mapPane { border: 4px solid var(--panel); border-bottom: 1px solid var(--border); }
 #lmap { width: 100%; height: 100%; background: #0d1117; }
-/* 🔴 타일의 채도·밝기를 낮춘다 (2026-09-10). 계기판 전체가 무채색 + 경고색만
+/* 🔴 타일의 채도·밝기를 낮춘다. 계기판 전체가 무채색 + 경고색만
    쓰는데 위성 사진만 채도가 높아 눈이 자꾸 그쪽으로 끌렸다 — 「색이 보이는
    것 자체가 신호」 라는 이 화면의 규칙을 지도가 혼자 깨고 있었다.
    배경이 조용해지면 **궤적(파랑)과 기체(흰색)가 오히려 더 잘 보인다.**
@@ -66,7 +65,7 @@ main {
   background: rgba(13,17,23,.78); color: var(--border-2);
 }
 #lmap .leaflet-control-attribution a { color: var(--border-2); }
-/* 지도 위 버튼을 전부 없앴다 (2026-09-10). 칸이 좁아 버튼이 궤적을 가린다.
+/* 지도 위 버튼을 전부 없앴다. 칸이 좁아 버튼이 궤적을 가린다.
    따라가기는 항상 켜져 있고(손으로 끌면 8초 뒤 복귀), 타일은 위성 고정,
    줌은 휠·핀치로 한다. */
 
@@ -89,7 +88,7 @@ main {
 #hudPane {
   display: grid; grid-template-rows: 1fr 1fr;
   border-right: 1px solid var(--border);
-  /* 네 칸 배경을 데이터 패널과 같은 --panel 로 통일한다 (2026-09-11) */
+  /* 네 칸 배경을 데이터 패널과 같은 --panel 로 통일한다 */
   background: var(--panel);
 }
 /* 헤더를 없앤 뒤로 기수 테이프가 화면 맨 위 픽셀에 딱 붙는다. 잘리지는
@@ -126,7 +125,7 @@ main {
 }
 /* 🔴 ARM·모드는 하늘/땅 어느 배경 위에 올지 모른다. 헤일로를 두껍게 주고
    글자를 키워 배경과 상관없이 읽히게 한다 — 갈색 지면 위에서 흐린 회색
-   DISARMED 가 사실상 안 보이던 것을 고쳤다 (2026-09-05). */
+   DISARMED 가 사실상 안 보이던 것을 고쳤다. */
 #hud .armTxt  {
   font-size: 40px; font-weight: 700;
   stroke: #0d1117; stroke-width: 7px; paint-order: stroke;
@@ -151,7 +150,7 @@ main {
 #hud .blink { animation: hudBlink 1s step-end infinite; }
 
 /* ── HUD 아래 계기판 ────────────────────────────────────
-   우측 2번째 차트 아랫선까지 올라온다 (2026-09-05). 숫자만 보고 판단하는
+   우측 2번째 차트 아랫선까지 올라온다. 숫자만 보고 판단하는
    자리라 칸을 크게 잡는다.
      속도 · 고도 · 배터리
      전류 · 위성
@@ -165,7 +164,7 @@ main {
      4행  좌후(3칸)      우후(3칸) */
 #strip {
   display: grid;
-  /* 12열이다 — 6열로는 모터 줄의 1.5 : 3 : 1.5 를 못 만든다 (2026-09-10).
+  /* 12열이다 — 6열로는 모터 줄의 1.5 : 3 : 1.5 를 못 만든다.
      위 두 줄은 4칸씩 세 덩이라 6열일 때와 같은 자리를 지킨다. */
   grid-template-columns: repeat(12, 1fr);
   /* 칸 사이 선을 안 넣는다 — gap 1px 로 --border 배경이 비치던 것이 그 선이었다.
@@ -176,7 +175,6 @@ main {
 /* 🔴 여기가 실제 배치를 정한다 — HTML 의 DOM 순서가 아니다.
    grid-area 가 칸마다 행·열을 못 박으므로, index.html 에서 순서를 바꿔도
    화면은 안 바뀐다. 배치를 고치려면 **이 여섯 줄을 같이 고쳐야 한다.**
-   (2026-09-06 실측으로 물렸다 — DOM 만 바꾸고 한참을 캐시 탓으로 쫓았다.)
 
      1행  고도    배터리  위성
      2행  속도    전류    위치오차
@@ -195,7 +193,7 @@ main {
 /* 3~4행: 왼쪽 3, 오른쪽 1. 그림이 주인공이라 가로를 넉넉히 준다 —
    6열 중 4열(1~5)이 그림, 2열(5~7)이 요약 숫자 둘이다.
    그림은 두 행을 세로로 관통하고, 숫자는 위아래로 나눠 갖는다. */
-/* 🔴 편차 — 기체그림 — 평균 순서다 (2026-09-10). 그림을 가운데 두고 숫자
+/* 🔴 편차 — 기체그림 — 평균 순서다. 그림을 가운데 두고 숫자
    둘이 양옆에서 그것을 설명한다. 숫자를 한쪽에 몰면 그림과 멀어진 값이
    생기고, 세로로 쌓으면 두 값이 위아래로 멀어 한눈에 같이 안 읽힌다.
    6열 중 좌 1.5 : 중 3 : 우 1.5 — 그림이 주인공이라 가운데를 넓게 준다. */
@@ -204,7 +202,7 @@ main {
 #sc-mavg    { grid-area: 3 / 10 / 5 / 13; }
 #strip .sc {
   background: var(--panel);
-  /* 🔴 여백을 줄여 값에 준다 (2026-09-10). 실측 110px 칸에 값이 36px,
+  /* 🔴 여백을 줄여 값에 준다. 실측 110px 칸에 값이 36px,
      세로 여백이 58px 이나 비어 있었다 — 곁눈질로 읽는 계기라 숫자가
      클수록 좋다. */
   padding: 4px 6px 6px;
@@ -218,7 +216,7 @@ main {
 #strip .sc[hidden] { display: none; }
 #strip .k { font-size: 13px; color: var(--muted);
             letter-spacing: .3px; white-space: nowrap; text-align: center; }
-/* 단위는 라벨 옆 괄호 안에 (2026-09-10). 값 아래 따로 두면 세로 공간을
+/* 단위는 라벨 옆 괄호 안에. 값 아래 따로 두면 세로 공간을
    먹고, 값에서 눈을 떼야 단위를 읽는다. 이름과 같은 줄이면 한 번에 읽힌다. */
 #strip .k em { font-style: normal; color: var(--border-2); }
 /* 곁눈질로 읽는 값이라 크게. tabular-nums 라 자릿수가 바뀌어도 안 흔들린다.
@@ -230,7 +228,7 @@ main {
   font-variant-numeric: tabular-nums; color: var(--text);
   min-width: 0; text-align: center;
 }
-/* 단위는 라벨로 올라갔다 (2026-09-10) — 값 아래 <i> 는 더 이상 안 쓴다. */
+/* 단위는 라벨로 올라갔다 — 값 아래 <i> 는 더 이상 안 쓴다. */
 
 /* 🔴 색 예산 — 평소엔 전부 무채색이다. 색이 보이는 것 자체가 신호다.
    구분선을 없앤 뒤로는 칸 배경을 칠하면 그 칸만 네모로 도드라져 격자가
@@ -239,7 +237,7 @@ main {
 #strip .sc.bad  b { color: var(--bad); }
 
 /* ── 모터: 기체 형상 위에 그린다 ─────────────────────────────
-   숫자 넷을 2×2 로 놓던 것을 그림으로 바꿨다 (2026-09-09). 숫자만으로는
+   숫자 넷을 2×2 로 놓던 것을 그림으로 바꿨다. 숫자만으로는
    "48 과 41 중 어느 쪽이 어느 팔인가" 를 매번 머리로 옮겨야 했다.
    기수가 위인 X 형상에 얹으면 그 변환이 사라진다.
 
@@ -254,11 +252,11 @@ main {
 /* 🔴 그림 칸이 격자 높이를 밀어올리면 안 된다.
    #strip 의 행은 auto 라, SVG 를 width/height:100% 로 두면 viewBox 본래
    크기(300px)를 자기 높이로 주장해 칸(175px)을 125px 넘치고 아래 로터
-   둘이 화면 밖으로 잘린다 (2026-09-09 실측).
+   둘이 화면 밖으로 잘린다.
    min-height:0 인 flex 칸 + height:100% 인 SVG 라야 칸이 정한 높이에
    맞춰 접힌다. viewBox 가 정사각이고 preserveAspectRatio 는 기본값(meet)
    이라 칸이 가로로 길어져도 그림은 안 찌그러지고 가운데 선다. */
-/* 그림이 칸을 꽉 쓴다 (2026-09-10). 라벨("모터 부하")도 뺐다 — 기수 화살표와
+/* 그림이 칸을 꽉 쓴다. 라벨("모터 부하")도 뺐다 — 기수 화살표와
    네 로터가 그 자체로 무엇인지 말한다. 여백은 잘리지 않을 만큼만. */
 #sc-frame { padding: 2px; min-height: 0; overflow: hidden; }
 /* flex-basis 0 이 핵심이다. flex:1 의 기본 basis 는 auto 라 SVG 가 제
@@ -287,7 +285,7 @@ main {
   fill: var(--text); text-anchor: middle; dominant-baseline: central;
   font-variant-numeric: tabular-nums;
 }
-/* 🔴 색은 **그 모터 자신의 부하**가 정한다 (2026-09-09): 70%↑ 노랑, 80%↑ 빨강.
+/* 🔴 색은 **그 모터 자신의 부하**가 정한다: 70%↑ 노랑, 80%↑ 빨강.
    편차로 칠하던 것을 걷어냈다 — 한 로터가 상황마다 다른 이유로 칠해지면
    색의 뜻이 흔들린다. 편차는 오른쪽 숫자 칸이 색으로 계속 경고한다.
    테두리뿐 아니라 채움도 물들여야 작은 화면에서 눈에 걸린다. */
@@ -327,7 +325,7 @@ a.btn { display: inline-block; text-decoration: none; }
 #charts { padding-bottom: 26px; }
 /* 켠 단이 세로를 나눠 갖는다. 고정 높이로 두면 단을 1~2개만 켰을 때 아래가
    통째로 빈다.
-   🔴 스크롤바를 만들지 마라 (2026-09-11). overflow-y:auto + .lchart 의
+   🔴 스크롤바를 만들지 마라. overflow-y:auto + .lchart 의
       min-height:150px 이었는데, 3단부터 379px 영역에 안 들어가 우측에
       스크롤바가 생겼다. 네 칸 레이아웃에서 그 폭만큼 차트가 좁아지고
       HUD 와 폭이 어긋난다. 넘치게 두지 말고 나눠 갖게 한다. */
@@ -340,7 +338,7 @@ a.btn { display: inline-block; text-decoration: none; }
               균등하게 나눠 갖도록 0 으로 둔다 — 얇아져도 전부 보인다. */
            flex: 1 1 0; min-height: 0; overflow: hidden;
            display: flex; flex-direction: column;
-           /* 네 칸 배경 통일 — 계기판과 같은 --panel (2026-09-11) */
+           /* 네 칸 배경 통일 — 계기판과 같은 --panel */
            background: var(--panel); }
 /* 높이는 부모(.lchart)가 나눠 준 만큼 쓴다. drawChart 가 clientHeight 를
    읽어 viewBox 를 잡으므로 CSS 높이가 곧 그림 해상도다.
@@ -370,7 +368,7 @@ a.btn { display: inline-block; text-decoration: none; }
 
 #charts .empty { padding: 50px 20px; color: var(--muted); text-align: center; font-size: 13px; }
 
-/* 단 선택. 차트 위에 떠 있던 것을 하단 바 안으로 내렸다 (2026-09-05) —
+/* 단 선택. 차트 위에 떠 있던 것을 하단 바 안으로 내렸다 —
    그림을 가리지 않고 조작이 한 줄에 모인다. */
 #toc { display: flex; align-items: center; gap: 0 2px; margin-left: 6px; }
 #toc label {
@@ -387,7 +385,7 @@ a.btn { display: inline-block; text-decoration: none; }
 .win select { padding: 3px 6px; font-size: 11px; }
 
 /* ── 하단 조작 바 ────────────────────────────────────────
-   메시지 목록은 뺐다 (2026-09-10). 링크 상태·기록·재생·시간창은 조작이라 남는다. */
+   메시지 목록은 뺐다. 링크 상태·기록·재생·시간창은 조작이라 남는다. */
 .msgs {
   border-top: 1px solid var(--border); overflow: hidden; display: grid;
   grid-template-rows: 26px; background: var(--panel);
@@ -396,31 +394,6 @@ a.btn { display: inline-block; text-decoration: none; }
   display: flex; align-items: center; gap: 8px; padding: 0 8px;
   font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border);
 }
-/* 기록 상태 배지. 적는 중에는 붉게 깜빡인다 — 비디오 장비의 관습을 따른다.
-   실내대기는 노랑(경고가 아니라 "아직") 이다. */
-.msgs .hd #recSt {
-  font-family: var(--mono); font-size: 10px; font-weight: 700;
-  padding: 0 4px; border-radius: 3px; border: 1px solid transparent;
-}
-#recSt.rec-on { color: var(--bad); border-color: var(--bad); animation: recblink 2s infinite; }
-#recSt.rec-wait { color: var(--warn); border-color: var(--warn); }
-#recSt.rec-err { color: var(--bad); border-color: var(--bad); }
-@keyframes recblink { 0%,60% { opacity: 1; } 80%,100% { opacity: .45; } }
-/* 움직임에 민감한 사람에게는 깜빡임을 끈다. 색만으로도 뜻이 통한다. */
-@media (prefers-reduced-motion: reduce) { #recSt.rec-on { animation: none; } }
-/* 데이터 원천 배지 — ELRS 는 느린 경로라 눈에 띄게, USB 는 평범하게. */
-/* 배지지만 버튼이다 — 눌러서 경로를 고정한다. 브라우저 기본 테두리를 지워
-   옆의 상태 표시들과 같은 줄에 같은 무게로 앉힌다. */
-#linkSrc { font-weight: 700; letter-spacing: .4px; padding: 0 5px;
-           border-radius: 4px; font-size: 11px;
-           border: 0; background: none; color: inherit;
-           font-family: inherit; line-height: 1.6; cursor: pointer; }
-#linkSrc:hover { outline: 1px solid var(--bd); }
-#linkSrc.src-elrs { color: var(--warn); background: rgba(210,153,34,.14); }
-#linkSrc.src-usb  { color: var(--ok);   background: rgba(63,185,80,.14); }
-/* 고정 중에는 테두리를 둘러, 지금 보이는 경로가 자동 선택이 아니라 조종자가
-   세워 둔 것임을 값이 멈춰 있어도 알 수 있게 한다. */
-#linkSrc.pinned { outline: 1px solid currentColor; }
 .msgs .hd .grow { flex: 1; }
 .msgs .hd button { padding: 0 6px; font-size: 11px; line-height: 1.6; }
 .msgs .hd select {
@@ -492,40 +465,13 @@ a.btn { display: inline-block; text-decoration: none; }
   .msgs .hd .grow { flex: 1 1 0; min-width: 0; }
 }
 
-/* ── 재생 바 ────────────────────────────────────────────────────────
-   녹화된 .tlog 를 같은 화면에 흘릴 때만 나온다. 평소에는 hidden 이라
-   행이 0 이 되고, 실시간 화면은 지금까지와 똑같이 보인다.
-
-   ⚠️ .msgs 가 grid 라 행을 명시해야 한다. hidden 인 자식은 grid 행을
-      차지하지 않으므로(display:none) 3행 정의만으로 안전하다. */
-.msgs { grid-template-rows: 26px auto 1fr; }
-
-/* 🔴 폰에서는 그 26px 를 풀어야 한다 (2026-09-17). 하단 바가 두 줄로 접히는데
-   행이 26px + `overflow:hidden` 이면 둘째 줄이 통째로 잘린다 — 맨 끝의 재생
-   버튼이 거기 있다 (실측: .hd 높이 26 인데 내용 46, 버튼이 판 바닥보다 20px
-   아래). 이 규칙은 위 @media 블록보다 **뒤에** 있어야 한다. 앞에 두면 이
-   줄이 다시 26px 로 덮어써서 아무 효과가 없다 — 실제로 그렇게 한 번 놓쳤다. */
+/* 🔴 폰에서는 그 26px 를 풀어야 한다. 하단 바가 두 줄로 접히는데 행이
+   26px + `overflow:hidden` 이면 둘째 줄이 통째로 잘린다 — 맨 끝의 재생
+   버튼이 거기 있다. 이 규칙은 위 @media 블록보다 **뒤에** 있어야 한다.
+   앞에 두면 이 줄이 다시 26px 로 덮어써서 아무 효과가 없다. */
 @media (max-width: 900px) {
-  .msgs { grid-template-rows: auto auto 1fr; overflow: visible; }
+  .msgs { grid-template-rows: auto; overflow: visible; }
 }
-#playBar {
-  display: flex; align-items: center; gap: 8px; padding: 3px 8px;
-  font-size: 11px; color: var(--muted);
-  border-bottom: 1px solid var(--border); background: var(--bg);
-}
-#playBar[hidden] { display: none; }
-#playBar select, #playBar button {
-  padding: 1px 6px; font-size: 11px; line-height: 1.6;
-  background: var(--panel); color: var(--dim);
-  border: 1px solid var(--border-2); border-radius: 5px;
-}
-#playPick { flex: none; max-width: 34%; }
-#playSeek { flex: 1; min-width: 80px; accent-color: var(--accent, #58a6ff); }
-#playTime { flex: none; }
-/* 재생 중임을 화면 전체가 말해야 한다 — 지금 값과 과거 값을 헷갈리면
-   위험하다. 상단에 띠를 하나 두른다. */
-body.replaying #chartPane { box-shadow: inset 0 3px 0 var(--warn); }
-body.replaying #playToggle { color: var(--warn); font-weight: 700; }
 /* ── 로그 재생 ──────────────────────────────────────────────────────
    같은 화면에서 지난 비행을 돌려 본다. 계기·차트는 라이브와 **같은 코드**라
    여기서는 조작 줄과 고르기 창만 얹는다.
@@ -555,8 +501,7 @@ body.replaying #playToggle { color: var(--warn); font-weight: 700; }
 #pbTime { font-family: var(--mono); color: var(--dim); min-width: 11ch; text-align: right; }
 #pbSeek { flex: 1; min-width: 120px; accent-color: var(--accent); cursor: pointer; }
 
-/* ⚠️ 재생 중 `main` 에 파란 outline 을 두르던 것을 지웠다 (2026-09-12,
-   조종자 지시). 4변 중 **왼쪽 한 변만** 보였다 — 위는 HUD, 오른쪽은 지도의
+/* ⚠️ 재생 중 `main` 에 파란 outline 을 두르지 않는다. 4변 중 **왼쪽 한 변만** 보였다 — 위는 HUD, 오른쪽은 지도의
    4px 테두리, 아래는 #pbBar 가 덮어서다. 테두리로 안 읽히고 「정체불명의
    파란 수직선」으로 읽혔다. 재생 중인지는 하단 재생 바가 이미 말한다. */
 body.playback { padding-bottom: 38px; }
@@ -590,9 +535,6 @@ body.playback { padding-bottom: 38px; }
   display: flex; align-items: baseline; gap: 8px;
   padding: 5px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
 }
-/* 배지가 맨 왼쪽이다. 폭을 고정해 이름의 왼쪽 끝이 줄마다 맞는다 —
-   안 맞추면 배지 개수에 따라 이름이 들쭉날쭉해 목록을 훑기 어렵다. */
-#pbList .kinds { min-width: 9ch; }
 #pbList .row:last-child { border-bottom: 0; }
 #pbList .row:hover { background: var(--panel-2); }
 #pbList .nm { font-family: var(--mono); font-size: 11px; flex: 1;
@@ -600,63 +542,6 @@ body.playback { padding-bottom: 38px; }
 #pbList .wh { color: var(--dim); font-size: 11px; }
 #pbList .sz { color: var(--muted); font-size: 11px; min-width: 7ch; text-align: right; }
 #pbList .msg { padding: 10px 12px; color: var(--muted); font-size: 12px; }
-
-/* 통합 목록의 구획 머리 — 실시간 기록 / FC 로그. 두 종류가 한 목록에 서므로
-   어디서 온 파일인지 줄마다 안 써도 되게 한 번만 말한다. */
-#pbList .gh {
-  padding: 8px 12px 3px; font-size: 11px; font-weight: 600;
-  color: var(--dim); border-bottom: 1px solid var(--border);
-  background: var(--panel-2);
-}
-#pbList .gh:first-child { padding-top: 4px; }
-
-/* 경로 배지. 한 비행에서 두 링크로 받았으면 두 개가 나란히 선다 —
-   눌러서 그 링크의 기록만 튼다 (어느 쪽이 무엇을 놓쳤나가 요점이다). */
-#pbList .kinds { display: flex; gap: 4px; flex: 0 0 auto; }
-#pbList .kind {
-  font-family: var(--mono); font-size: 10px; line-height: 1.5;
-  padding: 0 5px; border-radius: 3px; cursor: pointer;
-  border: 1px solid var(--border-2); background: var(--panel-2); color: var(--dim);
-}
-#pbList .kind:hover { border-color: var(--muted); }
-/* 색으로 가른다. ELRS 는 조종기 백팩(느리고 성긴 링크), FC 는 USB 브리지
-   직결(빠르다), BIN 은 기체 SD 에서 내려받은 원본이다. */
-#pbList .k-ELRS { color: var(--warn); border-color: var(--warn); }
-#pbList .k-FC   { color: var(--accent); border-color: var(--accent); }
-#pbList .k-BIN  { color: var(--ok); border-color: var(--ok); cursor: default; }
-/* 번호를 추론한 로그. 같은 초록이되 테두리를 점선으로 — FC 가 준 번호와
-   같다는 보장이 없다는 것을 색이 아니라 형태로 말한다 (색맹에게도 보인다). */
-#pbList .k-BINX {
-  color: var(--ok); border-color: var(--ok); border-style: dashed;
-  opacity: .75; cursor: default;
-}
-/* 복구본·원격은 곁다리 표시라 눈에 덜 띄어야 한다. */
-#pbList .k-REC2 { color: var(--warn); border-color: var(--warn); cursor: default; }
-#pbList .k-REM  { color: var(--muted); border-color: var(--border-2); cursor: default; }
-#pbList .msg.warn { color: var(--warn); }
-
-/* ── 분류 배지 — 제목 **오른쪽**에 (2026-09-15) ────────────────────
-   목록 페이지(drone01.bewe.co.kr)와 같은 것을 여기서도 본다. 어느 비행이
-   미션이었는지 RTL 이었는지 모르고 고르면, 틀어 놓고서야 알게 된다.
-
-   🔴 왼쪽 `.kind` 와 다른 자리를 쓴다. 왼쪽은 **파일의 성격**(어느 링크로
-   받았나·원본인가)이고 이쪽은 **비행의 성격**이다. 섞어 놓으면 둘 다 흐려진다.
-
-   색은 목록 페이지(app.css)와 맞춘다 — 두 화면에서 같은 비행이 다른 색이면
-   같은 것인 줄 모른다. */
-#pbList .tags { display: flex; gap: 4px; flex: 0 0 auto; margin-left: 8px; }
-#pbList .tag {
-  font-size: 10px; line-height: 1.6; padding: 0 6px; border-radius: 999px;
-  border: 1px solid transparent; white-space: nowrap;
-}
-#pbList .t-flight { background: #12321c; color: #4ac26b; border-color: #1d572f; }
-#pbList .t-hover  { background: #142c47; color: #6cb6ff; border-color: #1d456f; }
-#pbList .t-ground { background: #21262d; color: #8b949e; border-color: #30363d; }
-#pbList .t-abort  { background: #3a2a12; color: #e3b341; border-color: #5c421c; }
-#pbList .t-noarm  { background: #2d2118; color: #db8b52; border-color: #4a3524; }
-#pbList .t-misn   { background: #2e1065; color: #c4a7ff; border-color: #4c1d95; }
-#pbList .t-rtl    { background: #4a1216; color: #ff6b6b; border-color: #7a1f26; }
-
 
 /* ── 웹(drone01.bewe.co.kr/live)에서만 ─────────────────────────────
    같은 화면을 웹에서도 쓴다. 로컬 전용 조작은 JS 가 숨기고, 여기서는

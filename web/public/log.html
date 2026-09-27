@@ -20,7 +20,7 @@
   .mapcell { position: relative; flex: 0 0 46%; min-height: 240px; }
   #map { width: 100%; height: 100%; background: #0d1117; }
   /* 위성 사진만 채도가 높아 어두운 차트 옆에서 그 칸만 튄다. 살짝 눌러
-     궤적(고도색 선)이 배경을 이기게 한다 (2026-09-12).
+     궤적(고도색 선)이 배경을 이기게 한다.
      🔴 라이브(.45/.72)보다 약하게 잡았다 — 이 지도는 폭이 46% 로 크고
      경로를 지형과 대조하는 것이 목적이라, 너무 누르면 활주로·건물이
      안 보인다. */
@@ -280,7 +280,7 @@ const MAX_ZOOM = 22;
 
 const HIDDEN = new Set();   // 범례 클릭으로 숨긴 계열
 let SUM = null, TRK = null, LOGNAME = '', map, track, marker, homeMk, startMk, endMk;
-// 🔴 위성이 기본이다 (2026-09-12). 라이브 화면(/live)과 같은 기본값 —
+// 🔴 위성이 기본이다. 라이브 화면(/live)과 같은 기본값 —
 //    지난 비행과 지금 비행을 같은 그림으로 읽어야 눈이 안 흔들린다.
 //    OSM 흰 바탕은 어두운 차트 옆에서 그 칸만 밝게 튀고, 비행장에서는
 //    활주로·장애물이 지도보다 사진에 더 잘 보인다. 버튼으로 전환된다.
@@ -415,7 +415,7 @@ function planeIcon(deg) {
 // 기본으로 펼치는 단. 나머지는 좌측 목록에서 체크해 더한다 —
 // 12단을 전부 펼치면 스크롤이 길어져 정작 볼 것을 못 찾는다.
 //
-// 🔴 디브리핑에서 매번 손으로 켜던 것을 기본에 넣었다 (2026-09-11).
+// 🔴 디브리핑에서 매번 손으로 켜던 것을 기본에 넣었다.
 //    자세는 "기체가 무엇을 하려 했나", 진동은 "기체가 멀쩡한가" 를 말한다 —
 //    전류·고도만 보고 넘어가면 프롭 손상·마운트 풀림을 놓친다.
 //    다섯 단이면 스크롤이 한 화면을 조금 넘는 정도라 아직 찾을 만하다.
@@ -427,8 +427,7 @@ const CHARTS = [
       { key: 'alt_baro', color: '#8b949e', label: '기압', axis: 'left', dim: true, unit: 'm' },
       { key: 'climb', color: 'var(--c-spd)', label: '상승률', axis: 'right', unit: 'm/s' }] },
   { id: 'c2', title: '속도', bands: true, series: [
-      { key: 'spd', color: 'var(--c-spd)', label: '수평속도', axis: 'left', weight: 2, unit: 'm/s' },
-      { key: 'aspd', color: '#a371f7', label: '대기속도(피토관)', axis: 'left', unit: 'm/s' }] },
+      { key: 'spd', color: 'var(--c-spd)', label: '수평속도', axis: 'left', weight: 2, unit: 'm/s' }] },
   { id: 'c3', title: '자세', bands: true, series: [
       { key: 'roll', color: '#d55e00', label: '롤', axis: 'left', weight: 2, unit: '°' },
       { key: 'roll_sp', color: '#009e73', label: '롤 목표', axis: 'left', dash: true, unit: '°' },
@@ -453,7 +452,7 @@ const CHARTS = [
   //    |B| 는 3축 합성 세기다. 기체가 돌아도 지자기 세기는 안 변하는 것이
   //    정상이므로, 비행 중 이 선이 출렁이면 방향이 아니라 간섭이다.
   //    전류를 같은 칸에 겹쳐 두는 이유가 그것이다 — 두 선이 같이 움직이면
-  //    원인이 전원선이다 (2026-09-05 실측 상관 −0.91).
+  //    원인이 전원선이다.
   { id: 'c14', title: '나침반 간섭', bands: true, series: [
       { key: 'mag_norm', color: '#a371f7', label: '자기장 |B|', axis: 'left', weight: 2, unit: 'G' },
       { key: 'cur', color: 'var(--c-cur)', label: '전류', axis: 'right', unit: 'A' }] },
@@ -468,8 +467,7 @@ const CHARTS = [
       { key: 'rssi_gnd', color: '#8b949e', label: '지상 RSSI(포화)', axis: 'left', dash: true },
       { key: 'rf_noise', color: '#f0883e', label: '노이즈', axis: 'left' },
       { key: 'home_dist', color: '#3fb950', label: '홈 거리', axis: 'right', unit: 'm' }] },
-  // 송신 버퍼 여유(%). 떨어지면 링크가 밀리고 있다는 뜻이다 — 2026-09-09
-  // "Sensor lost" 를 쫓을 때 이 값이 먼저 움직였다.
+  // 송신 버퍼 여유(%). 떨어지면 링크가 밀리고 있다는 뜻이다.
   { id: 'c13', title: '링크 여유', bands: true, series: [
       { key: 'tx_buf', color: '#d29922', label: '송신 버퍼 여유', axis: 'left', unit: '%' },
       { key: 'home_dist', color: '#3fb950', label: '홈 거리', axis: 'right', unit: 'm' }] },

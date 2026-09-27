@@ -83,8 +83,8 @@
 const $ = (s) => document.querySelector(s);
 // 자동 모드 태그 — 주 배지 옆에 나란히 붙는다. 「호버 + RTL」 처럼 겹칠 수 있다.
 const AUTO = {
-  misn: ['미션', 'AUTO_MISSION 을 시도했다 — 성공 여부와 무관. 진입이 거부돼 모드가 안 바뀐 것도 포함한다'],
-  rtl:  ['RTL', 'AUTO_RTL 로 복귀했다'],
+  misn: ['미션', 'AUTO 를 시도했다 — 성공 여부와 무관. 진입이 거부돼 모드가 안 바뀐 것도 포함한다'],
+  rtl:  ['RTL', 'RTL·SMART_RTL 로 복귀했다'],
 };
 
 const BADGE = {
@@ -93,7 +93,7 @@ const BADGE = {
   ground: ['지상', '고도 0.5m 미만, 속도 0.5m/s 이하'],
   abort:  ['즉시 disarm', 'arm 6초 이하 — 이륙 포기이거나 지상 점검'],
   noarm:  ['arm 없음', 'arm 구간이 없다. 로그 전체 구간으로 계산했다'],
-  unknown:['판정 불가', 'vehicle_local_position 이 없어 고도·속도를 못 낸다'],
+  unknown:['판정 불가', 'EKF(NKF1/XKF1)·CTUN·GPS 가 없어 고도·속도를 못 낸다'],
   err:    ['읽기 실패', ''],
 };
 
@@ -132,13 +132,12 @@ function render() {
     const b = r.error ? 'err' : (r.badge || 'unknown');
     const [label, tip] = BADGE[b] || [b, ''];
     const cur = r.cur_max;
-    // 45A 는 XT90 커넥터 연속 정격. 넘으면 눈에 띄어야 한다.
-    const curCls = cur == null ? '' : (cur > 90 ? 'badc' : cur > 45 ? 'warnc' : '');
+    // 모터 연속 14 A × 4 = 56 A (docs/design/01) 를 넘으면 빨강, 그 7할(40 A)에서 노랑.
+    const curCls = cur == null ? '' : (cur > 56 ? 'badc' : cur > 40 ? 'warnc' : '');
     return `<tr data-id="${r.id}">
       <td><input type="checkbox" class="pick" data-id="${r.id}"
            ${selected.has(r.id) ? 'checked' : ''}></td>
       <td><a href="/log/${r.id}">${r.name}</a>
-          ${r.repaired ? '<span class="flag" title="구독 섹션이 유실돼 다른 로그의 정의를 이식해 읽었다. 수치를 정본으로 쓰지 마라">⚠복구</span>' : ''}
           ${r.corrupt ? '<span class="flag" title="중간에 깨진 구간이 있다. 최대값이 실제보다 작을 수 있다">⚠손상</span>' : ''}</td>
       <td class="mono">${fmtTime(r.utc)}</td>
       <td><span class="badge ${b}" title="${tip}">${label}</span>${(r.auto || []).map((a) => { const [al, at] = AUTO[a] || [a, '']; return ` <span class="badge ${a}" title="${at}">${al}</span>`; }).join('')}</td>
@@ -213,7 +212,7 @@ load();
 
 // ── 실시간 버튼의 상태 점 ────────────────────────────────────────────
 // 🔴 **현장 노트북은 rim3 다.** 비행 나갈 때 들고 나가는 PC 가 rim3 이고, FC 는
-//    거기에 USB 나 ELRS 백팩으로 붙는다. rim3 가 꺼져 있거나 인터넷이 없으면
+//    거기에 USB 로 붙는다. rim3 가 꺼져 있거나 인터넷이 없으면
 //    점은 회색이다 — 서버 잘못이 아니라 올려 주는 PC 가 없는 것이다.
 //
 // 목록 화면에서는 느리게 본다(10초). 이 점은 "지금 눌러 볼 값어치가 있나" 만

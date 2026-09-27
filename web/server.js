@@ -37,7 +37,8 @@ const MAX_UPLOAD = parseInt(process.env.MAX_UPLOAD || String(64 * 1024 * 1024), 
 // 라이브 중계용 암호. rim3 의 livepush.py 가 같은 값을 보낸다.
 // 🔴 비우면 라이브 **수신**이 막힌다 (보기는 계속 공개다).
 const LIVE_PUSH_KEY = process.env.LIVE_PUSH_KEY || '';
-// 비행 전 점검. FC 가 꽂힌 PC 의 에이전트(tools/preflight/agent.py)를 부른다.
+// 비행 전 점검. FC 가 꽂힌 PC 의 HTTP 점검 에이전트를 부른다. 이 저장소에는
+// 아직 에이전트가 없다 — 생기면 PREFLIGHT_AGENTS 가 그 주소(host:port)를 가리켜야 한다.
 // 🔴 비우면 점검이 **막힌 채로** 뜬다. 점검은 읽기 전용이지만 FC 링크를
 //    실제로 쓰므로, 공개 조회와 같은 문으로 두지 않는다.
 const PREFLIGHT_KEY = process.env.PREFLIGHT_KEY || '';
@@ -214,11 +215,8 @@ function send(req, res, status, body, type, extra = {}) {
   //    물어보려면 지문이 있어야 하는데 ETag 도 Last-Modified 도 안 보내고
   //    있었다 — 검증할 것이 없으니 브라우저는 그냥 옛 사본을 쓴다.
   //
-  //    2026-09-06 실측으로 물렸다. 계기판 순서(index.html)와 자세 차트
-  //    기본값(live.js)을 같이 고쳐 배포했는데 **자세만 바뀌고 계기판은
-  //    옛날 그대로**였다. live.js 는 4시간 만료가 지나 다시 받았고,
-  //    index.html 은 아직 아니라 캐시에서 나온 것이다. 강력 새로고침으로도
-  //    안 바뀌는 것처럼 보여 배포 실패로 오해하기 딱 좋다.
+  //    그러면 HTML 과 JS 를 같이 고쳐 배포해도 한쪽만 새것으로 바뀌어,
+  //    배포 실패로 오해하기 딱 좋다.
   //
   //    본문 해시를 ETag 로 붙인다. 내용이 그대로면 304 로 끝나 트래픽도 준다.
   //    gzip 여부는 지문에 안 섞는다 — Vary: Accept-Encoding 이 이미 가른다.
@@ -464,7 +462,7 @@ const LIVE_FILES = new Map([
 /** 🔴 CDN 이 ETag 를 떼어 간다 — 그래서 URL 자체에 지문을 박는다.
  *
  *  원본은 `Cache-Control: no-cache` 와 ETag 를 정확히 내는데, Cloudflare 를
- *  거치면 ETag 가 사라진다 (2026-09-06 실측: 원본 O, 엣지 X). 검증할 지문이
+ *  거치면 ETag 가 사라진다 (원본 O, 엣지 X). 검증할 지문이
  *  없으면 브라우저는 옛 사본을 그냥 쓴다 — 계기판이 안 바뀌던 원인이다.
  *
  *  그래서 HTML 을 내보낼 때 `/live.js` → `/live.js?v=<본문해시>` 로 바꾼다.
@@ -522,7 +520,7 @@ async function serveStatic(req, res, urlPath) {
   const isHtml = file.endsWith('.html');
   if (isHtml) {
     // serveLiveAsset 와 같은 이유 — CDN 이 ETag 를 떼고 js 를 4시간 쥐고 있어
-    // 새 HTML 이 옛 js 와 붙는다 (2026-09-27 /cockpit 실측). 자산 URL 에 지문을 박는다.
+    // 새 HTML 이 옛 js 와 붙는다. 자산 URL 에 지문을 박는다.
     let html = buf.toString('utf8');
     for (const ref of new Set(html.match(/"\/[\w-]+\.(?:js|css)"/g) || [])) {
       try {
@@ -540,7 +538,7 @@ async function serveStatic(req, res, urlPath) {
 
 // ── 라이브 중계 ──────────────────────────────────────────────────────
 // 🔴 **현장 노트북은 rim3 다.** 비행 나갈 때 들고 나가는 PC 가 rim3 이고, FC 는
-//    거기에 USB 나 ELRS 백팩으로 붙는다. 이 서버는 FC 를 **직접 못 본다** —
+//    거기에 USB 로 붙는다. 이 서버는 FC 를 **직접 못 본다** —
 //    rim3 의 livepush.py 가 1초마다 밀어 올리는 것을 받아 들고 있을 뿐이다.
 //    그래서 rim3 가 꺼져 있거나 인터넷이 없으면 라이브도 없다. 정상이다.
 //
@@ -558,20 +556,11 @@ const live = {
   pusher: null,     // 어느 PC 가 올렸나
 };
 
-// 웹에서 고른 수신 경로(USB/ELRS/auto). rim3 가 다음 push 응답으로 가져간다.
-// null 이면 전할 것이 없다.
-//
-// 🔴 이 값이 랩서버에서 rim3 로 흐르는 **유일한** 것이고, 랩서버가 rim3 로
-//    접속하는 것이 아니라 rim3 가 이미 걸어 오는 요청의 응답에 얹힐 뿐이다.
-//    인터넷에서 rim3 로 들어가는 문은 새로 열리지 않는다. 값도 세 가지뿐이고
-//    받는 쪽(livepush.py `_apply_pin`)에서 한 번 더 검사한다. FC 와는 무관하다.
-let livePinWanted = null;
-
 // 항적 상한. 트래커와 같은 값이다 — 5Hz 로 40분이면 12000 점.
 const LIVE_TRACK_MAX = 12000;
 
-// 이 시간 동안 안 올라오면 「끊김」으로 본다. 중계 주기(1초)의 몇 배로 잡는다 —
-// LTE 로 올리면 한두 번은 늦을 수 있다.
+// 이 시간 동안 안 올라오면 「끊김」으로 본다. 중계 주기의 몇 배로 잡는다 —
+// 모바일 회선으로 올리면 한두 번은 늦을 수 있다.
 const LIVE_STALE_MS = 12000;
 
 function livePushOk(given) {
@@ -630,35 +619,7 @@ async function handleLivePush(req, res) {
   live.pusher = typeof snap.pusher === 'string' ? snap.pusher.slice(0, 40) : null;
 
   // 다음에 어디서부터 보내면 되는지 알려 준다.
-  //
-  // 🔴 웹에서 고른 수신 경로를 여기 실어 돌려보낸다. 이것이 랩서버가 rim3 에
-  //    무언가를 전하는 **유일한** 방법이다 — 랩서버는 rim3 로 접속하지 않고,
-  //    rim3 가 이미 1초마다 걸어 오는 이 요청의 응답에 얹을 뿐이다. 인터넷에서
-  //    rim3 로 들어가는 문은 새로 열리지 않는다.
-  //
-  //    담기는 것은 'USB' / 'ELRS' / 'auto' 셋 중 하나뿐이고, rim3 쪽에서도
-  //    그 셋만 받는다. FC 와는 무관하다 — 트래커가 이미 듣고 있는 두 스트림
-  //    중 무엇을 그릴지를 고르는 것이다.
-  const out = { ok: true, track_n: live.dropped + live.track.length };
-  if (livePinWanted !== null) {
-    out.pin = livePinWanted;
-    // 한 번만 전한다. rim3 가 반영하면 그 상태가 다음 push 로 올라오므로,
-    // 계속 들려보내면 조종자가 rim3 앞에서 직접 바꾼 것을 웹이 덮어쓴다.
-    livePinWanted = null;
-  }
-  return sendJson(req, res, 200, out);
-}
-
-/** 라이브 페이지가 누른 경로 고정. 값만 적어 두고 rim3 가 가져가기를 기다린다. */
-function handleLinkPin(req, res, url) {
-  const want = url.searchParams.get('pin');
-  if (want !== 'USB' && want !== 'ELRS' && want !== 'auto') {
-    return sendJson(req, res, 400, { error: 'pin 은 USB / ELRS / auto 여야 한다' });
-  }
-  livePinWanted = want;
-  // 아직 반영 전이다 — 화면은 다음 push 가 올라올 때까지 옛 값을 보여 준다.
-  // 그 지연(최대 1초)이 원격이라는 사실을 그대로 드러내는 편이 낫다.
-  return sendJson(req, res, 200, { queued: want });
+  return sendJson(req, res, 200, { ok: true, track_n: live.dropped + live.track.length });
 }
 
 /** 라이브 페이지가 폴링한다. 트래커의 /api/state 와 **같은 모양**이어야 한다 —
@@ -671,7 +632,6 @@ function handleLiveState(req, res, url) {
       src: null, link: null, links: {}, sysid: null, uptime: 0,
       d: {}, home: null, mission: [],
       track_n: 0, track_from: 0, track: [], messages: [],
-      rec: null, play: null,
       relay: { pusher: null, age: null, note: '아직 아무 PC 도 안 올렸다' },
     });
   }
@@ -695,27 +655,24 @@ function handleLiveState(req, res, url) {
     // 로컬 트래커에는 없는 칸. 어느 PC 가 언제 올렸는지 화면이 말할 수 있게.
     relay: { pusher: live.pusher, age: Math.round(ageS * 10) / 10, note: null },
   };
-  // 재생은 로컬 트래커에만 있다. 웹에서는 지난 비행을 /log/<id> 로 본다.
-  out.play = null;
   return sendJson(req, res, 200, out);
 }
 
 // ── 비행 전 점검 ─────────────────────────────────────────────────────
 // 🔴 **이 서버는 FC 와 직접 말하지 않는다.** FC 가 꽂힌 PC(rim3)의 에이전트를
-//    HTTP 로 부르고 그 JSON 을 그대로 넘긴다. 그래야 FC 상행이 정비 PC 안에
-//    갇힌 채로 남는다 — 공개 웹이 도는 이 기계를 브리지 허용 목록에 넣으면
-//    웹서버 버그 하나가 조종 포트(14550)로 흘러갈 길이 생긴다.
+//    HTTP 로 부르고 그 JSON 을 그대로 넘긴다. 그래야 FC 로 가는 경로가 그 PC
+//    안에 갇힌 채로 남는다 — 공개 웹서버 버그 하나가 FC 까지 닿을 길이 없다.
 //
 // 🔴 **판정은 여기서 하지 않는다.** 임계값은 tools/preflight/preflight.py 한 곳에만
 //    있고, 터미널과 이 화면이 같은 코드로 같은 답을 내야 한다.
 //    node 쪽에서 값을 다시 해석하면 그 순간부터 두 벌이 따로 늙는다.
 
-/** 에이전트 하나에 점검을 청한다. */
+/** 에이전트 하나에 점검을 청한다. addr 는 host:port 다 — 기본 포트는 없다. */
 function askAgent(addr, secs) {
   return new Promise((resolve) => {
     const [host, port] = addr.split(':');
     const r = http.request(
-      { host, port: Number(port) || 4402, path: `/preflight?t=${secs}`,
+      { host, port: Number(port), path: `/preflight?t=${secs}`,
         method: 'GET', timeout: PREFLIGHT_TIMEOUT,
         headers: { 'X-Preflight-Key': PREFLIGHT_KEY, 'Accept-Encoding': 'identity' } },
       (up) => {
@@ -752,7 +709,7 @@ function streamFromAgent(addr, secs, res) {
   return new Promise((resolve) => {
     const [host, port] = addr.split(':');
     const r = http.request(
-      { host, port: Number(port) || 4402, path: `/preflight/stream?t=${secs}`,
+      { host, port: Number(port), path: `/preflight/stream?t=${secs}`,
         method: 'GET', timeout: PREFLIGHT_TIMEOUT,
         headers: { 'X-Preflight-Key': PREFLIGHT_KEY, 'Accept-Encoding': 'identity' } },
       (up) => {
@@ -821,7 +778,7 @@ async function handlePreflightStream(req, res, url) {
     ok: false, verdict: 'NO-GO',
     error: '점검 에이전트에 닿지 못했다',
     notes: tried.map((t) => `${t.addr}: ${t.error}`),
-    hints: ['FC 가 꽂힌 PC 에서 에이전트가 도나 (systemctl --user status drone-preflight)',
+    hints: ['PREFLIGHT_AGENTS 가 FC 가 꽂힌 PC 의 점검 에이전트(host:port)를 가리키나',
             '그 PC 가 Tailscale 에 올라와 있나 (tailscale status)'],
     groups: [], standing: [],
   });
@@ -872,7 +829,7 @@ async function handlePreflight(req, res, url) {
     ok: false, verdict: 'NO-GO',
     error: '점검 에이전트에 닿지 못했다',
     notes: tried.map((t) => `${t.addr}: ${t.error}`),
-    hints: ['FC 가 꽂힌 PC 에서 에이전트가 도나 (systemctl --user status drone-preflight)',
+    hints: ['PREFLIGHT_AGENTS 가 FC 가 꽂힌 PC 의 점검 에이전트(host:port)를 가리키나',
             '그 PC 가 Tailscale 에 올라와 있나 (tailscale status)'],
     groups: [], standing: [],
   });
@@ -945,16 +902,13 @@ async function route(req, res) {
   // 라이브 — rim3 가 밀어 올리고(POST), 브라우저가 폴링한다(GET).
   if (p === '/api/live/push' && req.method === 'POST') return handleLivePush(req, res);
   if (p === '/api/live/state' && req.method === 'GET') return handleLiveState(req, res, url);
-  // 로컬 트래커와 같은 경로 이름을 쓴다 — 같은 live.js 가 양쪽에서 돌기 때문에
-  // 프론트가 어디에 붙었는지 몰라도 같은 요청을 보내면 된다.
-  if (p === '/api/link' && req.method === 'GET') return handleLinkPin(req, res, url);
 
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     return send(req, res, 405, '허용하지 않는 메서드', 'text/plain; charset=utf-8');
   }
   // /log/<id> 는 분석 페이지. 실제 파일은 log.html 이다.
   if (/^\/log\/[0-9a-f]{16}$/.test(p)) return serveStatic(req, res, '/log.html');
-  // /live 는 실시간 화면. 로컬 트래커(:4400)와 **같은 파일**을 쓴다.
+  // /live 는 실시간 화면. 로컬 트래커(:4410)와 **같은 파일**을 쓴다.
   if (p === '/live' || p === '/live/') return serveLiveAsset(req, res, '/live/index.html');
   if (LIVE_FILES.has(p)) return serveLiveAsset(req, res, p);
   // 재생은 drone_live.py 가 한다 (.BIN 을 열어 HUD·차트로 되돌린다).

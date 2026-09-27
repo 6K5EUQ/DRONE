@@ -12,20 +12,19 @@
 <main>
   <!-- 좌: HUD. DOM 순서상 먼저다 — 좁은 화면에서 그대로 위로 간다. -->
   <section id="hudPane">
-    <!-- 🔴 지도와 HUD 는 **윗줄 안에서만** 1:3 이다 (2026-09-10 정정).
-         아래 계기판(고도·배터리·모터)은 이 분할과 무관하게 폭을 그대로 쓴다.
-         처음에 지도를 main 의 세 번째 칸으로 뒀더니 계기판까지 밀려났다. -->
+    <!-- 🔴 지도와 HUD 는 **윗줄 안에서만** 1:3 이다.
+         아래 계기판(고도·배터리·모터)은 이 분할과 무관하게 폭을 그대로 쓴다. -->
       <div id="hudBox">
       <!-- viewBox 는 layout() 이 실측 픽셀로 넣는다. 여기에 미리 쓰지 마라 —
            고정 viewBox 를 두면 배율이 1:1 이 아니게 되어 45° 뱅크가 30° 로 보인다. -->
       <svg id="hud" aria-label="HUD"></svg>
       <!-- 배터리 온도. HUD 좌측 하단에 겹쳐 둔다 — 계기판 칸을 하나 더 쓰기에는
            평소 볼 일이 없고, 뜨거워질 때만 눈에 들어오면 되는 값이다.
-           PM08 이 준다 (BATTERY_STATUS.temperature). ESC·모터 온도는 없다. -->
+           BATTERY_STATUS.temperature 가 올 때만 값이 선다. ESC·모터 온도는 없다. -->
         <div id="hudTemp">0.0°C</div>
       </div>
 
-    <!-- HUD 아래 계기판. 우측 2번째 차트 아랫선까지 올라온다 (2026-09-05).
+    <!-- HUD 아래 계기판. 우측 2번째 차트 아랫선까지 올라온다.
          숫자만 보고 판단하는 자리라 크게 — 배치는 조종자가 부르는 순서다.
            고도  배터리  위성
            속도  전류    위치 오차
@@ -42,17 +41,16 @@
       <div class="sc" id="sc-spd"><span class="k">속도 <em>(m/s)</em></span><b id="st-spd">—</b></div>
       <div class="sc" id="sc-cur"><span class="k">전류 <em>(A)</em></span><b id="st-cur">—</b></div>
       <!-- eph — 위성 수가 많아도 이 값이 부풀면 위치가 흔들린다.
-           실측 평소 0.15~0.23m 라 1m 를 넘는 것 자체가 신호다.
            위성 수 바로 아래에 둔다 — 개수와 오차를 세로로 같이 읽는다. -->
       <div class="sc" id="sc-eph"><span class="k">위치 오차 <em>(m)</em></span><b id="st-eph">—</b></div>
 
-      <!-- 모터는 숫자 넷이 아니라 **기체 그림 위의 넷**이다 (2026-09-09).
+      <!-- 모터는 숫자 넷이 아니라 **기체 그림 위의 넷**이다.
            숫자만 보면 "48 과 41 중 어느 쪽이 어느 팔인가" 를 매번 머리로
            옮겨야 한다. 기수를 위로 둔 X 형상에 그대로 얹으면 눈이 바로
            짚는다 — 부하가 큰 팔이 굵고 밝다.
            원의 크기·밝기가 값이고, 숫자는 확인용으로 원 안에 같이 둔다. -->
       <div class="sc" id="sc-frame">
-        <!-- 🔴 viewBox 를 칸 비율(약 400×140, 2.8:1)에 맞췄다 (2026-09-10).
+        <!-- 🔴 viewBox 를 칸 비율(약 400×140, 2.8:1)에 맞췄다.
              예전 140×100(1.4:1)은 칸보다 세로로 길어, meet 로 맞추면 좌우에
              빈 띠가 생기고 로터가 그만큼 작아졌다. 칸 비율에 가깝게 두면
              같은 자리에서 로터가 훨씬 커진다.
@@ -81,11 +79,10 @@
 
       <!-- 편차 = 최대−최소 %p. 넷이 얼마나 벌어졌나가 이 계기의 판정이다.
            절대 부하는 무겁거나 바람이 불면 다 같이 오르지만, 편차는
-           **한쪽만** 무리하고 있을 때만 오른다 — 그것이 이상 신호다.
-           실측: 무풍 3~4%p, 2026-09-09 강풍 세션 8~10%p. -->
+           **한쪽만** 무리하고 있을 때만 오른다 — 그것이 이상 신호다. -->
       <div class="sc" id="sc-mspread"><span class="k">모터 편차 <em>(%p)</em></span><b id="st-mspread">—</b></div>
       <!-- 넷의 평균. 편차가 "치우침" 이면 이쪽은 "얼마나 힘든가" 다.
-           호버 65% 근처가 이 기체의 정상이다 (MPC_THR_HOVER=0.65). -->
+           호버 54% 근처가 이 기체의 정상이다 (MOT_THST_HOVER=0.540). -->
       <div class="sc" id="sc-mavg"><span class="k">모터 평균 <em>(%)</em></span><b id="st-mavg">—</b></div>
     </div>
   </section>
@@ -106,25 +103,10 @@
     <div class="msgs">
       <div class="hd">
         <span id="dot" class="dot" title="링크 상태">●</span>
-        <!-- 지금 데이터가 어느 경로로 오는지. ELRS(조종기 백팩) / USB(FC 직결).
-             둘은 갱신 주기가 3배 넘게 차이나므로 무엇을 보고 있는지 알아야 한다.
-             누르면 자동 -> USB -> ELRS 로 돌며 경로를 고정한다: USB 가 붙어
-             있으면 ELRS 는 영영 안 나오는데, 정작 비행 중 기체가 쓰는 것은
-             그쪽이라 무엇이 몇 Hz 로 도착하는지 눈으로 봐야 할 때가 있다. -->
-        <button id="linkSrc" type="button" title="데이터 원천 — 눌러서 경로 고정">—</button>
-        <!-- 기록 상태. 야외(GPS fix)에서 arm 하면 저절로 켜지므로, 조종자가
-             "왜 안 찍히나" 를 물어야 할 때가 온다 — 그때 답이 여기 있다.
-             REC = 적는 중(어느 경로인지 같이), 실내대기 = arm 은 했는데
-             GPS 를 기다린다. -->
-        <span id="recSt" title="기록 상태" hidden></span>
         <!-- 어느 단을 볼지. 차트 위에 떠 있던 것을 여기로 내렸다 —
              그림 위를 가리지 않고, 조작이 한 줄에 모인다. -->
         <div id="toc"></div>
         <span class="grow"></span>
-        <!-- 재생. **버튼은 하나다.** 실시간 기록(.tlog)과 FC 로그(.BIN)는
-             재생 방식이 다르지만(전자는 서버가 흘리고 후자는 브라우저가
-             시각을 정한다), 고르는 사람에게 그 차이는 사정이지 선택지가
-             아니다. 한 목록에서 고르면 종류에 맞는 쪽이 알아서 돈다. -->
         <span class="stats" id="stats"></span>
         <select id="win" title="차트가 보여주는 시간 창">
           <option value="60">1분</option>
@@ -133,23 +115,6 @@
           <option value="0">전체</option>
         </select>
         <button id="pbOpen" title="지난 비행을 골라 재생한다">재생</button>
-      </div>
-      <!-- 실시간 기록(.tlog) 재생 바. 통합 피커에서 그 줄을 고르면 나온다.
-           파일 고르는 select 는 없다 — 피커가 그 일을 한다. -->
-      <div id="playBar" hidden>
-        <span id="playName" class="stats" title="재생 중인 기록"></span>
-        <button id="playToggle" title="재생/일시정지">▶</button>
-        <input id="playSeek" type="range" min="0" max="1000" value="0"
-               title="위치" />
-        <span id="playTime" class="stats">0:00 / 0:00</span>
-        <select id="playSpeed" title="배속">
-          <option value="0.5">0.5×</option>
-          <option value="1" selected>1×</option>
-          <option value="2">2×</option>
-          <option value="4">4×</option>
-          <option value="10">10×</option>
-        </select>
-        <button id="playExit" title="실시간으로 돌아간다">실시간</button>
       </div>
     </div>
   </section>
