@@ -570,7 +570,7 @@ const drop = new THREE.Group(); drop.visible = false; craft.add(drop);
 }
 // 위치는 1초마다 온다 — 사이는 속도로 이어 가다 받은 값으로 당긴다.
 // 홈은 FC 의 HOME_POSITION(ARM 때 잡힌다), 없으면 ARM 한 순간의 위치.
-const geo = { n: 0, e: 0, alt: 0, psi: 0, armHome: null, armed: false, home: null };
+const geo = { n: 0, e: 0, alt: 0, psi: 0, armHome: null, armed: false, home: null, hs: null };
 function groundStep(dt, ease) {
   const d = D();
   if (d.armed && !geo.armed && d.lat != null) geo.armHome = [d.lat, d.lon];
@@ -603,6 +603,7 @@ function groundStep(dt, ease) {
   // 홈 — 땅과 같은 축척으로 제자리에. 높이 뜨면 패드를 키워 멀리서도 보이게.
   homeG.visible = !!on;
   geo.home = on ? Math.hypot(geo.n, geo.e) : null;
+  geo.hs = on ? hs : null;
   if (on) {
     homeG.position.set(geo.e * G, 0, -geo.n * G);
     homeG.getObjectByName('pad').scale.setScalar(1 + depth * 0.25);
@@ -643,6 +644,54 @@ function placeHome() {
   const b = el.querySelector('b'); if (b.innerHTML !== t) b.innerHTML = t;
 }
 
+// ── 위성 바닥 — 지도 버튼. 홈 둘레 위성 타일을 땅과 같은 축척(G)으로 격자 밑에 연하게 깐다.
+// 🔧 조정값 — 보면서 맞춘다.
+const SAT = {
+  opacity: 0.70,          // 0 안 보임 ~ 1 원본
+  zoom: 18,               // 타일 줌 (18 ≈ 0.5 m/px). 비행장은 Esri 에 18 까지만 있다 — 19 는 회색 「없음」 타일
+  tiles: 5,               // 한 변 타일 수 (5 × 256 px ≈ 625 m)
+};
+const SAT_FIELD = [35.1811, 128.5538];   // 링크가 없을 때 가운데 — 비행장 (server.js ADSB_LAT/LON)
+const sat = { on: false, mesh: null, key: '', lat: 0, lon: 0 };
+function satBuild(lat, lon) {
+  const z = SAT.zoom, n = 2 ** z, N = SAT.tiles, T = 256, rad = Math.PI / 180;
+  const xt = (lon + 180) / 360 * n, yt = (1 - Math.asinh(Math.tan(lat * rad)) / Math.PI) / 2 * n;
+  const x0 = Math.floor(xt) - (N >> 1), y0 = Math.floor(yt) - (N >> 1);
+  const c = document.createElement('canvas'); c.width = c.height = N * T;
+  const g = c.getContext('2d');
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload = () => { g.drawImage(img, i * T, j * T); tex.needsUpdate = true; };
+    img.src = `https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y0 + j}/${x0 + i}`;
+  }
+  // 캔버스 가운데의 위경도와 한 변 길이(m)
+  const cx = x0 + N / 2, cy = y0 + N / 2;
+  sat.lon = cx / n * 360 - 180;
+  sat.lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * cy / n))) / rad;
+  const size = N * T * 156543.03392 * Math.cos(lat * rad) / n;
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size * G, size * G),
+    new THREE.MeshBasicMaterial({ map: tex, alphaMap: grid.material.alphaMap, transparent: true, opacity: SAT.opacity, depthWrite: false }));
+  mesh.rotation.set(-Math.PI / 2, 0, Math.PI);   // 이미지 위 = 북(+z), 오른쪽 = 동(-x)
+  mesh.renderOrder = -2;                          // 격자 밑
+  world.add(mesh);
+  return mesh;
+}
+function satStep() {
+  grid.visible = !sat.on;   // 지도일 때는 격자를 걷어 사진만
+  if (!sat.on) { if (sat.mesh) sat.mesh.visible = false; return; }
+  const ref = geo.hs || SAT_FIELD, key = ref.join(',');
+  if (!sat.mesh || sat.key !== key) {
+    if (sat.mesh) { world.remove(sat.mesh); sat.mesh.material.map.dispose(); sat.mesh.geometry.dispose(); }
+    sat.mesh = satBuild(ref[0], ref[1]); sat.key = key;
+  }
+  sat.mesh.visible = true;
+  sat.mesh.material.opacity = SAT.opacity;
+  // 이미지 가운데가 홈에서 떨어진 만큼 — 땅 좌표(+z 북, -x 동)로 옮긴다
+  const nC = (sat.lat - ref[0]) * 111320, eC = (sat.lon - ref[1]) * 111320 * Math.cos(ref[0] * Math.PI / 180);
+  sat.mesh.position.set((geo.e - eC) * G, FLOOR - 0.002, (nC - geo.n) * G);
+}
+
 const timer = new THREE.Timer();
 let shiftX = 0, distK = 1;   // 정보 카드를 피해 화면 중심을 옮긴 폭(px), 물러선 배율
 function frame() {
@@ -651,7 +700,7 @@ function frame() {
   timer.update();
   const dt = Math.min(timer.getDelta(), 0.05);
   const ease = (r) => 1 - Math.exp(-dt * r);
-  flyStep(dt); flyFloor(); groundStep(dt, ease);
+  flyStep(dt); flyFloor(); groundStep(dt, ease); satStep();
   if (goal.on) {
     const k = ease(3.2);
     cam.yaw += (goal.yaw - cam.yaw) * k; cam.tilt += (goal.tilt - cam.tilt) * k; cam.dist += (goal.dist - cam.dist) * k;
@@ -844,7 +893,12 @@ async function setMode(m) {
   if (m === 'map') { await ensureMap(); lmap.invalidateSize(); trkHave = 0; track = []; if (!pb.on) pollLive(true); }
   renderTiles(); renderInfo(); resize();
 }
-$('modes').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setMode(b.dataset.m); });
+// 기체 / 지도 — 지도는 기체 화면 바닥에 위성사진을 깐다 (satStep)
+function setSat(on) {
+  sat.on = on;
+  for (const b of document.querySelectorAll('#modes button')) b.classList.toggle('on', (b.dataset.m === 'map') === on);
+}
+$('modes').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setSat(b.dataset.m === 'map'); });
 
 // ── 비행 전 점검 ─────────────────────────────────────────────────────
 // preflight.js 와 같은 스트림·암호(sessionStorage pf_pw)를 쓴다.
@@ -1178,4 +1232,4 @@ tick(); setInterval(tick, 5000);
 renderInfo(); render(); pollLive(); loadRec(); setInterval(loadRec, 60000);
 // 주소로 바로 열기 — /cockpit#pf 점검, #map 지도
 if (location.hash === '#pf') document.querySelector('[data-t=pf]').click();
-if (location.hash === '#map') setMode('map');
+if (location.hash === '#map') setSat(true);
