@@ -20,7 +20,7 @@ const mins = (s) => s == null ? '—' : s < 60 ? `${Math.round(s)}초` : `${Math
 
 let S = { live: false, d: {} };   // /api/live/state
 let R = null;                      // 비행 기록 요약
-let tab = 'sum';
+let tab = null;                    // 아무 탭도 안 고른 것이 기본 — 정보 카드·타일 없이 기체만
 let sel = null;                    // 고른 탑재칸
 let mode = '3d';                   // 3d | map
 const D = () => (S.live ? (S.d || {}) : {});
@@ -54,10 +54,11 @@ const TAB_INFO = {
 };
 
 // 점검 묶음 → 기체 부위. 소프트웨어 설정(failsafe·미션 등)은 부위가 없다.
+// 이름은 tools/preflight/preflight.py 의 r.group 과 같아야 한다.
 const PF_BAY = {
-  'GPS·추정': ['gps'], '전원': ['battery', 'power'], '센서': ['fc'], '링크': ['fc'],
-  '기체 상태': ['fc'], 'FC 자신의 말': ['fc'], '파라미터': ['fc'], 'ARM 조건': ['fc'],
-  '회로차단기': ['fc'], '기록': ['fc'],
+  'GPS': ['gps'], '나침반': ['gps'], '배터리': ['battery', 'power'],
+  '모터·프레임': ['power'], '출력 매핑': ['power'],
+  'RC 수신': ['fc'], 'ARM 상태': ['fc'], '진동·센서': ['fc'],
 };
 const LV_COLOR = { ok: 0x1f9d55, warn: 0xd99a06, blk: 0xdc2626, info: 0x828284 };
 const LV_RANK = { info: 0, ok: 1, warn: 2, blk: 3 };
@@ -83,7 +84,7 @@ scene.add(sun);
 const fill = new THREE.DirectionalLight(0xf2f4ff, 0.9); fill.position.set(-2.5, 1.2, -1.5); scene.add(fill);
 const front = new THREE.DirectionalLight(0xffffff, 0.5); front.position.set(0, 0.6, 3); scene.add(front);
 
-const FLOOR = -0.125;
+const FLOOR = -0.20;   // 스키드 바닥 (web/model/drone01.py 의 FLOOR 와 같다)
 // ── 땅 — 홈(이륙한 자리)에 고정된 바닥 ─────────────────────────────────
 // 기체는 화면 가운데 그대로 있고, 땅이 고도만큼 내려가고 이동한 만큼 뒤로 흐른다.
 // 땅·홈·고도는 **한 축척**이다 — 무대 1 = 실제 2 m. 따로 줄이면 홈이 땅 위에서
@@ -290,7 +291,7 @@ canvas.addEventListener('wheel', (e) => { e.preventDefault(); goal.on = false; c
 canvas.addEventListener('dblclick', () => setView());
 
 function setView() {
-  const v = VIEWS[intro ? 'intro' : sel ? 'bay' : tab], twoPi = Math.PI * 2;
+  const v = VIEWS[intro ? 'intro' : sel ? 'bay' : tab || 'sum'], twoPi = Math.PI * 2;
   goal.yaw = v.yaw + Math.round((cam.yaw - v.yaw) / twoPi) * twoPi;   // 가까운 쪽으로 돈다
   goal.tilt = v.tilt; goal.dist = v.dist; goal.on = true; cam.vYaw = cam.vTilt = 0;
 }
@@ -325,9 +326,11 @@ function bayLook(k) {
 }
 
 // ── 부위 표시 ────────────────────────────────────────────────────────
+const ROT_DIR = { LF: 'CW', RF: 'CCW', LB: 'CCW', RB: 'CW' };
 const CALLS = {
   sum: () => [],
-  pwr: (d) => { const m = d.motors || {}; const f = (k) => m[k] != null ? `${Math.round(m[k])}%` : '—';
+  // 회전 방향은 tools/live/drone_live.py MOTOR_PINS (2026-09-16 실측) 기준
+  pwr: (d) => { const m = d.motors || {}; const f = (k) => m[k] != null ? `${Math.round(m[k])}% · ${ROT_DIR[k]}` : ROT_DIR[k];
     return [['LF', 'LF', f('LF'), thr(m.LF)], ['RF', 'RF', f('RF'), thr(m.RF)], ['LB', 'LB', f('LB'), thr(m.LB)], ['RB', 'RB', f('RB'), thr(m.RB)],
             ]; },
   nav: (d) => [['gps', 'GPS', d.sats != null ? `${d.sats}기 · ${num(d.eph, 1)}m` : '—', lvl(d.sats, 8, 5)],
@@ -336,12 +339,14 @@ const CALLS = {
   rec: () => [],
   pf: () => [],
 };
-// 스로틀 여유 — 85% 를 넘으면 추력 여유가 얼마 안 남았다 (live.js sc-mavg 와 같은 기준)
-const thr = (v) => v == null ? '' : v > 90 ? 'bad' : v > 85 ? 'warn' : '';
+// 모터 부하 판정 — 좌측 계기판(모터 그림)과 3D 기체 위(라벨·로터 원판)가 **같은 함수**를 쓴다.
+// 기준은 /live 와 같다: 한 모터가 70% 넘으면 노랑, 80% 넘으면 빨강.
+const MOT_WARN = 70, MOT_BAD = 80;
+const thr = (v) => v == null ? '' : v >= MOT_BAD ? 'bad' : v >= MOT_WARN ? 'warn' : '';
 const THR_COLOR = { '': 0x5a5d63, warn: 0xd99a06, bad: 0xdc2626 };
 const callEls = new Map();
 function renderCalls() {
-  let want = sel || mode !== '3d' ? [] : CALLS[tab](D());
+  let want = sel || mode !== '3d' || !tab ? [] : CALLS[tab](D());
   if (!sel && mode === '3d' && tab !== 'pwr') {
     const m = D().motors || {};
     for (const k of ['LF', 'RF', 'LB', 'RB']) if (thr(m[k])) want.push([k, k, `${Math.round(m[k])}%`, thr(m[k])]);
@@ -715,14 +720,14 @@ const TILES = {
   pf: () => [],
 };
 function renderTiles() {
-  html('tiles', mode !== '3d' ? '' : TILES[tab](D()).map(([ic, l, v, u, c, on]) =>
+  html('tiles', mode !== '3d' || !tab ? '' : TILES[tab](D()).map(([ic, l, v, u, c, on]) =>
     `<div class="tile ${c || ''}${on ? ' on' : ''}">${icon(ic)}<b class="num">${v}${u && v !== '—' ? `<small>${u}</small>` : ''}</b><span>${l}</span></div>`).join(''));
   renderCalls();
 }
 $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
-  tab = b.dataset.t; sel = null;
-  for (const x of $('tabs').children) x.classList.toggle('on', x === b);
+  tab = tab === b.dataset.t ? null : b.dataset.t; sel = null;   // 고른 탭을 다시 누르면 풀린다
+  for (const x of $('tabs').children) x.classList.toggle('on', x.dataset.t === tab);
   setView(); renderTiles(); renderInfo();
 });
 
@@ -1024,20 +1029,15 @@ function renderHud(d) {
 }
 
 // ── 계기판 — /live 와 같은 값·같은 판정 (live.js 의 sc·SPREAD·MOT 기준) ──
-const SPREAD_WARN = 10, SPREAD_BAD = 20, MOT_WARN = 70, MOT_BAD = 80;
+const SPREAD_WARN = 10, SPREAD_BAD = 20, MAVG_WARN = 65, MAVG_BAD = 75;
 function renderStrip(d) {
   const sc = (id, c) => { $(id).className = 'sc' + (c ? ' ' + c : ''); };
   const u = (v, n, unit) => v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(n)}<small>${unit}</small>`;
   html('st-alt', u(d.alt, 1, 'm'));
   html('st-batt', u(d.batt_pct, 0, '%'));
   sc('sc-batt', d.batt_pct == null ? '' : d.batt_pct < 20 ? 'bad' : d.batt_pct < 35 ? 'warn' : '');
-  html('st-sats', u(d.sats, 0, '기'));
-  sc('sc-sats', d.fix != null && d.fix < 3 ? 'bad' : d.sats != null && d.sats < 8 ? 'warn' : '');
-  html('st-spd', u(d.groundspeed, 1, 'm/s'));
   html('st-cur', u(d.cur, 1, 'A'));
-  sc('sc-cur', d.cur > 60 ? 'bad' : d.cur > 45 ? 'warn' : '');
-  html('st-eph', u(d.eph, 2, 'm'));
-  sc('sc-eph', d.eph > 3 ? 'bad' : d.eph > 1 ? 'warn' : '');
+  sc('sc-cur', d.cur > 56 ? 'bad' : d.cur > 40 ? 'warn' : '');
   const mt = d.motors || {}, vs = ['LF', 'RF', 'LB', 'RB'].map((k) => mt[k]).filter((v) => v != null);
   const spread = vs.length ? Math.max(...vs) - Math.min(...vs) : null;
   const avg = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
@@ -1045,7 +1045,7 @@ function renderStrip(d) {
     const v = mt[k], rot = $('rot-' + k), arm = $('arm-' + k), t = $('mv-' + k);
     // 크기·짙기는 비행에 쓰는 40~90% 구간을 편다 (live.js 와 같다)
     const f = v == null ? 0 : Math.max(0, Math.min(1, (v - 40) / 50));
-    const ml = v == null ? '' : v >= MOT_BAD ? 'bad' : v >= MOT_WARN ? 'warn' : '';
+    const ml = thr(v);
     rot.setAttribute('r', v == null ? 18 : (13 + f * 12).toFixed(1));
     const L = 86 - f * 44;
     rot.style.fill = ml === 'bad' ? `hsl(0 70% ${L.toFixed(0)}%)` : ml === 'warn' ? `hsl(40 85% ${L.toFixed(0)}%)` : `hsl(240 3% ${L.toFixed(0)}%)`;
@@ -1057,7 +1057,7 @@ function renderStrip(d) {
   html('st-mspread', u(spread, 1, '%p'));
   sc('sc-mspread', spread == null ? '' : spread > SPREAD_BAD ? 'bad' : spread > SPREAD_WARN ? 'warn' : '');
   html('st-mavg', u(avg, 0, '%'));
-  sc('sc-mavg', avg == null ? '' : avg > 90 ? 'bad' : avg > 85 ? 'warn' : '');
+  sc('sc-mavg', avg == null ? '' : avg > MAVG_BAD ? 'bad' : avg > MAVG_WARN ? 'warn' : '');
 }
 
 // ── 상태 반영 ────────────────────────────────────────────────────────
@@ -1076,7 +1076,7 @@ function render() {
   $('batBox').className = 'bat ' + lvl(d.batt_pct, 35, 20);
   $('batFill').setAttribute('width', d.batt_pct != null ? (21 * Math.max(0, Math.min(100, d.batt_pct)) / 100).toFixed(1) : 0);
 
-  txt('sat', d.sats != null ? String(d.sats) : '—');
+  txt('sat', d.sats == null ? '—' : d.eph != null ? `${d.sats} (${d.eph.toFixed(1)})` : String(d.sats));   // 위성 수 (수평 오차 m)
   $('stSat').className = 'st ' + (d.fix != null && d.fix < 3 ? 'bad' : lvl(d.sats, 8, 5));
   $('linkDot').className = 'dot' + (on ? ' on' : '');
 
