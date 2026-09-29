@@ -3,7 +3,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-<title>DRONE01 비행 전 점검</title>
+<title>점검 — DRONE01</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="/app.css">
@@ -24,18 +24,20 @@
 -->
 
 <header>
-  <h1><a href="/">DRONE01 비행로그</a></h1>
-  <span class="sub">비행 전 점검</span>
+  <h1><a href="/">DRONE01</a></h1>
+  <span class="sub">점검</span>
   <time class="pf-at" id="bAt"></time>
   <span class="grow"></span>
   <span class="pf-note" id="note"></span>
+  <a class="btn" href="/">비행 기록</a>
   <a class="btn" href="/intro">소개</a>
+  <a class="btn" href="/cockpit">콕핏</a>
   <a class="btn" href="/live">실시간</a>
 </header>
 
 <main class="pf">
   <section class="pf-hero" id="hero">
-    <button class="primary pf-big" id="go">기체 점검</button>
+    <button class="pf-big" id="go">기체 점검</button>
   </section>
 
   <div class="pf-run" id="run" hidden>
@@ -49,11 +51,11 @@
         <section class="pf-total" id="total" hidden>
           <span class="pf-tlabel">종합결과</span>
           <strong class="pf-tverdict" id="tverdict">—</strong>
-          <div class="pf-tactions">
-            <button id="again" hidden>다시 점검</button>
-          </div>
         </section>
         <section id="fail" class="pf-fail" hidden></section>
+        <div class="pf-tactions" id="acts" hidden>
+          <button id="again">다시 점검</button>
+        </div>
       </aside>
     </div>
   </div>
@@ -66,7 +68,7 @@
     <div class="pf-modalerr" id="pwErr" hidden></div>
     <div class="pf-modalrow">
       <button type="button" id="cancel">취소</button>
-      <button type="submit" class="primary">점검</button>
+      <button type="submit">점검</button>
     </div>
   </form>
 </div>

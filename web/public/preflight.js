@@ -169,12 +169,7 @@ function renderFail(d) {
   const box = $('fail');
   box.hidden = false;
   box.textContent = '';
-  box.appendChild(el('div', 'pf-failtitle', d.error || '점검하지 못했다'));
-  for (const n of d.notes || []) box.appendChild(el('div', 'pf-failnote', '· ' + n));
-  if (d.hints && d.hints.length) {
-    box.appendChild(el('div', 'pf-failhead', '확인할 것'));
-    for (const h of d.hints) box.appendChild(el('div', 'pf-failnote', '· ' + h));
-  }
+  box.appendChild(el('div', 'pf-failtitle', d.error || '점검 실패'));
 }
 
 // ── 암호 ────────────────────────────────────────────────────────────
@@ -188,15 +183,19 @@ function askPassword(err) {
   $('pw').value = '';
   $('pw').focus();
 }
-const closeModal = () => { $('modal').hidden = true; };
+const closeModal = () => { $('modal').hidden = true; if (!$('hero').hidden) $('go').focus(); };
 
 // ── 점검 ────────────────────────────────────────────────────────────
 let busy = false;
+// done 줄을 받았나. 스트림이 done 없이 끝나면 (에이전트가 도중에 죽음) 실패로 그린다.
+let gotDone = false;
 
 function reset() {
+  // 지난 점검 시각을 남기면 이번 실패가 그 시각의 것으로 읽힌다.
+  $('bAt').textContent = '';
   $('total').hidden = true;
   $('fail').hidden = true;
-  $('again').hidden = true;
+  $('acts').hidden = true;
   $('list').textContent = '';
   rows.clear();
 }
@@ -220,13 +219,14 @@ function onLine(d) {
       setGroupDone(d.group);
       break;
     case 'done':
+      gotDone = true;
       setBrief(d);
       // 마지막 한 벌로 목록을 맞춘다 — 늦게 온 값이 중간 판정을 바꿨을 수 있다.
       for (const g of d.groups || []) setGroupDone(g);
       if (d.error) renderFail(d);
       else renderTotal(d);
       // 점검이 끝났다. 이제 다시 돌리거나 근거를 펼칠 수 있다.
-      $('again').hidden = false;
+      $('acts').hidden = false;
       setNote('', '');
       break;
     default:
@@ -243,6 +243,7 @@ async function run() {
   $('hero').hidden = true;
   $('run').hidden = false;
   reset();
+  gotDone = false;
   setNote('FC 에 붙는 중…', 'dim');
 
   try {
@@ -258,7 +259,7 @@ async function run() {
       $('hero').hidden = false;
       $('run').hidden = true;
       setNote('', '');
-      askPassword('암호가 틀렸다');
+      askPassword('암호 오류');
       return;
     }
     try { sessionStorage.setItem('pf_pw', pw); } catch { /* 사설 모드 */ }
@@ -266,9 +267,10 @@ async function run() {
     // 스트림이 아니면 (503·409 등) 한 벌짜리 JSON 이다.
     const type = res.headers.get('content-type') || '';
     if (!type.includes('ndjson')) {
-      const d = await res.json().catch(() => ({ error: '응답을 읽지 못했다' }));
+      const d = await res.json().catch(() => ({ error: '응답 오류' }));
       renderFail(d);
-      setNote(d.error || '점검하지 못했다', 'bad');
+      setNote('', '');
+      $('acts').hidden = false;
       return;
     }
 
@@ -290,9 +292,11 @@ async function run() {
         catch { /* 반쪽 줄은 버린다 — 다음 덩이에서 온전히 온다 */ }
       }
     }
+    if (!gotDone) { renderFail({}); setNote('', ''); $('acts').hidden = false; }
   } catch (e) {
-    setNote('서버에 닿지 못했다: ' + e.message, 'bad');
-    $('again').hidden = false;
+    renderFail({ error: '연결 실패' });
+    setNote('', '');
+    $('acts').hidden = false;
   } finally {
     busy = false;
     $('go').disabled = false;

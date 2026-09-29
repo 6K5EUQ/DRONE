@@ -47,7 +47,7 @@ const $ = (id) => document.getElementById(id);
 
 // ── 레이아웃 변수. layout() 에서만 갱신, 매 프레임 transform 이 이걸 읽는다 ──
 let W = 0, H = 0, TAPE_W = 72, AY0 = HDG_H, AY1 = 0, AH = 0;
-let cx = 0, cy = 0, ARC_R = 0, CENTER_DY = 0;
+let cx = 0, cy = 0, ARC_R = 0, CENTER_DY = 0, WARN_DY = 0, WARN_W = 400;
 
 const h = {};                         // HUD 노드 참조
 let havePos = false;
@@ -70,7 +70,7 @@ const KEEP_N = 3600 * HZ;             // 1시간치까지 들고 있는다
 const CHART_EVERY = Math.max(1, Math.round(1000 / POLL_MS / CHART_HZ));
 const trk = { hz: HZ, n: 0, dur: 0, modes: [], events: [] };
 let lastMode = null;
-let lastSeq = -1, lastSeqPoll = 0, pollN = 0;
+let lastSeq = -1, lastSeqAt = 0, pollN = 0, nextPushAt = 0;
 let warnUntil = 0, warnText = '', warnKoText = '', lastMsgKey = '';
 
 // 🔴 FC 경고의 한글 요약. 이 기체 로그(flights/)에서 실제로 나온 것만 넣었다 —
@@ -205,7 +205,7 @@ function buildHUD() {
   //    보여주면 읽는 사람이 무엇이 참인지 재느라 시간을 쓴다. 여기서 필요한
   //    정보는 하나다 — 지금 모터가 죽어 있다.
   h.kill = el('g', { class: 'off' }, h.center);
-  el('rect', { x: -200, y: -34, width: 400, height: 46, rx: 4,
+  h.killBg = el('rect', { x: -200, y: -34, width: 400, height: 46, rx: 4,
                fill: '#0d1117', opacity: .95,
                stroke: 'var(--bad)', 'stroke-width': 3 }, h.kill);
   h.killTxt = el('text', { x: 0, y: 2, 'text-anchor': 'middle', class: 'killTxt',
@@ -244,7 +244,7 @@ function buildHUD() {
   h.spdHdrBg = el('rect', { fill: '#0d1117', opacity: .96, rx: 3 }, svg);
   h.spdHdr = el('text', { 'text-anchor': 'end', 'font-size': 11, 'font-weight': 700,
                           fill: 'var(--c-spd)', 'letter-spacing': '.5px' }, svg);
-  h.spdHdr.textContent = 'SPD';
+  h.spdHdr.textContent = '속도';
   h.spdUnitBg = el('rect', { fill: '#0d1117', opacity: .92, rx: 3 }, svg);
   h.spdUnit = el('text', { 'text-anchor': 'end', 'font-size': 11, fill: '#e6edf3', opacity: .85 }, svg);
   h.spdUnit.textContent = 'm/s';
@@ -269,7 +269,7 @@ function buildHUD() {
   h.altHdrBg = el('rect', { fill: '#0d1117', opacity: .96, rx: 3 }, svg);
   h.altHdr = el('text', { 'text-anchor': 'start', 'font-size': 11, 'font-weight': 700,
                           fill: 'var(--c-alt)', 'letter-spacing': '.5px' }, svg);
-  h.altHdr.textContent = 'ALT';
+  h.altHdr.textContent = '고도';
   h.altUnitBg = el('rect', { fill: '#0d1117', opacity: .92, rx: 3 }, svg);
   h.altUnit = el('text', { 'text-anchor': 'start', 'font-size': 11, fill: '#e6edf3', opacity: .85 }, svg);
   h.altUnit.textContent = 'm';
@@ -313,7 +313,6 @@ function buildHUD() {
   h.hdgApex = el('polygon', { fill: '#0d1117', opacity: .92, stroke: 'var(--border-2)' }, svg);
   h.hdgBox = el('rect', { fill: '#0d1117', opacity: .92, stroke: 'var(--border-2)' }, svg);
   h.hdgVal = el('text', { 'text-anchor': 'middle', 'font-size': 17, fill: '#e6edf3' }, svg);
-  h.hdgSrc = el('text', { 'font-size': 9, fill: 'var(--muted)' }, svg);
 
   // ⑨ 프리즈 오버레이 — 얼어붙은 테이프는 정상 테이프와 겉모습이 같다.
   //    얼어붙은 계기는 자기가 얼었다고 온몸으로 말해야 한다.
@@ -335,7 +334,9 @@ function layout(w, hh) {
 
   const svg = $('hud');
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.classList.toggle('small', AH < 420);
+  // 폭도 본다 — 390 폭 세로 폰은 키가 커서 큰 글자가 되는데, 「ARMED · 지상」
+  // (40px, 274px)이 두 테이프 사이(266px)보다 넓어 양끝이 테이프 밑에 묻혔다.
+  svg.classList.toggle('small', AH < 420 || W < 420);
 
   const box = (r, x, y, ww, hg) => {
     setAttr(r, 'x', x); setAttr(r, 'y', y);
@@ -409,12 +410,21 @@ function layout(w, hh) {
   setAttr(h.hdgApex, 'points', `${cx},${HDG_H} ${cx - 9},${HDG_H + 10} ${cx + 9},${HDG_H + 10}`);
   box(h.hdgBox, cx - 34, HDG_H + 10, 68, 24);
   setAttr(h.hdgVal, 'x', cx); setAttr(h.hdgVal, 'y', HDG_H + 27);
-  setAttr(h.hdgSrc, 'x', cx + 40); setAttr(h.hdgSrc, 'y', HDG_H + 27);
   setAttr(h.bugL, 'points', `${TAPE_W + 2},${HDG_H + 4} ${TAPE_W + 12},${HDG_H - 2} ${TAPE_W + 12},${HDG_H + 10}`);
   setAttr(h.bugR, 'points', `${W - TAPE_W - 2},${HDG_H + 4} ${W - TAPE_W - 12},${HDG_H - 2} ${W - TAPE_W - 12},${HDG_H + 10}`);
 
   box(h.freeze, 0, 0, W, H);
   setAttr(h.freezeTxt, 'x', cx); setAttr(h.freezeTxt, 'y', cy);
+
+  // 경고 판은 400px 이 기본이지만 좁으면 두 테이프 사이로 줄인다.
+  // 판 왼끝이 온도 판(#hudTemp, 오른끝 68px)을 넘지 않게 12 를 뺀다.
+  WARN_W = Math.min(400, W - 2 * TAPE_W - 12);
+  setAttr(h.warnBg, 'x', -WARN_W / 2); setAttr(h.warnBg, 'width', WARN_W);
+  // 비상정지 판도 같은 폭 — 400 이면 좁은 HUD 에서 좌우 테두리가 테이프 밑에 묻힌다.
+  setAttr(h.killBg, 'x', -WARN_W / 2); setAttr(h.killBg, 'width', WARN_W);
+  // 낮은 HUD(1024×768 · 폰 360px)에서는 판(한글 줄까지 44px)이 HUD 바닥 밖으로
+  // 나가 한글 줄이 통째로 안 보였다. 넘친 만큼 올린다 — render 가 쓴다.
+  WARN_DY = Math.min(0, H - 2 - (cy + CENTER_DY + 136));
 }
 
 // ── 차트 ────────────────────────────────────────────────────────────
@@ -450,7 +460,7 @@ const CHARTS = [
   { id: 'k-gps', title: 'GPS', on: false, series: [
       { key: 'sats', color: '#3fb950', label: '위성 수', axis: 'left', weight: 2, minSpan: 6, nonNeg: true },
       { key: 'eph', color: '#f85149', label: '위치 오차', axis: 'right', unit: 'm', minSpan: 2, nonNeg: true }] },
-  { id: 'k-ekf', title: 'EKF', on: false, series: [
+  { id: 'k-ekf', title: '센서 불일치', on: false, series: [
       // EKF 는 비율이라 1.0 이 한계선이다. 축이 늘 0~1 을 담아야 지금이
       // 한계에서 얼마나 떨어져 있는지 한눈에 읽힌다.
       { key: 'ekf_vel', color: '#58a6ff', label: '속도', axis: 'left', minSpan: 1.2, nonNeg: true },
@@ -525,7 +535,7 @@ function buildCharts() {
   const host = $('charts');
   const want = CHARTS.filter((c) => shownIds.has(c.id));
   if (!want.length) {
-    host.innerHTML = '<div class="empty">볼 단을 오른쪽 위에서 고른다.</div>';
+    host.innerHTML = '';
     return;
   }
   host.innerHTML = want.map((c) => `
@@ -666,11 +676,12 @@ function bearing(from, to) {
 // ── 렌더 ────────────────────────────────────────────────────────────
 function render(s) {
   pollN++;
+  const nowMs = performance.now();
   const d = s.d || {};
   // ② 링크·프리즈·경고 만료 — 조기반환과 무관하게 항상 돈다.
   const changed = s.seq !== lastSeq;
-  if (changed) { lastSeq = s.seq; lastSeqPoll = pollN; }
-  const stall = (pollN - lastSeqPoll) * POLL_MS / 1000;
+  if (changed) { lastSeq = s.seq; lastSeqAt = nowMs; }
+  const stall = (nowMs - lastSeqAt) / 1000;
 
   // 링크 상태는 점 하나로 말한다 (우하단 바). 자세한 사정은 HUD 의 프리즈
   // 오버레이가 크게 적으므로 여기서 글자를 또 쓸 이유가 없다.
@@ -684,29 +695,20 @@ function render(s) {
   else if (!s.live) { lt = '링크 끊김'; lc = 'bad'; frz = `링크 끊김 · ${Math.round(s.age)}s`; }
   else if (stall >= 3) {
     lt = '데이터 정지'; lc = 'warn';
-    frz = `데이터 정지 · ${stall.toFixed(0)}s (링크는 살아 있음)`;
+    frz = `데이터 정지 · ${stall.toFixed(0)}s`;
   } else { lt = '링크 ON'; lc = 'live'; }
   if (dot.dataset.st !== lt) {          // 매 폴 DOM 을 건드리지 않는다
     dot.dataset.st = lt;
     dot.className = 'dot ' + lc;
-    dot.title = lt;
+    dot.title = lc === 'live' ? '' : lt;
   }
   show(h.freeze, !!frz);
   show(h.freezeTxt, !!frz);
   if (frz) setText(h.freezeTxt, frz);
 
-  // 하단 바는 좁다. 송신 주소는 title 로 밀고 숫자만 남긴다.
+  // 정상일 때는 비운다 (점이 말한다). 패킷·프레임 수는 조종자가 읽을 값이 아니다.
   const stEl = $('stats');
-  setText(stEl, s.playback
-    // 재생은 패킷 수·바이트가 의미 없다. 몇 번째 프레임인지가 그 자리를 대신한다.
-    ? `프레임 ${(s.i + 1).toLocaleString()}/${(s.n || 0).toLocaleString()}`
-    : s.packets
-    ? `${s.packets.toLocaleString()}pkt · ${(s.bytes / 1024).toFixed(0)}KB`
-    : 'MAVLink 대기 중…');
-  if (s.src && stEl.dataset.src !== s.src) {
-    stEl.dataset.src = s.src;
-    stEl.title = s.src;
-  }
+  setText(stEl, s.playback || s.packets ? '' : '연결 없음');
 
   // ── 차트 표본. 🔴 조기반환보다 **위**에 있어야 한다.
   //    시계열의 x축은 벽시계 시간이다 — 새 프레임이 없다고 표본을 건너뛰면
@@ -717,8 +719,13 @@ function render(s) {
   // 🔴 재생 중에는 한 칸씩 쌓지 않는다. pbFillCharts() 가 0..t 구간을 통째로
   //    다시 만들어 두었으므로, 여기서 또 밀어 넣으면 프레임마다 격자가 하나씩
   //    늘어 차트 시간축이 실제 로그의 두 배로 벌어진다.
-  // 🔴 폴이 20Hz 라도 격자는 5Hz 다 — 매 폴 밀어 넣으면 시간축이 4배로 벌어진다.
-  if (!s.playback && pollN % CHART_EVERY === 0) pushSample(s.live ? d : {});
+  // 🔴 격자는 **벽시계** 5Hz 다 — 폴 횟수로 세면 폴이 20Hz 에 못 미치는 만큼
+  //    시간축이 줄어든다 (웹처럼 폴이 느린 곳). 지난 칸 이후 흐른 시간만큼
+  //    칸을 채운다. 10초 넘게 멈췄다 돌아오면(탭 숨김 등) 몰아 넣지 않는다.
+  if (!s.playback) {
+    if (!nextPushAt || nowMs - nextPushAt > 10000) nextPushAt = nowMs;
+    while (nowMs >= nextPushAt) { pushSample(s.live ? d : {}); nextPushAt += 1000 / HZ; }
+  }
   // 5Hz 로 단 3개를 전부 다시 그리면 초당 15회 SVG 재생성이다. 2.5Hz 로
   // 줄여 HUD 에 CPU 를 남긴다. 처음 몇 칸만 매번 그려 첫 화면이 안 빈다.
   if (trk.n < 4 || pollN % (CHART_EVERY * 2) === 0) renderCharts();
@@ -767,7 +774,6 @@ function render(s) {
   setAttr(h.hdgWrap, 'opacity', haveHdg ? 1 : .3);
   setAttr(h.hdgSlide, 'transform', `translate(${(cx - (hh + 360) * PPD_HDG).toFixed(1)},0)`);
   setText(h.hdgVal, haveHdg ? String(Math.round(hh) % 360).padStart(3, '0') : '—');
-  setText(h.hdgSrc, !haveHdg ? '방위없음' : (d.hdg != null ? 'HDG' : 'YAW'));
 
   const halfWin = (W - 2 * TAPE_W) / 2 / PPD_HDG;
   // 🔴 edgeL/edgeR 은 코스 마커일 때 null 이다 — 숨기는 가지에서도 반드시 가드한다.
@@ -809,8 +815,9 @@ function render(s) {
   show(h.arm, !killed);
   show(h.mode, !killed);
 
-  const tail = d.landed === 2 ? ' · 공중' : d.landed === 1 ? ' · 지상' : '';
-  setText(h.arm, d.armed ? 'ARMED' + tail : 'DISARMED');
+  // 아직 HEARTBEAT 를 못 받았으면(null) 비운다 — 모르는 것을 '대기' 로 지어내지 않는다.
+  // 말은 콕핏과 같다 (비행 중 / 시동 / 대기).
+  setText(h.arm, d.armed == null ? '' : d.armed ? (d.landed === 2 ? '비행 중' : '시동') : '대기');
   // 🔴 DISARMED 를 --muted(#6e7681) 로 두면 갈색 지면 위에서 거의 안 보인다.
   //    ARM 여부는 이 화면에서 가장 먼저 읽어야 하는 값이다 — 흐리게 둘 값이
   //    아니다. 대비는 글자색이 아니라 **굵기와 헤일로**로 준다.
@@ -832,21 +839,36 @@ function render(s) {
       if (SEV[msgs[i].sev]) {
         warnText = msgs[i].text.slice(0, 48);
         warnKoText = warnKo(msgs[i].text);
-        warnUntil = pollN + 15000 / POLL_MS;
+        warnUntil = nowMs + 15000;
         break;
       }
     }
     lastMsgKey = newKey;
   }
-  const crit = d.system_status === 6 ? 'FC 상태 CRITICAL'
-    : d.system_status === 7 ? 'FC 상태 EMERGENCY' : '';
-  const warnStr = crit || (pollN < warnUntil ? warnText : '');
-  const koStr = crit ? '' : (pollN < warnUntil ? warnKoText : '');
+  const crit = d.system_status === 6 ? 'FC 위급'
+    : d.system_status === 7 ? 'FC 비상' : '';
+  const warnStr = crit || (nowMs < warnUntil ? warnText : '');
+  const koStr = crit ? '' : (nowMs < warnUntil ? warnKoText : '');
   setText(h.warn, warnStr);
   setText(h.warnKo, koStr);
+  // 좁은 HUD 에서 경고 양끝이 잘린다 — 넘칠 때만 판 폭에 맞춰 눌러 담는다.
+  // 글·폭이 바뀔 때만 잰다 (매 프레임 재면 20Hz 강제 레이아웃이다).
+  const fk = warnStr + '\n' + koStr + '\n' + W;
+  if (h.warn._fit !== fk) {
+    h.warn._fit = fk;
+    const av = WARN_W - 8;
+    for (const t of [h.warn, h.warnKo]) {
+      t.removeAttribute('textLength');
+      if (t.textContent && t.getComputedTextLength() > av) {
+        t.setAttribute('textLength', av);
+        t.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+      }
+    }
+  }
   show(h.warnBg, !!warnStr);          // 글자 없을 때 빈 판이 떠 있으면 안 된다
   // 한글 줄이 있으면 판을 그만큼 키운다 — 글자가 판 밖으로 나가면 사다리에 묻힌다.
   h.warnBg.setAttribute('height', koStr ? 44 : 26);
+  setAttr(h.warnBg, 'y', 92 + WARN_DY); setAttr(h.warn, 'y', 110 + WARN_DY); setAttr(h.warnKo, 'y', 126 + WARN_DY);
   // 점멸은 우선순위 상위 하나에만 — 동시에 여럿 깜빡이면 아무것도 안 튄다.
   // KILL 이 사슬의 맨 위다. 모터가 끊긴 것보다 급한 상태는 없다.
   h.kill.classList.toggle('blink', killed);
@@ -1529,6 +1551,9 @@ async function pbRender() {
     const r = await fetch('/api/playback/state?t=' + ulpb.t.toFixed(2), { cache: 'no-store' });
     if (!r.ok) return;
     const s = await r.json();
+    // 기다리는 사이 「실시간」을 눌렀으면 버린다 — 안 버리면 비운 차트에 로그 꼬리가 되살아난다.
+    if (!ulpb.on) return;
+    if (s.gone) { pbPause(); $('pbTime').textContent = '재생 끊김'; return; }
     pbFillCharts();
     render(s);
   } catch (e) { /* 서버가 죽으면 다음 tick 에서 다시 해 본다 */ }
@@ -1561,10 +1586,10 @@ function pbPause() {
 }
 
 async function pbStart(name) {
-  $('pbList').innerHTML = '<div class="msg">' + name + ' 여는 중… (큰 로그는 수십 초)</div>';
+  $('pbList').innerHTML = '<div class="msg">' + name + ' 여는 중</div>';
   const r = await fetch('/api/playback/open?name=' + encodeURIComponent(name), { cache: 'no-store' });
   if (!r.ok) {
-    $('pbList').innerHTML = '<div class="msg">열지 못했다.</div>';
+    $('pbList').innerHTML = '<div class="msg">열기 실패</div>';
     return;
   }
   // 굽는 동안 기다린다. 큰 로그는 수십 초 걸린다 — 진행을 글로 알린다.
@@ -1587,7 +1612,7 @@ async function pbStart(name) {
       return;
     }
     if (info.state === 'error') {
-      $('pbList').innerHTML = '<div class="msg">읽을 수 없다: ' + (info.error || '') + '</div>';
+      $('pbList').innerHTML = '<div class="msg">읽기 실패</div>';
       return;
     }
   }
@@ -1606,6 +1631,7 @@ function pbExit() {
     if (Array.isArray(trk[k]) && k !== 'modes' && k !== 'events') delete trk[k];
   }
   trk.n = 0; trk.dur = 0; trk.modes = []; trk.events = []; trk.hz = HZ;
+  nextPushAt = 0;            // 짧은 재생 뒤 빈 격자에 밀린 칸을 몰아 넣지 않는다
   lastMode = null;
   poll();                    // 멈춰 있던 실시간 폴을 다시 돈다
 }
@@ -1619,13 +1645,14 @@ function pbExit() {
  */
 async function pbShowPicker() {
   $('pbPick').hidden = false;
+  $('pbPickClose').focus();
   $('pbList').innerHTML = '<div class="msg">불러오는 중…</div>';
 
   const logs = await fetch('/api/logs', { cache: 'no-store' })
     .then((r) => r.json()).catch(() => null);
   const rows = Array.isArray(logs) ? logs : (logs && logs.logs) || [];
   if (!rows.length) {
-    $('pbList').innerHTML = '<div class="msg">' + ((logs && logs.error) || '재생할 것이 없다.') + '</div>';
+    $('pbList').innerHTML = '<div class="msg">' + ((logs && logs.error) || '없음') + '</div>';
     return;
   }
 
@@ -1633,6 +1660,9 @@ async function pbShowPicker() {
   for (const e of rows) {
     const row = document.createElement('div');
     row.className = 'row';
+    // 탭으로 닿고 Enter 로 연다.
+    row.tabIndex = 0;
+    row.onkeydown = (e) => { if (e.key === 'Enter') row.click(); };
     const nm = document.createElement('span');
     nm.className = 'nm';
     nm.textContent = e.name;
@@ -1679,7 +1709,7 @@ async function poll() {
     const dot = $('dot');
     dot.dataset.st = '서버 없음';
     dot.className = 'dot bad';
-    dot.title = ON_WEB ? '웹서버에 못 닿는다' : '서버 없음 — drone_live.py 가 안 떠 있다';
+    dot.title = '서버 없음';
     setText($('stats'), '서버 없음');
   }
   setTimeout(poll, POLL_MS);
@@ -1713,6 +1743,13 @@ new ResizeObserver(() => {
 }).observe($('hudBox'));
 doLayout();
 
+// 하단 바는 차트 위에 겹쳐 뜬다. 좁은 창에서 두세 줄로 접히므로 실제 높이만큼
+// 차트 아래를 비운다 — 고정값이면 접힌 바가 마지막 차트의 x축을 덮는다.
+const barEl = document.querySelector('#chartPane > .msgs');
+new ResizeObserver(() => {
+  $('charts').style.setProperty('--bar-h', barEl.offsetHeight + 'px');
+}).observe(barEl);
+
 $('win').onchange = (e) => { winSec = +e.target.value; renderCharts(); drawTrack(); };
 
 // ── 재생 조작 ───────────────────────────────────────────────────────
@@ -1735,6 +1772,8 @@ $('pbSeek').onchange = () => { ulpb.seeking = false; ulpb.last = performance.now
 
 // space 로 재생/정지. 입력칸에 있을 때는 가로채지 않는다.
 addEventListener('keydown', (e) => {
+  // Esc 로 고르기 창을 닫는다 — 재생 중이 아니어도 먹어야 한다.
+  if (e.key === 'Escape' && !$('pbPick').hidden) { $('pbPick').hidden = true; $('pbOpen').focus(); return; }
   if (!ulpb.on || e.target.matches('input,select,button,textarea')) return;
   if (e.code === 'Space') { e.preventDefault(); ulpb.playing ? pbPause() : pbPlay(); }
   else if (e.code === 'ArrowLeft') { ulpb.t = Math.max(0, ulpb.t - 5); pbRender(); }

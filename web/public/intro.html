@@ -4,12 +4,13 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-<title>DRONE01 소개</title>
+<title>소개 — DRONE01</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/app.css">
 <style>
-/* 기체 소개 — 제원만. 값은 README·components/*/README.md 에서 옮긴다. 부품을 바꾸면 여기도 고쳐라. */
-.wrap { max-width: 720px; margin: 0 auto; padding: 48px 16px 64px; }
+/* 기체 소개 — 제원만. 값은 README·components/<부품>/README.md 에서 옮긴다. 부품을 바꾸면 여기도 고쳐라.
+   🔴 이 주석 안에 별-슬래시를 쓰지 마라 — 주석이 거기서 닫혀 바로 아래 .wrap 이 통째로 무시된다 */
+.wrap { max-width: 720px; margin: 0 auto; padding: 48px 16px 64px; word-break: keep-all; overflow-wrap: break-word; }
 .hero h1 { font-size: 44px; font-weight: 800; letter-spacing: .02em; margin: 0; }
 .hero p { color: var(--dim); font-size: 16px; margin: 6px 0 32px; }
 .spec { border: 1px solid var(--border-2); border-radius: 10px; background: var(--panel); }
@@ -18,7 +19,8 @@
 .spec span { color: var(--dim); white-space: nowrap; }
 .spec b { font-weight: 600; text-align: right; }
 nav { display: flex; gap: 8px; margin-top: 24px; flex-wrap: wrap; }
-nav a { border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 14px; color: var(--text); text-decoration: none; }
+nav a { border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 14px; color: var(--text); text-decoration: none;
+  display: inline-flex; align-items: center; min-height: 40px; white-space: nowrap; }
 nav a:hover { border-color: var(--accent); }
 </style>
 <div class="wrap">
@@ -28,7 +30,7 @@ nav a:hover { border-color: var(--accent); }
   </section>
   <section class="spec">
     <div><span>형식</span><b>멀티로터 쿼드 X</b></div>
-    <div><span>비행제어기</span><b>Pixhawk 2.4.8 · ArduCopter 3.6.12</b></div>
+    <div><span>비행제어기</span><b>Pixhawk&nbsp;2.4.8 · ArduCopter&nbsp;3.6.12</b></div>
     <div><span>모터</span><b>GT DRONE 3508-380KV × 4</b></div>
     <div><span>ESC</span><b>GT DRONE EC-X3 30&nbsp;A × 4</b></div>
     <div><span>프롭</span><b>12 × 4.5</b></div>
@@ -36,8 +38,9 @@ nav a:hover { border-color: var(--accent); }
     <div><span>목표 중량</span><b>2&nbsp;kg 이하</b></div>
   </section>
   <nav>
-    <a href="/cockpit">콕핏</a>
     <a href="/">비행 기록</a>
+    <a href="/preflight">점검</a>
+    <a href="/cockpit">콕핏</a>
     <a href="/live">실시간</a>
   </nav>
 </div>

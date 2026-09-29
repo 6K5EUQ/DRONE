@@ -188,6 +188,21 @@ class LogPlayback:
             return {'hz': self.fl['hz'], 'n': len(frames), 'dur': self.fl['dur'],
                     'cols': cols, 'modes': modes, 'messages': self.fl['messages']}
 
+    def frames(self):
+        """비행 전체를 한 번에 — 콕핏이 화면 프레임마다 격자 사이를 보간한다.
+
+        `at()` 을 폴하면 웹 경유 왕복(0.2~0.3 s)이 격자(0.2 s)보다 길어 갱신이
+        초당 2~4번, 불규칙하게 온다 — 기체가 뚝뚝 끊긴다. 키는 한 번만 싣는다.
+        """
+        with self.lock:
+            if not self.fl:
+                return None
+            f = self.fl
+            keys = sorted({k for fr in f['frames'] for k in fr['d']})
+            return {'hz': f['hz'], 'dur': f['dur'], 'home': f['home'], 'keys': keys,
+                    'rows': [[fr['d'].get(k) for k in keys] for fr in f['frames']],
+                    'track': f['track'], 'messages': f['messages']}
+
     def at(self, ts):
         """재생 시각 ts(초) 의 상태를 라이브와 같은 모양(/api/state)으로."""
         with self.lock:
@@ -591,6 +606,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/api/playback/series':
             body = self.pb.series()
+            if body is None:
+                return self._send(409, dumps_json(self.pb.info()),
+                                  'application/json; charset=utf-8')
+            return self._send(200, dumps_json(body),
+                              'application/json; charset=utf-8')
+
+        if path == '/api/playback/frames':
+            body = self.pb.frames()
             if body is None:
                 return self._send(409, dumps_json(self.pb.info()),
                                   'application/json; charset=utf-8')

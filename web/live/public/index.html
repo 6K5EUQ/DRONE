@@ -3,7 +3,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-<title>DRONE01 라이브</title>
+<title>실시간 — DRONE01</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
@@ -95,7 +95,7 @@
       <div id="lmap"></div>
 
         <!-- GPS 를 한 번도 못 봤으면 지도가 빈 판이 된다. 왜 비었는지 말해야 한다. -->
-      <div id="mapEmpty">GPS 대기 중</div>
+      <div id="mapEmpty">GPS 없음</div>
     </div>
     <div id="charts"></div>
     <!-- 하단 바. 화면 위를 한 줄도 안 쓰려고 여기 다 모았다.
@@ -108,13 +108,13 @@
         <div id="toc"></div>
         <span class="grow"></span>
         <span class="stats" id="stats"></span>
-        <select id="win" title="차트가 보여주는 시간 창">
+        <select id="win">
           <option value="60">1분</option>
           <option value="180" selected>3분</option>
           <option value="600">10분</option>
           <option value="0">전체</option>
         </select>
-        <button id="pbOpen" title="지난 비행을 골라 재생한다">재생</button>
+        <button id="pbOpen">재생</button>
       </div>
     </div>
   </section>
@@ -127,7 +127,7 @@
   <button id="pbPlay" title="재생/일시정지 (space)">▶</button>
   <span id="pbName" title="열려 있는 로그"></span>
   <input id="pbSeek" type="range" min="0" max="1000" value="0" step="1"
-         title="드래그해서 원하는 지점으로">
+         title="위치">
   <span id="pbTime" class="mono">0:00 / 0:00</span>
   <select id="pbRate" title="재생 속도">
     <option value="0.5">0.5×</option>
@@ -136,7 +136,7 @@
     <option value="4">4×</option>
     <option value="10">10×</option>
   </select>
-  <button id="pbExit" title="재생을 끝내고 실시간으로 돌아간다">실시간</button>
+  <button id="pbExit">실시간</button>
 </div>
 
 <!-- 로그 고르기. 목록은 /api/logs 가 최신순으로 준다. -->

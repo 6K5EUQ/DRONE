@@ -3,18 +3,19 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-<title>DRONE01 비행로그</title>
+<title>비행 기록 — DRONE01</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <link rel="stylesheet" href="/app.css">
 
-<header>
-  <h1><a href="/">DRONE01 비행로그</a></h1>
+<header class="list">
+  <h1><a href="/">DRONE01 비행 기록</a></h1>
   <span class="sub" id="count">불러오는 중…</span>
   <span class="grow"></span>
-  <input type="search" id="q" placeholder="파일명 검색" style="width:180px">
+  <input type="search" id="q" placeholder="파일명 검색">
   <select id="filter">
     <option value="">전체</option>
-    <optgroup label="자동 모드 (겹칠 수 있다)">
+    <optgroup label="자동 모드">
       <option value="misn">미션</option>
       <option value="rtl">RTL</option>
     </optgroup>
@@ -22,23 +23,24 @@
       <option value="flight">실비행</option>
       <option value="hover">호버</option>
       <option value="ground">지상</option>
-      <option value="abort">즉시 disarm</option>
+      <option value="abort">즉시 해제</option>
     </optgroup>
   </select>
   <button id="cmpBtn" disabled>비교</button>
   <!-- 실시간. 현장 노트북(rim3)이 밀어 올리는 동안에만 초록 점이 켜진다 —
        기체가 안 떠 있으면 눌러도 「끊김」 화면이라, 눌러 볼 값어치가 있는지를
        버튼 자체가 말해 준다. -->
-  <a class="btn" href="/intro" title="기체 제원">소개</a>
+  <a class="btn" href="/intro">소개</a>
   <!-- 비행 전 점검. FC 가 꽂힌 PC 의 에이전트를 통해 읽기 전용으로 조회한다. -->
-  <a class="btn" href="/preflight" title="비행 전 점검 — FC 를 읽어 GO / NO-GO">점검</a>
+  <a class="btn" href="/preflight">점검</a>
   <a class="btn" href="/cockpit">콕핏</a>
-  <a class="btn" id="liveBtn" href="/live" title="지금 뜬 기체를 실시간으로">
+  <a class="btn" id="liveBtn" href="/live" title="실시간">
     <span class="livedot" id="liveDot"></span>실시간</a>
-  <button class="primary" id="upBtn">업로드</button>
+  <button id="upBtn">업로드</button>
 </header>
 
 <main style="padding:0 20px 40px">
+  <div class="tbl">
   <table>
     <thead>
       <tr>
@@ -46,23 +48,22 @@
         <th data-k="name">파일</th>
         <th data-k="utc">시간 (KST)</th>
         <th data-k="badge">분류</th>
-        <th data-k="alt_max" class="num">최대고도</th>
-        <th data-k="speed_max" class="num">최대속도</th>
+        <th data-k="alt_max" class="num">최대 고도</th>
+        <th data-k="speed_max" class="num">최대 속도</th>
         <th data-k="duration" class="num">비행시간</th>
-        <th data-k="cur_max" class="num">최대전류</th>
+        <th data-k="cur_max" class="num">최대 전류</th>
         <th data-k="findings_n" class="num">문제</th>
         <th data-k="size" class="num">크기</th>
       </tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
-  <p class="muted" id="empty" style="display:none;padding:30px 0">로그가 없다. 업로드해라.</p>
+  </div>
+  <p class="muted" id="empty" style="display:none;padding:30px 0"></p>
 </main>
 
 <dialog id="upDlg">
-  <h2>로그 업로드</h2>
-  <p class="muted" style="margin:0 0 14px;font-size:12px">
-    `.BIN` 파일만 받는다. 업로드에는 공유 암호가 필요하다 (조회는 공개).</p>
+  <h2 style="margin-bottom:14px">로그 업로드</h2>
   <form method="dialog" id="upForm">
     <input type="file" id="upFile" accept=".bin,.BIN" multiple required
            style="width:100%;margin-bottom:10px">
@@ -74,27 +75,32 @@
     <div id="upMsg" class="muted" style="font-size:12px;min-height:18px;margin-bottom:10px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button value="cancel" type="button" id="upCancel">닫기</button>
-      <button class="primary" id="upGo" type="submit">올리기</button>
+      <button id="upGo" type="submit">올리기</button>
     </div>
   </form>
 </dialog>
 
 <script>
 const $ = (s) => document.querySelector(s);
+// 표 머리는 헤더 바로 밑에 붙는다. 헤더 높이는 줄바꿈에 따라 바뀌므로 상수로
+// 두지 않고 잰다 — 모바일에서는 헤더가 따라오지 않으니 0.
+const hdr = $('header');
+new ResizeObserver(() => document.documentElement.style.setProperty('--hdr',
+  getComputedStyle(hdr).position === 'sticky' ? hdr.getBoundingClientRect().height + 'px' : '0px')).observe(hdr);
 // 자동 모드 태그 — 주 배지 옆에 나란히 붙는다. 「호버 + RTL」 처럼 겹칠 수 있다.
 const AUTO = {
-  misn: ['미션', 'AUTO 를 시도했다 — 성공 여부와 무관. 진입이 거부돼 모드가 안 바뀐 것도 포함한다'],
-  rtl:  ['RTL', 'RTL·SMART_RTL 로 복귀했다'],
+  misn: '미션',
+  rtl:  'RTL',
 };
 
 const BADGE = {
-  flight: ['실비행', '고도 10m 이상이거나 속도 3m/s 이상'],
-  hover:  ['호버', '떴지만 저고도·저속 — 제자리 호버이거나 지상 확인'],
-  ground: ['지상', '고도 0.5m 미만, 속도 0.5m/s 이하'],
-  abort:  ['즉시 disarm', 'arm 6초 이하 — 이륙 포기이거나 지상 점검'],
-  noarm:  ['arm 없음', 'arm 구간이 없다. 로그 전체 구간으로 계산했다'],
-  unknown:['판정 불가', 'EKF(NKF1/XKF1)·CTUN·GPS 가 없어 고도·속도를 못 낸다'],
-  err:    ['읽기 실패', ''],
+  flight: '실비행',
+  hover:  '호버',
+  ground: '지상',
+  abort:  '즉시 해제',
+  noarm:  '시동 없음',
+  unknown:'판정 불가',
+  err:    '읽기 실패',
 };
 
 let all = [], sortKey = 'utc', sortDir = -1;
@@ -118,8 +124,9 @@ function render() {
   const rows = all
     // 필터는 주 배지와 자동 모드 태그 **양쪽**을 본다 — 「미션」 을 고르면
     // 호버였든 실비행이었든 미션을 시도한 것이 전부 나와야 한다.
-    .filter((r) => (!q || r.name.toLowerCase().includes(q))
-      && (!f || r.badge === f || (r.auto || []).includes(f)))
+    // 비교로 고른 행은 필터와 무관하게 남긴다 — 안 보이는 선택이 비교 버튼을 막지 않게.
+    .filter((r) => selected.has(r.id) || ((!q || r.name.toLowerCase().includes(q))
+      && (!f || r.badge === f || (r.auto || []).includes(f))))
     .sort((a, b) => {
       const av = a[sortKey], bv = b[sortKey];
       if (av == null && bv == null) return 0;
@@ -130,17 +137,17 @@ function render() {
 
   $('#rows').innerHTML = rows.map((r) => {
     const b = r.error ? 'err' : (r.badge || 'unknown');
-    const [label, tip] = BADGE[b] || [b, ''];
+    const label = BADGE[b] || b;
     const cur = r.cur_max;
     // 모터 연속 14 A × 4 = 56 A (docs/design/01) 를 넘으면 빨강, 그 7할(40 A)에서 노랑.
     const curCls = cur == null ? '' : (cur > 56 ? 'badc' : cur > 40 ? 'warnc' : '');
     return `<tr data-id="${r.id}">
-      <td><input type="checkbox" class="pick" data-id="${r.id}"
-           ${selected.has(r.id) ? 'checked' : ''}></td>
+      <td style="padding:0"><label style="display:block;padding:7px 10px;cursor:pointer"><input type="checkbox" class="pick" data-id="${r.id}"
+           ${selected.has(r.id) ? 'checked' : ''}></label></td>
       <td><a href="/log/${r.id}">${r.name}</a>
-          ${r.corrupt ? '<span class="flag" title="중간에 깨진 구간이 있다. 최대값이 실제보다 작을 수 있다">⚠손상</span>' : ''}</td>
+          ${r.corrupt ? '<span class="flag" title="깨진 구간 · 샘플 누락">⚠손상</span>' : ''}</td>
       <td class="mono">${fmtTime(r.utc)}</td>
-      <td><span class="badge ${b}" title="${tip}">${label}</span>${(r.auto || []).map((a) => { const [al, at] = AUTO[a] || [a, '']; return ` <span class="badge ${a}" title="${at}">${al}</span>`; }).join('')}</td>
+      <td><span class="badge ${b}">${label}</span>${(r.auto || []).map((a) => ` <span class="badge ${a}">${AUTO[a] || a}</span>`).join('')}</td>
       <td class="num">${fmtN(r.alt_max, 1, 'm')}</td>
       <td class="num">${fmtN(r.speed_max, 1, 'm/s')}</td>
       <td class="num">${fmtDur(r.duration)}</td>
@@ -151,24 +158,66 @@ function render() {
   }).join('');
 
   $('#count').textContent = `${rows.length}개${rows.length !== all.length ? ` / 전체 ${all.length}개` : ''}`;
+  $('#empty').textContent = all.length ? '결과 없음' : '로그 없음';
   $('#empty').style.display = rows.length ? 'none' : '';
   document.querySelectorAll('.pick').forEach((c) => c.onchange = () => {
     c.checked ? selected.add(c.dataset.id) : selected.delete(c.dataset.id);
     $('#cmpBtn').disabled = selected.size !== 2;
   });
+  document.querySelectorAll('th[data-k]').forEach((th) => th.dataset.k === sortKey
+    ? th.setAttribute('aria-sort', sortDir > 0 ? 'ascending' : 'descending')
+    : th.removeAttribute('aria-sort'));
 }
 
 async function load() {
   // 비행당 한 줄. 같은 비행의 다른 사본은 접는다.
-  const r = await fetch('/api/logs');
-  all = await r.json();
+  try {
+    const r = await fetch('/api/logs');
+    if (!r.ok) throw 0;
+    all = await r.json();
+  } catch {
+    $('#count').textContent = '불러오기 실패';
+    $('#count').classList.add('badc');
+    return;
+  }
+  $('#count').classList.remove('badc');
+  restore();
   render();
+  if (back) { scrollTo(0, back.y || 0); $('.tbl').scrollTop = back.t || 0; back = null; }
 }
 
-document.querySelectorAll('th[data-k]').forEach((th) => th.onclick = () => {
-  const k = th.dataset.k;
-  if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = k === 'name' ? 1 : -1; }
-  render();
+// 분석·비교에서 **뒤로** 오면 보던 자리(검색·필터·정렬·스크롤)로 돌아온다.
+// 새로 들어오면 처음부터 — 안 보이는 필터가 목록을 줄여 두지 않게.
+const VIEW_KEY = 'list-view';
+let back = null;
+try {
+  if (performance.getEntriesByType('navigation')[0]?.type === 'back_forward') {
+    back = JSON.parse(sessionStorage.getItem(VIEW_KEY) || 'null');
+  }
+} catch { /* 사설 모드 */ }
+function restore() {
+  if (!back) return;
+  $('#q').value = back.q || '';
+  $('#filter').value = back.f || '';
+  if (back.k) { sortKey = back.k; sortDir = back.d || -1; }
+}
+addEventListener('pagehide', () => {
+  try {
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify({ q: $('#q').value, f: $('#filter').value,
+      k: sortKey, d: sortDir, y: scrollY, t: $('.tbl').scrollTop }));
+  } catch { /* 사설 모드 */ }
+});
+
+document.querySelectorAll('th[data-k]').forEach((th) => {
+  th.tabIndex = 0;
+  th.onclick = () => {
+    const k = th.dataset.k;
+    if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = k === 'name' ? 1 : -1; }
+    render();
+  };
+  th.onkeydown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); th.onclick(); }
+  };
 });
 $('#q').oninput = render;
 $('#filter').onchange = render;
@@ -185,6 +234,7 @@ $('#upForm').onsubmit = async (e) => {
   const files = [...$('#upFile').files];
   const pw = $('#upPw').value;
   const msg = $('#upMsg');
+  msg.classList.remove('badc');
   $('#upGo').disabled = true;
   let ok = 0, dup = 0, fail = 0;
   for (let i = 0; i < files.length; i++) {
@@ -195,17 +245,17 @@ $('#upForm').onsubmit = async (e) => {
     try {
       const r = await fetch('/api/upload', { method: 'POST', body: fd });
       const d = await r.json();
-      if (!r.ok) { fail++; msg.textContent = d.error || '실패'; if (r.status === 401) break; }
+      if (!r.ok) { fail++; msg.textContent = d.error || '실패'; if (r.status === 401) { $('#upPw').select(); break; } }
       else if (d.duplicate) dup++;
       else if (d.error) { fail++; msg.textContent = `${files[i].name}: ${d.error}`; }
       else ok++;
-    } catch (err) { fail++; msg.textContent = String(err); }
+    } catch { fail++; msg.textContent = '연결 실패'; }
   }
   $('#upGo').disabled = false;
-  if (!fail) {
-    msg.textContent = `완료 — 새로 ${ok}개${dup ? `, 이미 있던 것 ${dup}개` : ''}`;
-    await load();
-  }
+  msg.classList.toggle('badc', fail > 0);
+  if (!fail) msg.textContent = `완료 — 새로 ${ok}개${dup ? `, 이미 있던 것 ${dup}개` : ''}`;
+  // 일부만 실패해도 올라간 것은 목록에 보여야 한다.
+  if (ok) await load();
 };
 
 load();
@@ -229,18 +279,16 @@ async function liveTick() {
     const on = !!s.live;
     dot.classList.toggle('on', on);
     if (on) {
-      const who = s.relay && s.relay.pusher ? ` · ${s.relay.pusher}` : '';
       const mode = s.d && s.d.mode ? ` · ${s.d.mode}` : '';
-      btn.title = `실시간 수신 중${who}${mode} — 눌러서 보기`;
+      btn.title = '수신 중' + mode;
     } else if (s.relay && s.relay.age != null) {
-      btn.title = `끊김 — 마지막 수신 ${Math.round(s.relay.age)}초 전`
-        + ' (현장 노트북 rim3 가 꺼졌거나 인터넷이 없다)';
+      btn.title = `끊김 · ${Math.round(s.relay.age)}초 전`;
     } else {
-      btn.title = '지금은 안 뜬다 — 현장 노트북(rim3)이 올리는 중일 때만 켜진다';
+      btn.title = '수신 없음';
     }
   } catch {
     dot.classList.remove('on');
-    btn.title = '상태를 못 읽는다';
+    btn.title = '상태 모름';
   }
 }
 liveTick();

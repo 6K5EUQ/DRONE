@@ -18,27 +18,48 @@
 
   table.cmp td, table.cmp th { padding: 6px 10px; }
   table.cmp td.k { color: var(--dim); width: 34%; }
+  table.cmp th.barh { width: 34%; }
+  table.cmp td.num, table.cmp td.k { white-space: nowrap; }
+  /* 정렬이 없는 표·숨길 수 없는 계열 — 누를 수 있어 보이지 않게 */
+  table.cmp th { cursor: default; }
+  table.cmp th:hover { color: var(--dim); }
+  .chart tspan.k { cursor: default !important; }
   .bar { height: 6px; border-radius: 3px; background: var(--border-2); position: relative; }
   .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; }
 
   .chart { border-bottom: 1px solid var(--border); margin-top: 6px; }
   .chart h3 { margin: 0; padding: 6px 2px 0; font-size: 12px; color: var(--dim); }
   .chart svg { display: block; width: 100%; height: 130px; }
-  .legend { display: flex; gap: 16px; font-size: 12px; margin: 10px 0 4px; }
-  .legend b { font-weight: 600; }
+
+  /* 좁은 화면 — 첫 줄 로고·페이지 이름, 둘째 줄 이동 버튼 */
+  @media (max-width: 680px) {
+    header { gap: 4px 8px; padding: 10px 14px; }
+    header .grow { order: 1; flex: 0 0 100%; }
+    header .btn { order: 2; }
+  }
+  @media (max-width: 560px) {
+    main { padding: 12px 12px 32px; }
+    .heads { grid-template-columns: 1fr; gap: 8px; }
+    table.cmp td, table.cmp th { padding: 6px 4px; }
+    table.cmp td.k { width: auto; }
+    table.cmp th.barh { width: 22%; }
+  }
 </style>
 
 <header>
-  <h1><a href="/">DRONE01 비행로그</a></h1>
+  <h1><a href="/">DRONE01</a></h1>
   <span class="sub">두 비행 비교</span>
   <span class="grow"></span>
-  <a class="btn" href="/">목록으로</a>
+  <a class="btn" href="/">비행 기록</a>
+  <a class="btn" href="/intro">소개</a>
+  <a class="btn" href="/preflight">점검</a>
+  <a class="btn" href="/cockpit">콕핏</a>
+  <a class="btn" href="/live">실시간</a>
 </header>
 
 <main>
   <div class="heads" id="heads"></div>
   <div id="table"></div>
-  <div class="legend" id="legend"></div>
   <div id="charts"></div>
 </main>
 
@@ -48,28 +69,48 @@ const $ = (s) => document.querySelector(s);
 const q = new URLSearchParams(location.search);
 const A = q.get('a'), B = q.get('b');
 
+// 표 머리는 헤더 바로 밑에 붙는다. 좁은 화면에서 헤더가 두 줄이 되므로 상수로 두지 않고 잰다.
+const hdr = $('header');
+new ResizeObserver(() => document.documentElement.style.setProperty('--hdr',
+  hdr.getBoundingClientRect().height + 'px')).observe(hdr);
+
+// 목록에서 열었으면 목록 링크는 뒤로 가기다 — 목록이 보던 필터·정렬·스크롤로 돌아간다.
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a[href="/"]');
+  if (!a || e.button || e.ctrlKey || e.metaKey || e.shiftKey || history.length < 2) return;
+  try { const r = new URL(document.referrer); if (r.origin !== location.origin || r.pathname !== '/') return; }
+  catch { return; }
+  e.preventDefault();
+  history.back();
+});
+
 // 시간축 길이가 다른 두 비행을 겹쳐 그린다. 짧은 쪽은 그 지점에서 끊긴다.
 const PAIRS = [
-  { title: '고도 (arm 기준, m)', key: 'alt' },
-  { title: '수평속도 (m/s)', key: 'spd' },
-  { title: '전류 (A)', key: 'cur', thresholds: [{ v: 45, label: '45A', color: '#d29922' }] },
+  { title: '고도 (m)', key: 'alt' },
+  { title: '수평속도 (m/s)', key: 'spd', nonNeg: true },
+  { title: '전류 (A)', key: 'cur', nonNeg: true, thresholds: [{ v: 40, label: '40A', color: '#d29922' }, { v: 56, label: '56A', color: '#f85149' }] },
   { title: '전압 (V)', key: 'volt' },
 ];
 
+// 마지막 값은 극성 — 차이가 그 방향이면 나쁘다(+1 클수록 나쁨, -1 작을수록 나쁨, 0 좋고 나쁨 없음)
 const ROWS = [
-  ['비행시간', (s) => s.duration, 1, '초'],
-  ['최고고도', (s) => s.alt_max, 1, ' m'],
-  ['최대속도', (s) => s.speed_max, 1, ' m/s'],
-  ['최대전류', (s) => s.cur_max, 1, ' A'],
-  ['평균전류', (s) => s.cur_mean, 1, ' A'],
-  ['셀 최저전압', (s) => s.cell_min, 2, ' V'],
-  ['소모', (s) => s.mah, 0, ' mAh'],
-  ['진동 최대', (s) => s.vib_max, 1, ''],
-  ['GPS 위성', (s) => s.sats, 0, '개'],
-  ['최대 경사(roll)', (s) => s.roll_max, 0, '°'],
-  ['CPU 최대', (s) => s.cpu_max, 0, '%'],
-  ['문제', (s) => (s.findings || []).length, 0, '건'],
+  ['비행시간', (s) => s.duration, 1, '초', 0],
+  ['최대 고도', (s) => s.alt_max, 1, ' m', 0],
+  ['최대 속도', (s) => s.speed_max, 1, ' m/s', 0],
+  ['최대 전류', (s) => s.cur_max, 1, ' A', 1],
+  ['평균 전류', (s) => s.cur_mean, 1, ' A', 1],
+  ['셀 최저전압', (s) => s.cell_min, 2, ' V', -1],
+  ['소모', (s) => s.mah, 0, ' mAh', 0],
+  ['진동 최대', (s) => s.vib_max, 1, '', 1],
+  ['GPS 위성', (s) => s.sats, 0, '기', -1],
+  ['최대 롤', (s) => s.roll_max, 0, '°', 0],
+  ['CPU 최대', (s) => s.cpu_max, 0, '%', 1],
+  ['문제', (s) => (s.findings || []).length, 0, '건', 1],
 ];
+
+// 목록(index.html)의 판정 라벨과 같다
+const BADGE = { flight: '실비행', hover: '호버', ground: '지상', abort: '즉시 해제',
+                noarm: '시동 없음', unknown: '판정 불가', err: '읽기 실패' };
 
 async function get(id) {
   const [s, t] = await Promise.all([
@@ -80,31 +121,37 @@ async function get(id) {
 }
 
 (async () => {
-  if (!A || !B) { $('#heads').innerHTML = '<p class="muted">비교할 로그 두 개를 목록에서 골라라.</p>'; return; }
-  const rows = await (await fetch('/api/logs')).json();
-  const [a, b] = await Promise.all([get(A), get(B)]);
-  if (!a.sum || !b.sum) { $('#heads').innerHTML = '<p class="muted">읽을 수 없는 로그가 있다.</p>'; return; }
+  if (!A || !B) { $('#heads').innerHTML = '<p class="muted">로그 미선택</p>'; return; }
+  const [rows, a, b] = await Promise.all([fetch('/api/logs').then((r) => r.json()), get(A), get(B)]);
   const meta = (id) => rows.find((r) => r.id === id) || {};
+  if (!a.sum || !b.sum) {
+    $('#heads').innerHTML = `<p class="badc">읽기 실패 · ${[!a.sum && A, !b.sum && B].filter(Boolean)
+      .map((id) => meta(id).name || id).join(', ')}</p>`;
+    return;
+  }
 
   $('#heads').innerHTML = [['a', a], ['b', b]].map(([cls, x]) => {
     const m = meta(x.id);
     return `<div class="head ${cls}">
-      <div class="n"><a href="/log/${x.id}">${m.name || x.id}</a></div>
-      <div class="m">${(m.utc || '').slice(0, 16).replace('T', ' ')} · ${m.badge || ''} ·
-        ${x.sum.hw || ''} / ${x.sum.sw || ''}</div></div>`;
+      <div class="n"><b style="color:var(${cls === 'a' ? '--c-alt' : '--c-spd'})">${cls.toUpperCase()}</b>
+        <a href="/log/${x.id}">${m.name || x.id}</a></div>
+      <div class="m">${[(m.utc || '').slice(0, 16).replace('T', ' '), BADGE[m.badge] || m.badge]
+        .filter(Boolean).join(' · ')}</div></div>`;
   }).join('');
 
   // 표 — 두 값과 차이, 그리고 큰 쪽 기준 막대
-  let h = '<table class="cmp"><thead><tr><th></th><th class="num">A</th><th class="num">B</th>' +
-          '<th class="num">차이</th><th style="width:34%"></th></tr></thead><tbody>';
-  for (const [label, get_, d, u] of ROWS) {
+  let h = '<table class="cmp"><thead><tr><th></th><th class="num" style="color:var(--c-alt)">A</th>' +
+          '<th class="num" style="color:var(--c-spd)">B</th>' +
+          '<th class="num">차이</th><th class="barh"></th></tr></thead><tbody>';
+  for (const [label, get_, d, u, pol] of ROWS) {
     const va = get_(a.sum), vb = get_(b.sum);
     if (va == null && vb == null) continue;
     const f = (v) => v == null ? '<span class="muted">–</span>' : v.toFixed(d) + u;
     let diff = '<span class="muted">–</span>', bar = '';
     if (va != null && vb != null) {
-      const dv = vb - va;
-      const cls = Math.abs(dv) < 1e-9 ? 'muted' : (dv > 0 ? 'warnc' : 'okc');
+      // 보이는 자릿수로 반올림한 값끼리 뺀다 — 12기/12기 인데 -0기 가 되지 않게
+      const dv = +vb.toFixed(d) - +va.toFixed(d);
+      const cls = Math.abs(dv) < 1e-9 ? 'muted' : !pol ? '' : (dv * pol > 0 ? 'warnc' : 'okc');
       diff = `<span class="${cls}">${dv > 0 ? '+' : ''}${dv.toFixed(d)}${u}</span>`;
       const mx = Math.max(Math.abs(va), Math.abs(vb)) || 1;
       bar = `<div class="bar"><i style="width:${(Math.abs(va) / mx * 100).toFixed(0)}%;
@@ -117,9 +164,7 @@ async function get(id) {
   }
   $('#table').innerHTML = h + '</tbody></table>';
 
-  $('#legend').innerHTML =
-    `<span><b style="color:var(--c-alt)">━</b> ${meta(a.id).name || 'A'}</span>` +
-    `<span><b style="color:var(--c-spd)">━</b> ${meta(b.id).name || 'B'}</span>`;
+  if (!a.trk || !b.trk) { $('#charts').innerHTML = '<p class="badc">읽기 실패</p>'; return; }
 
   // 겹쳐 그리기 — 두 trk 를 하나의 가상 trk 로 합친다 (긴 쪽 기준 시간축)
   const dur = Math.max(a.trk.dur, b.trk.dur);
@@ -139,18 +184,22 @@ async function get(id) {
   $('#charts').innerHTML = PAIRS.map((p, i) =>
     `<div class="chart"><h3>${p.title}</h3><svg id="cc${i}"></svg></div>`).join('');
 
-  PAIRS.forEach((p, i) => {
+  // viewBox 를 폭에 맞춰 잡으므로 화면 폭이 바뀌면 다시 그린다 (가로로 돌렸을 때 글자가 늘어난다)
+  const drawAll = () => PAIRS.forEach((p, i) => {
     const merged = { hz, n, dur, modes: [], events: [] };
     merged.A = resample(a.trk, p.key);
     merged.B = resample(b.trk, p.key);
     if (!merged.A && !merged.B) return;
     drawChart(document.getElementById('cc' + i), merged, {
       series: [
-        { key: 'A', color: getComputedStyle(document.documentElement).getPropertyValue('--c-alt').trim(), label: 'A', axis: 'left' },
-        { key: 'B', color: getComputedStyle(document.documentElement).getPropertyValue('--c-spd').trim(), label: 'B', axis: 'left' },
+        { key: 'A', color: getComputedStyle(document.documentElement).getPropertyValue('--c-alt').trim(), label: 'A', axis: 'left', nonNeg: p.nonNeg },
+        { key: 'B', color: getComputedStyle(document.documentElement).getPropertyValue('--c-spd').trim(), label: 'B', axis: 'left', nonNeg: p.nonNeg },
       ],
       thresholds: p.thresholds,
     });
   });
-})();
+  drawAll();
+  let rt;
+  addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(drawAll, 150); });
+})().catch(() => { $('#heads').innerHTML = '<p class="badc">읽기 실패</p>'; });
 </script>

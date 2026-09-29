@@ -73,6 +73,8 @@ function niceScale(values, opts = {}) {
     if (opts.nonNeg && lo < 0) { lo = 0; hi = minSpan; }
   } else if (span < 1e-9) {
     hi = lo + 1; lo -= 1;                          // 완전히 평평한 계열
+    // 0 에 붙은 평평한 양(위성 0기)도 0 밑 눈금을 만들지 않는다.
+    if (opts.nonNeg && lo < 0 && hi >= 1) lo = 0;
   }
   const pad = (hi - lo) * 0.08;
   // 여백까지 더하면 0 아래로 다시 내려간다 — 전류 -0.8A 눈금이 그렇게 생겼다.
@@ -254,16 +256,24 @@ function drawChart(el, trk, spec) {
   }
 
   // ── 임계선 (전류 45A/90A 같은 것) ───────────────────────────────
-  for (const th of (spec.thresholds || [])) {
+  // 라벨은 계열 뒤에 얹는다 — 먼저 그리면 전류선 밑에 묻혀 못 읽는다.
+  let thText = '';
+  const lys = [];
+  // 위(큰 값)부터 놓는다 — 아래 라벨이 위 라벨을 피해 비켜 간다.
+  for (const th of [...(spec.thresholds || [])].sort((a, b) => b.v - a.v)) {
     if (!scales.left || th.v > scales.left.hi || th.v < scales.left.lo) continue;
     const gy = y(th.v, 'left');
     plot += `<line x1="${PAD.l}" y1="${gy.toFixed(1)}" x2="${W - PAD.r}" y2="${gy.toFixed(1)}"
             stroke="${th.color}" stroke-width="1" stroke-dasharray="5 4" opacity=".75"/>`;
     // 오른쪽 축 눈금과 겹치지 않게 안쪽에 붙인다. 임계값이 축 꼭대기 근처면
-    // 모드 밴드 라벨(PAD.t+11) 줄과 부딪치므로 그때만 선 아래로 내린다.
-    const ly = (spec.bandLabels && gy - 4 < PAD.t + 15) ? gy + 11 : gy - 4;
-    plot += `<text x="${W - PAD.r - 8}" y="${ly.toFixed(1)}" fill="${th.color}"
-            font-size="9" text-anchor="end">${esc(th.label)}</text>`;
+    // clip 과 모드 띠에 윗부분이 잘리므로 그때만 선 아래로 내린다.
+    let ly = (gy - 4 < PAD.t + 15) ? gy + 11 : gy - 4;
+    // 낮은 단에서는 두 라벨(56A·40A)이 붙는다. 위 라벨과 겹치면 선 아래로 넘긴다.
+    if (lys.some((p) => Math.abs(p - ly) < 10)) ly = gy + 11;
+    lys.push(ly);
+    thText += `<text x="${W - PAD.r - 8}" y="${ly.toFixed(1)}" fill="${th.color}"
+            font-size="9" text-anchor="end" paint-order="stroke" stroke="#0d1117"
+            stroke-width="3">${esc(th.label)}</text>`;
   }
 
   // ── 계열 ────────────────────────────────────────────────────────
@@ -291,6 +301,8 @@ function drawChart(el, trk, spec) {
               opacity="${op}"${dash} stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
     }
   }
+
+  plot += thText;
 
   // ── FC 메시지 눈금 (경고 이상만) ────────────────────────────────
   if (spec.events && trk.events) {

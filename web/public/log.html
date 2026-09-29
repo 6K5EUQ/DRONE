@@ -59,11 +59,11 @@
      그래서 남은 높이를 켜진 단이 똑같이 나눠 갖는다 — `flex: 1 1 0`.
      🔴 `flex-basis` 는 반드시 **0** 이다. `auto` 면 SVG 가 제 높이를 주장해
      다시 넘친다 (실시간 뷰어에서 같은 함정에 물렸다). */
-  .col { min-width: 0; overflow: hidden; display: flex; }
+  .col { min-width: 0; overflow-y: auto; display: flex; }
   .charts { display: flex; flex-direction: column; flex: 1 1 auto;
             min-height: 0; }
   .chart { position: relative; border-bottom: 1px solid var(--border);
-           flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+           flex: 1 1 0; min-height: 90px; display: flex; flex-direction: column; }
   /* 범례만 가운데 놓는다. 어느 단인지는 좌측 목차가 이미 말해 주므로
      제목을 다시 적으면 같은 말이 두 번이다 — 그 자리를 계열 이름에 준다. */
   .chart h3 { margin: 0; padding: 8px 14px 2px; font-size: 11px; font-weight: 600;
@@ -111,6 +111,27 @@
   .chart .tip .r b { font-weight: 600; }
   .chart .tip .r i { font-style: normal; color: var(--muted); }
 
+  /* 재생 조작 */
+  .player { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+            border-top: 1px solid var(--border-2); background: var(--panel); }
+  .player input[type=range] { flex: 1; accent-color: var(--accent); }
+  .player .t { font-family: var(--mono); font-size: 12px; min-width: 96px;
+               font-variant-numeric: tabular-nums; }
+
+  /* 순간값 읽기 패널 */
+  /* 값 칸을 고정폭으로 잡아 자릿수가 바뀌어도 항목이 밀리지 않게 한다 */
+  .readout { display: flex; flex-wrap: wrap; align-items: baseline;
+             gap: 2px 12px; padding: 7px 12px;
+             border-top: 1px solid var(--border); background: var(--panel-2);
+             font-size: 12px; }
+  .readout span { color: var(--muted); }
+  .readout .g { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap;
+                color: inherit; }
+  .readout b.v { font-family: var(--mono); font-variant-numeric: tabular-nums;
+                 font-weight: 600; display: inline-block; text-align: right; }
+  .readout i.u { font-style: normal; color: var(--muted); font-size: 11px;
+                 display: inline-block; width: 2.6em; }
+
   @media (max-width: 1100px) {
     .wrap { grid-template-columns: 1fr; height: auto; }
     .side { border-right: 0; }
@@ -121,6 +142,18 @@
     .charts { display: block; }
     .chart { display: block; }
     .chart svg { height: 210px; }
+
+    /* 좁은 화면 — 목차를 가로로 흐르는 칩으로. 13줄이 3~4줄로 준다. */
+    #toc { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+    #toc label { padding: 7px 10px; border: 1px solid var(--border);
+                 border-left-width: 1px; border-radius: 999px; font-size: 12px; }
+
+    /* 🔴 하단 바를 화면 아래에 붙인다. 스크롤을 따라다녀야 어느 차트를 보든
+       그 시각의 값을 읽는다 — 좁은 화면에서 위아래로 오가며 확인할 수는 없다. */
+    .bottom { position: sticky; bottom: 0; z-index: 500;
+              box-shadow: 0 -6px 16px rgba(0,0,0,.45); }
+    /* 값은 두 줄까지만. 그 아래는 잘라 낸다 — 재생바를 가리면 안 된다. */
+    .readout { max-height: 3.6em; overflow: hidden; }
   }
 
   /* ══ 폰 (2026-09-15) ═══════════════════════════════════════════════
@@ -132,7 +165,7 @@
        · 210px 차트가 폰 가로폭에서는 납작해 축이 겹쳤다
 
      지도를 접고, 목차를 가로로 흐르게 하고, 하단 바를 화면에 붙인다. */
-  @media (max-width: 640px) {
+  @media (max-width: 640px), (max-width: 1100px) and (max-height: 500px) {
     /* 지도는 작게 — 폰에서는 항적보다 차트를 본다. 탭하면 커진다. */
     .mapcell { height: 30vh; min-height: 160px; transition: height .18s ease; }
     .mapcell.big { height: 62vh; }
@@ -142,58 +175,26 @@
     /* 출처 표시도 한 줄로 눌러 지도 아래를 덜 먹게 한다. */
     .leaflet-control-attribution { font-size: 9px; padding: 0 4px; }
 
-    /* 목차를 세로 목록에서 가로로 흐르는 칩으로. 13줄이 3~4줄로 준다. */
     .sidefoot { overflow: visible; padding: 8px 10px 4px; }
     .sidefoot .fname { font-size: 10px; margin-bottom: 6px; }
-    #toc { flex-direction: row; flex-wrap: wrap; gap: 6px; }
-    #toc label { padding: 7px 10px; border: 1px solid var(--border);
-                 border-left-width: 1px; border-radius: 999px; font-size: 12px; }
-    #toc label.on { border-color: var(--accent); }
     /* 🔴 손가락 크기. 12px 체크박스는 못 누른다. */
     #toc input { width: 15px; height: 15px; }
     .toch button { padding: 6px 10px; font-size: 11px; }
     .maptools .btn, .maptools button { padding: 8px 12px; font-size: 13px; }
 
     /* 차트는 폰 세로폭에 맞춰 키운다 — 축이 겹치지 않을 만큼. */
-    .chart svg { height: 44vw; min-height: 168px; }
+    .chart svg { height: min(44vw, 56vh); min-height: 168px; }
 
-    /* 🔴 하단 바를 화면 아래에 붙인다. 스크롤을 따라다녀야 어느 차트를 보든
-       그 시각의 값을 읽는다 — 폰에서 위아래로 오가며 확인할 수는 없다. */
-    .bottom { position: sticky; bottom: 0; z-index: 500;
-              box-shadow: 0 -6px 16px rgba(0,0,0,.45); }
-    /* 값은 두 줄까지만. 그 아래는 잘라 낸다 — 재생바를 가리면 안 된다. */
-    .readout { max-height: 3.6em; overflow: hidden; padding: 6px 10px;
-               font-size: 11px; gap: 1px 3px; }
+    .readout { padding: 6px 10px; font-size: 11px; gap: 1px 3px; max-height: none; }
     /* 재생 전에는 읽을 값이 없다. 빈 칸이 두 줄을 먹지 않게 접는다 —
        :empty 는 자식이 하나도 없을 때만 맞으므로 값이 들어오면 저절로 펴진다. */
     .readout:empty { display: none; }
-    .readout span { margin-left: 8px; }
     .player { padding: 6px 10px; gap: 8px; }
     .player button, .player select { padding: 8px 10px; font-size: 13px; }
     .player .t { min-width: 0; font-size: 11px; }
     /* 배속 선택은 폰에서 거의 안 쓴다 — 자리를 재생바에 준다. */
     .player #speed { display: none; }
   }
-
-  /* 재생 조작 */
-  .player { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
-            border-top: 1px solid var(--border-2); background: var(--panel); }
-  .player input[type=range] { flex: 1; accent-color: var(--accent); }
-  .player .t { font-family: var(--mono); font-size: 12px; min-width: 96px;
-               font-variant-numeric: tabular-nums; }
-
-  /* 순간값 읽기 패널 */
-  /* 값 칸을 고정폭으로 잡아 자릿수가 바뀌어도 항목이 밀리지 않게 한다 */
-  .readout { display: flex; flex-wrap: wrap; align-items: baseline;
-             gap: 2px 4px; padding: 7px 12px;
-             border-top: 1px solid var(--border); background: var(--panel-2);
-             font-size: 12px; }
-  .readout span { color: var(--muted); margin-left: 12px; }
-  .readout span:first-child { margin-left: 0; }
-  .readout b.v { font-family: var(--mono); font-variant-numeric: tabular-nums;
-                 font-weight: 600; display: inline-block; text-align: right; }
-  .readout i.u { font-style: normal; color: var(--muted); font-size: 11px;
-                 display: inline-block; width: 2.6em; }
 
   .maptools { position: absolute; z-index: 400; right: 10px; top: 10px;
               display: flex; gap: 6px; }
@@ -230,7 +231,7 @@
     <div class="mapcell">
       <div id="map"></div>
       <div class="maptools">
-        <a class="btn" href="/" title="목록으로">←</a>
+        <a class="btn" href="/" title="비행 기록">←</a>
         <button id="tileBtn">위성</button>
       </div>
     </div>
@@ -252,11 +253,10 @@
 <div class="bottom">
     <div class="readout" id="readout"></div>
     <div class="player">
-      <button id="play" title="스페이스">▶</button>
+      <button id="play" title="재생">▶</button>
       <input type="range" id="seek" min="0" max="1000" value="0" step="1">
       <span class="t" id="tlabel">0.0 / 0.0 s</span>
-      <button id="zoomOut" title="시간축 전체 보기 (그래프 더블클릭도 같다)"
-              style="display:none">전체 구간</button>
+      <button id="zoomOut" style="display:none">전체 구간</button>
       <select id="speed" style="padding:4px 6px">
         <option value="0.5">0.5×</option>
         <option value="1" selected>1×</option>
@@ -321,7 +321,7 @@ function initMap() {
   //    🔴 Leaflet 은 칸 크기가 바뀐 것을 스스로 모른다 — invalidateSize 를
   //    전환이 끝난 뒤(.18s) 불러야 타일이 새 크기로 다시 깔린다.
   $('#map').addEventListener('click', () => {
-    if (!matchMedia('(max-width: 640px)').matches) return;
+    if (!matchMedia('(max-width: 640px), (max-width: 1100px) and (max-height: 500px)').matches) return;
     const c = $('.mapcell');
     c.classList.toggle('big');
     setTimeout(() => { try { map && map.invalidateSize(); } catch (_) {} }, 200);
@@ -347,7 +347,7 @@ function drawTrack() {
   }
   const valid = pts.filter(Boolean);
   if (!valid.length) {
-    $('#map').innerHTML = '<p class="muted" style="padding:20px">GPS 위치가 없는 로그다.</p>';
+    $('#map').innerHTML = '<p class="muted" style="padding:20px">GPS 위치 없음</p>';
     return;
   }
   let altMax = 0;
@@ -423,7 +423,7 @@ const DEFAULT_ON = new Set(['c1', 'c2', 'c3', 'c7', 'c8']);
 //                          고도  속도  자세  전력  진동
 const CHARTS = [
   { id: 'c1', title: '고도', bands: true, events: true, series: [
-      { key: 'alt', color: 'var(--c-alt)', label: '고도(융합)', axis: 'left', weight: 2, unit: 'm' },
+      { key: 'alt', color: 'var(--c-alt)', label: '고도', axis: 'left', weight: 2, unit: 'm' },
       { key: 'alt_baro', color: '#8b949e', label: '기압', axis: 'left', dim: true, unit: 'm' },
       { key: 'climb', color: 'var(--c-spd)', label: '상승률', axis: 'right', unit: 'm/s' }] },
   { id: 'c2', title: '속도', bands: true, series: [
@@ -434,7 +434,7 @@ const CHARTS = [
       { key: 'pitch', color: '#e69f00', label: '피치', axis: 'left', weight: 2, unit: '°' },
       { key: 'pitch_sp', color: '#55b4e9', label: '피치 목표', axis: 'left', dash: true, unit: '°' }] },
   { id: 'c4', title: '각속도', bands: true, series: [
-      { key: 'rate_x', color: '#d55e00', label: '롤레이트', axis: 'left', weight: 2, unit: '°/s' },
+      { key: 'rate_x', color: '#d55e00', label: '롤 각속도', axis: 'left', weight: 2, unit: '°/s' },
       { key: 'rate_x_sp', color: '#009e73', label: '목표', axis: 'left', dash: true, unit: '°/s' }] },
   { id: 'c5', title: '조종 입력', bands: true, events: true, series: [
       { key: 'stick_throttle', color: 'var(--c-thr)', label: '스로틀', axis: 'left', weight: 2 },
@@ -443,7 +443,7 @@ const CHARTS = [
       { key: 'stick_yaw', color: '#55b4e9', label: '요', axis: 'left', dim: true }] },
   { id: 'c6', title: '모터 출력', bands: true, series: [], motorsOn: 'left' },
   { id: 'c7', title: '전력', bands: true, series: [
-      { key: 'cur', color: 'var(--c-cur)', label: '전류', axis: 'left', weight: 2, unit: 'A' },
+      { key: 'cur', color: 'var(--c-cur)', label: '전류', axis: 'left', weight: 2, unit: 'A', nonNeg: true },
       { key: 'volt', color: 'var(--c-volt)', label: '전압', axis: 'right', unit: 'V' }],
     // 모터 연속 14 A × 4 = 56 A (docs/design/01) — 넘으면 빨강, 그 7할에서 노랑
     thresholds: [{ v: 40, label: '40A', color: '#d29922' },
@@ -454,40 +454,39 @@ const CHARTS = [
   //    전류를 같은 칸에 겹쳐 두는 이유가 그것이다 — 두 선이 같이 움직이면
   //    원인이 전원선이다.
   { id: 'c14', title: '나침반 간섭', bands: true, series: [
-      { key: 'mag_norm', color: '#a371f7', label: '자기장 |B|', axis: 'left', weight: 2, unit: 'G' },
-      { key: 'cur', color: 'var(--c-cur)', label: '전류', axis: 'right', unit: 'A' }] },
+      { key: 'mag_norm', color: '#a371f7', label: '자기장', axis: 'left', weight: 2, unit: 'G' },
+      { key: 'cur', color: 'var(--c-cur)', label: '전류', axis: 'right', unit: 'A', nonNeg: true }] },
   { id: 'c8', title: '진동', bands: true, series: [
-      { key: 'vib', color: '#f0883e', label: '진동', axis: 'left', weight: 2 }],
+      { key: 'vib', color: '#f0883e', label: '진동', axis: 'left', weight: 2, nonNeg: true }],
     // VIBE m/s² — 30 넘으면 주의, 60 넘으면 위치 추정이 흔들린다
     thresholds: [{ v: 30, label: '경고 30', color: '#d29922' },
                  { v: 60, label: '위험 60', color: '#f85149' }] },
   // 조종 링크 세기 (RADIO_STATUS). 기체 RSSI 가 주선, 지상 RSSI 는 같이 그린다.
   { id: 'c12', title: '통신', bands: true, series: [
-      { key: 'rssi_air', color: '#58a6ff', label: '기체 RSSI', axis: 'left', weight: 2 },
-      { key: 'rssi_gnd', color: '#8b949e', label: '지상 RSSI(포화)', axis: 'left', dash: true },
+      { key: 'rssi_air', color: '#58a6ff', label: '기체 수신', axis: 'left', weight: 2 },
+      { key: 'rssi_gnd', color: '#8b949e', label: '지상 수신', axis: 'left', dash: true },
       { key: 'rf_noise', color: '#f0883e', label: '노이즈', axis: 'left' },
-      { key: 'home_dist', color: '#3fb950', label: '홈 거리', axis: 'right', unit: 'm' }] },
+      { key: 'home_dist', color: '#3fb950', label: '홈 거리', axis: 'right', unit: 'm', nonNeg: true }] },
   // 송신 버퍼 여유(%). 떨어지면 링크가 밀리고 있다는 뜻이다.
   { id: 'c13', title: '링크 여유', bands: true, series: [
-      { key: 'tx_buf', color: '#d29922', label: '송신 버퍼 여유', axis: 'left', unit: '%' },
-      { key: 'home_dist', color: '#3fb950', label: '홈 거리', axis: 'right', unit: 'm' }] },
+      { key: 'tx_buf', color: '#d29922', label: '송신 버퍼 여유', axis: 'left', unit: '%', nonNeg: true },
+      { key: 'home_dist', color: '#3fb950', label: '홈 거리', axis: 'right', unit: 'm', nonNeg: true }] },
   { id: 'c9', title: 'GPS 품질', bands: true, series: [
-      { key: 'sats', color: '#3fb950', label: '위성 수', axis: 'left', weight: 2 },
-      { key: 'eph', color: '#f85149', label: '위치 오차', axis: 'right', unit: 'm' }] },
+      { key: 'sats', color: '#3fb950', label: '위성 수', axis: 'left', weight: 2, nonNeg: true },
+      { key: 'eph', color: '#f85149', label: '위치 오차', axis: 'right', unit: 'm', nonNeg: true }] },
   // innov_* 는 extract.py 가 1.0 을 넘은 것만 골라 싣는다. 없으면 이 단은 안 뜬다.
   // 세로축은 허용 오차의 배수. 1 을 넘으면 EKF 가 그 센서를 버리기 시작한다.
   { id: 'c10', title: '센서 불일치', bands: true, dynamic: 'innov_',
     series: [], thresholds: [{ v: 1, label: '한계', color: '#d29922' }] },
   { id: 'c11', title: 'CPU · RAM', bands: true, series: [
-      { key: 'cpu', color: '#58a6ff', label: 'CPU', axis: 'left', unit: '%' },
-      { key: 'ram', color: '#a371f7', label: 'RAM', axis: 'left', unit: '%' }] },
+      { key: 'cpu', color: '#58a6ff', label: 'CPU', axis: 'left', unit: '%', nonNeg: true },
+      { key: 'ram', color: '#a371f7', label: 'RAM', axis: 'left', unit: '%', nonNeg: true }] },
 ];
 function cssVar(v) {
   return v.startsWith('var(') ?
     getComputedStyle(document.documentElement).getPropertyValue(v.slice(4, -1)).trim() : v;
 }
 
-function buildCharts() {
 // EKF 필드 이름은 그대로 두면 아무도 못 읽는다 (gps_hvel_0, mag_field_2 …).
 // "무슨 센서가 어긋났나" 만 알면 되므로 축·번호는 버리고 센서 이름만 한글로 준다.
 const INNOV_KO = {
@@ -509,6 +508,10 @@ function innovLabel(f) {
   return ax ? `${ko} ${'XYZ'[ax[1]] || ax[1]}` : ko;
 }
 
+// 모터 키(LF/RF/LB/RB)는 위치 이름으로 적는다.
+const MOTOR_KO = { LF: '좌전', RF: '우전', LB: '좌후', RB: '우후' };
+
+function buildCharts() {
   const mc = ['#58a6ff', '#3fb950', '#f0883e', '#db61a2', '#a371f7', '#d29922'];
   const motors = TRK.motors || {};
 
@@ -517,7 +520,7 @@ function innovLabel(f) {
     if (c.motorsOn) {
       c.series = Object.keys(motors).sort().map((k, i) => {
         TRK['m' + k] = motors[k];
-        return { key: 'm' + k, color: mc[i % mc.length], label: k, axis: c.motorsOn };
+        return { key: 'm' + k, color: mc[i % mc.length], label: MOTOR_KO[k] || k, axis: c.motorsOn };
       });
     }
     // innov_* 처럼 추출기가 골라 실은 계열
@@ -554,13 +557,17 @@ function innovLabel(f) {
   };
   // 라벨 글자를 누르면 그 단으로 스크롤한다. 체크박스 자체는 켜고 끄기 그대로.
   $('#toc').addEventListener('click', (e) => {
-    if (e.target.tagName === 'INPUT') return;
+    if (e.target.tagName === 'INPUT') { if (e.detail) e.target.blur(); return; }
+    // 쌓인 배치에서는 칩이 켜고 끄기만 한다 — 스크롤 주체가 .col 이 아니다.
+    if (matchMedia('(max-width: 1100px)').matches) return;
     const lb = e.target.closest('label');
     if (!lb || !SHOWN.has(lb.dataset.sec)) return;
     e.preventDefault();
     const sec = document.getElementById('sec-' + lb.dataset.sec);
+    PICKED = lb.dataset.sec;
     if (sec) document.querySelector('.col').scrollTo({ top: sec.offsetTop - 4,
                                                        behavior: 'smooth' });
+    scrollSpy();
   });
   $('#tocAll').onclick = () => { live.forEach((c) => SHOWN.add(c.id)); syncToc(); renderCharts(); };
   $('#tocNone').onclick = () => { SHOWN.clear(); syncToc(); renderCharts(); };
@@ -580,8 +587,15 @@ function scrollSpy() {
     if (el && el.offsetTop <= y) cur = c.id;
   }
   if (cur == null) cur = firstShownId();
+  // 끝까지 내리면 아래 단들은 윗줄 기준선까지 못 올라온다 — 목차에서 누른 단, 없으면 마지막 단.
+  if (col.scrollHeight > col.clientHeight + 1 &&
+      col.scrollTop + col.clientHeight >= col.scrollHeight - 1) {
+    const p = PICKED && SHOWN.has(PICKED) && document.getElementById('sec-' + PICKED);
+    cur = p && p.offsetTop > y ? PICKED : CHARTS_LIVE.filter((c) => SHOWN.has(c.id)).pop().id;
+  }
+  const stacked = matchMedia('(max-width: 1100px)').matches;
   document.querySelectorAll('#toc label').forEach((lb) =>
-    lb.classList.toggle('on', lb.dataset.sec === cur));
+    lb.classList.toggle('on', !stacked && lb.dataset.sec === cur));
 }
 
 /** 체크 상태를 목록 UI 에 되돌려 쓴다 (전체/해제 버튼용) */
@@ -621,6 +635,7 @@ function renderCharts() {
 let svgs = [], CHARTS_LIVE = [];
 // 지금 펼쳐 둔 단의 id 들. 좌측 체크 목록이 이걸 바꾼다.
 let SHOWN = new Set();
+let PICKED = null;          // 목차에서 마지막으로 누른 단 (scrollSpy 가 끝까지 내렸을 때 쓴다)
 function firstShownId() {
   const c = CHARTS_LIVE.find((x) => SHOWN.has(x.id));
   return c ? c.id : null;
@@ -680,6 +695,7 @@ function bindChartInput(el) {
   el._bound = true;
 
   el.addEventListener('wheel', (e) => {
+    if (matchMedia('(max-width: 1100px)').matches && !e.ctrlKey) return;   // 쌓인 배치는 페이지 스크롤
     e.preventDefault();                                 // 페이지가 같이 스크롤되면 못 쓴다
     const g = el._geom;
     if (!g) return;
@@ -693,6 +709,8 @@ function bindChartInput(el) {
   let drag = null;
   el.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
+    // 범례 글자는 숨김 클릭용이다. 여기서 캡처하면 click 이 svg 로 가 버린다.
+    if (e.target.closest('tspan.k')) return;
     drag = { x: e.clientX, t: timeAtEvent(el, e.clientX), moved: false,
              v0: el._geom.v0, v1: el._geom.v1 };
     el.setPointerCapture(e.pointerId);
@@ -814,7 +832,7 @@ function initPlayer() {
   };
 
   addEventListener('keydown', (e) => {
-    if (e.target.matches('input,select,textarea')) return;
+    if (e.target.matches('select, textarea, input:not([type=range])')) return;
     if (e.code === 'Space') { e.preventDefault(); player.toggle(); }
     if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') {
       e.preventDefault();                      // 안 막으면 페이지가 같이 스크롤된다
@@ -843,14 +861,15 @@ function showValues(t) {
 
 function drawReadout(i, t) {
   const mode = curMode(t);
-  let h = `<span>모드</span><b class="v" style="width:7.5em;color:${
-    cssVar('var(--accent)')}">${mode}</b>`;
+  let h = `<span class="g"><span>모드</span><b class="v" style="width:7.5em;color:${
+    cssVar('var(--accent)')}">${mode}</b></span>`;
   for (const [label, key, d, u, w] of RD) {
     const a = TRK[key];
     if (!a) continue;
     const v = a[i];
-    h += `<span>${label}</span><b class="v" style="width:${w}ch">${
-      v == null ? '–' : v.toFixed(d)}</b>${u ? `<i class="u">${u}</i>` : ''}`;
+    h += `<span class="g"><span>${label}</span><b class="v" style="width:${w}ch">${
+      v == null ? '–' : v.toFixed(d).replace(/^-(0(\.0+)?)$/, '$1')}</b>${
+      u ? `<i class="u">${u}</i>` : ''}</span>`;
   }
   $('#readout').innerHTML = h;
 }
@@ -868,15 +887,16 @@ function drawReport() {
   h += card('비행시간', s.duration == null ? '–' :
     (s.duration < 60 ? s.duration.toFixed(0) + '초'
       : Math.floor(s.duration / 60) + '분 ' + Math.round(s.duration % 60) + '초'));
-  h += card('최고고도 <span class="muted">(arm 기준)</span>', f1(s.alt_max, ' m'));
-  h += card('최대속도', f1(s.speed_max, ' m/s'));
+  h += card('최대 고도', f1(s.alt_max, ' m'));
+  h += card('최대 속도', f1(s.speed_max, ' m/s'));
   if (s.cur_max != null) {
-    const cls = s.cur_max > 90 ? 'badc' : s.cur_max > 45 ? 'warnc' : '';
-    h += card('최대전류', `<span class="${cls}">${f1(s.cur_max, ' A')}</span>`);
+    const cls = s.cur_max > 56 ? 'badc' : s.cur_max > 40 ? 'warnc' : '';
+    h += card('최대 전류', `<span class="${cls}">${f1(s.cur_max, ' A')}</span>`);
   }
   if (s.cell_min != null) h += card('셀 최저전압', f2(s.cell_min, ' V'));
   if (s.mah != null) h += card('이번 비행 소모', s.mah.toFixed(0) + ' mAh');
-  if (s.sats != null) h += card('GPS', `위성 ${s.sats.toFixed(0)}개 · 위치 오차 ${f2(s.eph, ' m')}`);
+  if (s.sats != null) h += card('GPS', `위성 ${s.sats.toFixed(0)}기` +
+    (s.sats === 0 || s.eph >= 600 ? '' : ` · 위치 오차 ${f2(s.eph, '&nbsp;m')}`));
   if (s.vib_max != null) h += card('진동 최대', f1(s.vib_max));
   h += '</div>';
 
@@ -884,21 +904,21 @@ function drawReport() {
     h += `<h2>문제 (${s.findings.length}건)</h2>`;
     for (const [cat, what, fix] of s.findings) {
       h += `<div class="finding"><div class="cat">${cat}</div><div>${esc(what)}</div>
-            <div class="fix">→ ${esc(fix)}</div></div>`;
+            <div class="fix">${esc(fix)}</div></div>`;
     }
   }
   if (s.good && s.good.length) {
     h += '<h2 style="margin-top:20px">잘 된 것</h2>';
-    for (const g of s.good) h += `<div class="good">✅ ${esc(g)}</div>`;
+    for (const g of s.good) h += `<div class="good">${esc(g)}</div>`;
   }
   if (s.msgs && s.msgs.length) {
     h += `<h2 style="margin-top:20px">FC 경고 (${s.msgs.length}건)</h2>`;
     for (const [ts, lvl, txt] of s.msgs) {
-      const rt = ts - s.t0;
+      const rt = Math.max(0, ts - s.t0);
       const col = lvl === 'ERROR' ? 'badc' : 'warnc';
       h += `<div class="evt" data-t="${rt.toFixed(2)}">
             <span class="muted">${rt.toFixed(1)}s</span>
-            <span class="${col}">[${lvl}]</span> ${esc(txt)}</div>`;
+            <span class="${col}">${esc(txt)}</span></div>`;
     }
   }
   if (s.innov && s.innov.length) {
@@ -923,26 +943,36 @@ function drawReport() {
 }
 
 // ── 시작 ─────────────────────────────────────────────────────────────
-async function boot() {
-  const [rs, rt] = await Promise.all([
-    fetch(`/api/logs/${ID}/sum`), fetch(`/api/logs/${ID}/trk`),
-  ]);
-  if (!rs.ok) {
-    const e = await rs.json().catch(() => ({}));
-    $('#report').innerHTML = `<div class="warnbox">이 로그는 분석할 수 없다 — ${esc(e.error || rs.status)}</div>`;
-    return;
-  }
-  SUM = await rs.json();
-  TRK = await rt.json();
+// 읽기에 실패하면 빈 지도·재생바를 걷고 목록으로 가는 버튼과 사유만 남긴다.
+function fail(msg) {
+  $('.wrap').style.display = $('.bottom').style.display = 'none';
+  $('#banner').innerHTML = `<div style="padding:14px 20px 0;display:flex;gap:10px;align-items:flex-start">
+    <a class="btn" href="/" title="비행 기록">←</a><div class="warnbox" style="flex:1">분석 불가 · ${esc(msg)}</div></div>`;
+}
 
-  const rows = await (await fetch('/api/logs')).json();
+async function boot() {
+  let rows;
+  try {
+    const [rs, rt, rl] = await Promise.all([
+      fetch(`/api/logs/${ID}/sum`), fetch(`/api/logs/${ID}/trk`),
+      fetch('/api/logs').then((r) => r.ok ? r.json() : []).catch(() => []),
+    ]);
+    if (!rs.ok || !rt.ok) {
+      const e = await (rs.ok ? rt : rs).json().catch(() => ({}));
+      return fail(e.error || '서버 오류');
+    }
+    SUM = await rs.json();
+    TRK = await rt.json();
+    rows = rl;
+  } catch (_) { return fail('서버 오류'); }
+
   const row = rows.find((r) => r.id === ID) || {};
   document.title = `${row.name || ''} — DRONE01`;
   LOGNAME = row.name || ID;
 
   let banners = '';
-  if (SUM.corrupt) banners += `<div class="warnbox">⚠️ 중간에 깨진 구간이 있다. 그 구간 샘플이 빠져 비행시간·최대값이 실제보다 작을 수 있다.</div>`;
-  if (SUM.armed === false) banners += `<div class="warnbox">⚠️ arm 구간이 없다. 로그 <b>전체 구간</b>으로 계산했다 — 지상 기록이다.</div>`;
+  if (SUM.corrupt) banners += `<div class="warnbox">⚠️ 깨진 구간 · 샘플 누락</div>`;
+  if (SUM.armed === false) banners += `<div class="warnbox">⚠️ 지상 기록</div>`;
   if (banners) $('#banner').innerHTML = `<div style="padding:14px 20px 0">${banners}</div>`;
 
   // 🔴 buildCharts 가 격자와 함께 지도 셀(#map)을 만든다. initMap 이 먼저 돌면
@@ -966,6 +996,15 @@ async function boot() {
   let rt2;
   addEventListener('resize', () => { clearTimeout(rt2); rt2 = setTimeout(redraw, 150); });
 }
+// 목록에서 열었으면 목록 링크는 뒤로 가기다 — 목록이 보던 필터·정렬·스크롤로 돌아간다.
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a[href="/"]');
+  if (!a || e.button || e.ctrlKey || e.metaKey || e.shiftKey || history.length < 2) return;
+  try { const r = new URL(document.referrer); if (r.origin !== location.origin || r.pathname !== '/') return; }
+  catch { return; }
+  e.preventDefault();
+  history.back();
+});
 boot();
 
 </script>

@@ -72,7 +72,9 @@ main {
 /* GPS 가 없으면 지도가 빈 회색판이 된다 — 왜 비었는지 말해야 한다.
    「안 보이는 것」도 정상 동작인 이상 그 사실이 화면에 있어야 한다. */
 #mapEmpty {
-  position: absolute; inset: 0; z-index: 350; display: flex;
+  /* 450 — Leaflet 의 지도 판(400) 위, 컨트롤(800·1000) 아래.
+     350 이던 동안 지도 판 밑에 깔려 한 번도 안 보였다. */
+  position: absolute; inset: 0; z-index: 450; display: flex;
   align-items: center; justify-content: center;
   background: rgba(13,17,23,.86); color: var(--muted);
   font-size: 12px; pointer-events: none;
@@ -110,7 +112,9 @@ main {
            width: 60px; text-align: center;
            font-size: 13px; font-weight: 700; letter-spacing: .3px;
            color: #cbd5e1; text-shadow: 0 0 3px #000, 0 0 6px #000;
-           pointer-events: none; font-variant-numeric: tabular-nums; }
+           pointer-events: none; font-variant-numeric: tabular-nums;
+           /* 좁은 HUD 에서 피치 사다리 라벨이 이 자리를 지나간다 — 판을 깐다 */
+           background: rgba(13,17,23,.92); border-radius: 3px; }
 #hudTemp.warn { color: var(--warn); }
 #hudTemp.bad  { color: var(--bad); }
 
@@ -298,7 +302,8 @@ main {
 #mframe .mv.warn, #mframe .mv.bad { fill: #fff; }
 /* 요약 숫자는 크게. 칸이 좁아진 만큼 글자로 채운다 — 곁눈질로 읽는 값이다. */
 /* 모터 요약 칸은 150px 로 더 높다 (세로 여백 91px 이 비어 있었다). */
-#sc-mspread b, #sc-mavg b { font-size: 52px; }
+/* 칸이 12.5vw 라 1000px 밑에서는 4자리(20.3)가 칸 밖으로 나간다 — 폭에 맞춰 줄인다. */
+#sc-mspread b, #sc-mavg b { font-size: min(52px, 4.9vw); }
 #sc-mspread .k, #sc-mavg .k { color: var(--dim); }
 
 /* ── 헤더 배지 ───────────────────────────────────────────── */
@@ -321,8 +326,9 @@ a.btn { display: inline-block; text-decoration: none; }
    짧아져 두 아랫선이 어긋난다 (실측 15px). 차트 위에 겹쳐 띄운다. */
 #chartPane { position: relative; display: grid; grid-template-rows: 1fr 1fr; }
 #chartPane > .msgs { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; }
-/* 겹친 바가 마지막 차트의 x축 눈금을 가리지 않게 그만큼 비워 둔다 */
-#charts { padding-bottom: 26px; }
+/* 겹친 바가 마지막 차트의 x축 눈금을 가리지 않게 그만큼 비워 둔다.
+   좁은 창에서는 바가 두세 줄로 접히므로 높이는 live.js 가 재서 넣는다. */
+#charts { padding-bottom: var(--bar-h, 26px); }
 /* 켠 단이 세로를 나눠 갖는다. 고정 높이로 두면 단을 1~2개만 켰을 때 아래가
    통째로 빈다.
    🔴 스크롤바를 만들지 마라. overflow-y:auto + .lchart 의
@@ -366,8 +372,6 @@ a.btn { display: inline-block; text-decoration: none; }
 .lchart .tip .r b { font-weight: 600; }
 .lchart .tip .r i { font-style: normal; color: var(--muted); }
 
-#charts .empty { padding: 50px 20px; color: var(--muted); text-align: center; font-size: 13px; }
-
 /* 단 선택. 차트 위에 떠 있던 것을 하단 바 안으로 내렸다 —
    그림을 가리지 않고 조작이 한 줄에 모인다. */
 #toc { display: flex; align-items: center; gap: 0 2px; margin-left: 6px; }
@@ -389,6 +393,8 @@ a.btn { display: inline-block; text-decoration: none; }
 .msgs {
   border-top: 1px solid var(--border); overflow: hidden; display: grid;
   grid-template-rows: 26px; background: var(--panel);
+  /* 열을 안 주면 암묵 열이 내용 폭으로 커져 재생 버튼이 칸 밖으로 나간다 */
+  grid-template-columns: minmax(0, 1fr);
 }
 .msgs .hd {
   display: flex; align-items: center; gap: 8px; padding: 0 8px;
@@ -461,8 +467,19 @@ a.btn { display: inline-block; text-decoration: none; }
      한 줄에 밀어 넣다가 끝 요소(재생)가 밖으로 나갔다.
      체크박스 6 + select 1 + button 2 는 390px 에 한 줄로 못 들어간다. */
   .msgs .hd { flex-wrap: wrap; row-gap: 4px; padding: 3px 8px; }
+  /* 단 이름 6개도 360 폭에는 한 줄로 안 들어간다 — 끝 칸이 잘리지 않게 접는다. */
+  #toc { flex-wrap: wrap; row-gap: 4px; }
   /* 빈 공간을 밀어내던 스페이서는 접힌 줄에서 한 줄을 통째로 먹는다. */
   .msgs .hd .grow { flex: 1 1 0; min-width: 0; }
+
+  /* 🔴 판 높이를 내용에 맡긴 뒤로 1fr 행이 0 으로 접혀 차트가 1px 이 됐다
+     (실측 390×844: .lchart 1px). 폰에서는 단마다 높이를 준다. */
+  .lchart { flex: none; height: max(180px, 28vh); }
+
+  /* 360 폭에서 46px 숫자가 옆 칸과 붙는다 (전류 · 위치 오차). 데스크톱은 그대로. */
+  #strip b { font-size: min(46px, 10.5vw); }
+  /* 편차 칸은 25vw — 4자리(20.3)가 들어가야 한다. 11vw 이면 390 폭에서 왼끝이 잘렸다. */
+  #sc-mspread b, #sc-mavg b { font-size: min(52px, 9.5vw); }
 }
 
 /* 🔴 폰에서는 그 26px 를 풀어야 한다. 하단 바가 두 줄로 접히는데 행이
@@ -471,6 +488,13 @@ a.btn { display: inline-block; text-decoration: none; }
    앞에 두면 이 줄이 다시 26px 로 덮어써서 아무 효과가 없다. */
 @media (max-width: 900px) {
   .msgs { grid-template-rows: auto; overflow: visible; }
+}
+/* 반쪽 칸이 좁은 창(1024 등)에서는 한 줄에 다 안 들어간다 — 재생 버튼이
+   칸 밖으로 나갔다. 접는다. 접힌 높이만큼 #charts 아래를 비우는 것은
+   --bar-h 가 한다. 폰(≤900)은 위 규칙이 따로 있어 범위를 나눈다. */
+@media (min-width: 901px) and (max-width: 1280px) {
+  .msgs .hd { flex-wrap: wrap; row-gap: 2px; padding: 2px 8px; }
+  .msgs { grid-template-rows: auto; }
 }
 /* ── 로그 재생 ──────────────────────────────────────────────────────
    같은 화면에서 지난 비행을 돌려 본다. 계기·차트는 라이브와 **같은 코드**라
@@ -505,6 +529,27 @@ a.btn { display: inline-block; text-decoration: none; }
    4px 테두리, 아래는 #pbBar 가 덮어서다. 테두리로 안 읽히고 「정체불명의
    파란 수직선」으로 읽혔다. 재생 중인지는 하단 재생 바가 이미 말한다. */
 body.playback { padding-bottom: 38px; }
+
+/* 폰: 재생 바를 한 줄에 가두고, 손가락으로 누를 대상을 키운다.
+   시각이 두 줄로 접히면 바가 여백보다 커져 아래 조작 줄을 덮는다.
+   🔴 이 블록은 위 #pbSeek·body.playback 보다 **뒤에** 있어야 덮어쓴다. */
+@media (max-width: 900px) {
+  #pbBar { gap: 6px; }
+  #pbSeek { min-width: 60px; }
+  #pbBar button { white-space: nowrap; }
+  #pbTime { flex: none; white-space: nowrap; }
+  body.playback { padding-bottom: 50px; }
+  .msgs .hd button, .msgs .hd select, #toc label,
+  #pbBar button, #pbBar select, #pbPick .hd button { min-height: 36px; }
+  #toc input { width: 16px; height: 16px; }
+}
+/* 420 밑에서는 이름 자리가 20~50px 만 남아 「0…」 처럼 잘린다. 이름은 고르기 창에 있다. */
+@media (max-width: 420px) {
+  #pbName { display: none; }
+  /* 「센서 불일치」 가 길어 390 폭에서 점과 한 줄에 안 들어간다 — 칸 여백을 줄인다. */
+  #toc { margin-left: 0; column-gap: 1px; }
+  #toc label { padding: 1px 3px; gap: 3px; }
+}
 
 /* ── 로그 고르기 ─────────────────────────────────────────────────── */
 /* 🔴 지도(#mapPane)가 쌓임 맥락을 만들기 전에는 Leaflet 의 1000 이 이 창을

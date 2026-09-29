@@ -14,7 +14,8 @@ function makePlayer({ dur, onTick }) {
 
   function frame(now) {
     if (!playing) return;
-    const dt = Math.min((now - last) / 1000, 0.25);   // 탭 복귀 시 점프 방지
+    // 첫 프레임의 now 는 play() 의 performance.now() 보다 앞설 수 있다 — 음수면 -0.0 이 뜬다.
+    const dt = Math.max(0, Math.min((now - last) / 1000, 0.25));   // 탭 복귀 시 점프 방지
     last = now;
     t += dt * rate;
     if (t >= dur) { t = dur; stop(); apply(); return; }

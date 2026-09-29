@@ -394,24 +394,24 @@ function passwordOk(given) {
 async function handleUpload(req, res) {
   let body;
   try { body = await readBody(req, MAX_UPLOAD); }
-  catch { return sendJson(req, res, 413, { error: `파일이 너무 크다 (상한 ${Math.round(MAX_UPLOAD / 1e6)}MB)` }); }
+  catch { return sendJson(req, res, 413, { error: `용량 초과 (최대 ${Math.round(MAX_UPLOAD / 1e6)}MB)` }); }
 
   const parts = parseMultipart(req.headers['content-type'], body);
-  if (!parts) return sendJson(req, res, 400, { error: 'multipart 형식이 아니다' });
+  if (!parts) return sendJson(req, res, 400, { error: '형식 오류' });
 
   const pw = parts.find((p) => p.name === 'password');
   if (!passwordOk(pw && pw.data.toString('utf8'))) {
-    return sendJson(req, res, 401, { error: '업로드 암호가 틀렸다' });
+    return sendJson(req, res, 401, { error: '암호 오류' });
   }
 
   const fp = parts.find((p) => p.filename);
-  if (!fp || !fp.data.length) return sendJson(req, res, 400, { error: '파일이 없다' });
+  if (!fp || !fp.data.length) return sendJson(req, res, 400, { error: '파일 없음' });
 
   const name = safeName(fp.filename);
-  if (!name) return sendJson(req, res, 400, { error: '.BIN 파일만 받는다' });
+  if (!name) return sendJson(req, res, 400, { error: '형식 오류' });
   // DataFlash 첫 메시지 머리(0xA3 0x95)와 FMT(0x80). 확장자만 믿지 않는다.
   if (fp.data.length < 16 || fp.data[0] !== 0xA3 || fp.data[1] !== 0x95 || fp.data[2] !== 0x80) {
-    return sendJson(req, res, 400, { error: '.BIN 로그가 아니다' });
+    return sendJson(req, res, 400, { error: '형식 오류' });
   }
 
   const id = idOf(fp.data);
@@ -438,7 +438,7 @@ async function handleUpload(req, res) {
     sendJson(req, res, 200, { id, name: final, row: r });
   } catch (e) {
     catalog.set(id, { id, file: dest, name: final, error: e.message, size: fp.data.length });
-    sendJson(req, res, 200, { id, name: final, error: e.message });
+    sendJson(req, res, 200, { id, name: final, error: '읽기 실패' });
   }
 }
 
@@ -508,6 +508,21 @@ async function serveLiveAsset(req, res, urlPath) {
   send(req, res, 200, buf, type, { 'Cache-Control': cache });
 }
 
+const NOT_FOUND_HTML = `<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<title>없는 페이지 — DRONE01</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/app.css">
+<header>
+  <h1><a href="/">DRONE01</a></h1>
+  <span class="grow"></span>
+  <a class="btn" href="/">비행 기록</a>
+</header>
+<main style="padding:30px 20px"><p class="muted">없는 페이지</p></main>
+`;
+
 async function serveStatic(req, res, urlPath) {
   const rel = urlPath === '/' ? 'index.html' : decodeURIComponent(urlPath).slice(1);
   const file = path.normalize(path.join(PUBLIC, rel));
@@ -516,7 +531,14 @@ async function serveStatic(req, res, urlPath) {
   }
   let buf;
   try { buf = await fsp.readFile(file); }
-  catch { return send(req, res, 404, '없다', 'text/plain; charset=utf-8'); }
+  catch {
+    // 주소창에서 온 없는 페이지는 사이트 모양으로 답한다 — 흰 바탕에 글자만
+    // 두면 돌아갈 길이 없다. API·자산(확장자 있음)은 그대로 글자로 답한다.
+    if (!path.extname(urlPath) && !urlPath.startsWith('/api/')) {
+      return send(req, res, 404, NOT_FOUND_HTML, 'text/html; charset=utf-8');
+    }
+    return send(req, res, 404, '없다', 'text/plain; charset=utf-8');
+  }
   const isHtml = file.endsWith('.html');
   if (isHtml) {
     // serveLiveAsset 와 같은 이유 — CDN 이 ETag 를 떼고 js 를 4시간 쥐고 있어
@@ -745,16 +767,16 @@ function streamFromAgent(addr, secs, res) {
 async function handlePreflightStream(req, res, url) {
   if (!PREFLIGHT_KEY || !PREFLIGHT_PASSWORD) {
     return sendJson(req, res, 503, {
-      ok: false, verdict: 'NO-GO', error: '점검이 막혀 있다 (서버 설정 미비)',
+      ok: false, verdict: 'NO-GO', error: '점검 차단',
       groups: [], standing: [],
     });
   }
   if (!preflightPasswordOk(req.headers['x-preflight-password'])) {
-    return sendJson(req, res, 401, { ok: false, error: '암호가 틀렸다' });
+    return sendJson(req, res, 401, { ok: false, error: '암호 오류' });
   }
   if (preflightBusy) {
     return sendJson(req, res, 409, {
-      ok: false, verdict: 'NO-GO', error: '이미 점검이 돌고 있다',
+      ok: false, verdict: 'NO-GO', error: '점검 중',
       groups: [], standing: [],
     });
   }
@@ -774,12 +796,11 @@ async function handlePreflightStream(req, res, url) {
   } finally {
     preflightBusy = false;
   }
+  // 어느 주소가 왜 안 붙었는지는 서버 로그에만 남긴다 — 화면에는 주소·오류 코드를 내지 않는다.
+  log('점검 서버 없음', tried.map((t) => `${t.addr}: ${t.error}`).join(', '));
   return sendJson(req, res, 503, {
     ok: false, verdict: 'NO-GO',
-    error: '점검 에이전트에 닿지 못했다',
-    notes: tried.map((t) => `${t.addr}: ${t.error}`),
-    hints: ['PREFLIGHT_AGENTS 가 FC 가 꽂힌 PC 의 점검 에이전트(host:port)를 가리키나',
-            '그 PC 가 Tailscale 에 올라와 있나 (tailscale status)'],
+    error: '점검 서버 없음',
     groups: [], standing: [],
   });
 }
@@ -787,19 +808,17 @@ async function handlePreflightStream(req, res, url) {
 async function handlePreflight(req, res, url) {
   if (!PREFLIGHT_KEY || !PREFLIGHT_PASSWORD) {
     return sendJson(req, res, 503, {
-      ok: false, verdict: 'NO-GO', error: '점검이 막혀 있다 (서버 설정 미비)',
-      notes: [!PREFLIGHT_KEY ? 'PREFLIGHT_KEY 가 없다 — 에이전트와 같은 값을 .env 에 넣어라'
-                             : 'PREFLIGHT_PASSWORD 가 없다 — 화면 접속 암호를 .env 에 넣어라'],
+      ok: false, verdict: 'NO-GO', error: '점검 차단',
       groups: [], standing: [],
     });
   }
   if (!preflightPasswordOk(req.headers['x-preflight-password'])) {
-    return sendJson(req, res, 401, { ok: false, error: '암호가 틀렸다' });
+    return sendJson(req, res, 401, { ok: false, error: '암호 오류' });
   }
   // 점검은 FC 링크를 쓴다. 겹쳐 돌리면 서로 밟으므로 한 번에 하나만 보낸다.
   if (preflightBusy) {
     return sendJson(req, res, 409, {
-      ok: false, verdict: 'NO-GO', error: '이미 점검이 돌고 있다',
+      ok: false, verdict: 'NO-GO', error: '점검 중',
       groups: [], standing: [],
     });
   }
@@ -825,12 +844,11 @@ async function handlePreflight(req, res, url) {
   } finally {
     preflightBusy = false;
   }
+  // 어느 주소가 왜 안 붙었는지는 서버 로그에만 남긴다 — 화면에는 주소·오류 코드를 내지 않는다.
+  log('점검 서버 없음', tried.map((t) => `${t.addr}: ${t.error}`).join(', '));
   return sendJson(req, res, 503, {
     ok: false, verdict: 'NO-GO',
-    error: '점검 에이전트에 닿지 못했다',
-    notes: tried.map((t) => `${t.addr}: ${t.error}`),
-    hints: ['PREFLIGHT_AGENTS 가 FC 가 꽂힌 PC 의 점검 에이전트(host:port)를 가리키나',
-            '그 PC 가 Tailscale 에 올라와 있나 (tailscale status)'],
+    error: '점검 서버 없음',
     groups: [], standing: [],
   });
 }

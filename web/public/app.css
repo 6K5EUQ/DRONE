@@ -53,6 +53,28 @@ header h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.2px;
 header h1 a { color: var(--text); }
 header .sub { color: var(--muted); font-size: 12px; }
 header .grow { flex: 1; }
+/* 넘치면 줄은 바꿔도 글자는 쪼개지 않는다. 안 그러면 넘치는 만큼 버튼
+   이름이 한 자씩 세로로 쌓였다. */
+header { flex-wrap: wrap; row-gap: 6px; }
+header > * { white-space: nowrap; }
+/* `header .sub` 가 `.badc` 보다 명시도가 높아 실패가 회색으로 남는다. */
+header .sub.badc { color: var(--bad); }
+/* 목록 헤더 — 검색·필터·버튼이 많다. 좁으면 검색이 한 줄을 다 쓰고
+   헤더는 따라오지 않는다. */
+header.list { row-gap: 8px; }
+header.list #q { width: 180px; }
+/* 1100px 까지는 한 줄에 겨우 들어간다 — 검색해서 개수가 「4개 / 전체 5개」
+   로 길어지면 업로드만 둘째 줄로 떨어지고 표가 내려앉았다. 처음부터 제목
+   줄과 도구 줄로 나눈다. */
+@media (max-width: 1100px) {
+  header.list { row-gap: 4px; }
+  header.list .grow { flex: 0 0 100%; }
+}
+@media (max-width: 900px) {
+  header.list { gap: 8px; padding: 10px 14px; position: static; }
+  header.list .grow { display: none; }
+  header.list #q { flex: 1 1 100%; width: auto; }
+}
 
 button, .btn {
   background: var(--panel-2); color: var(--text);
@@ -61,8 +83,6 @@ button, .btn {
 }
 button:hover, .btn:hover { border-color: var(--muted); }
 button:disabled { opacity: .45; cursor: default; }
-button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
-button.primary:hover { background: #2b7cf3; }
 
 /* 실시간 버튼. `.btn` 은 <a> 라 글자색·밑줄을 따로 잡는다. */
 #liveBtn { text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
@@ -117,14 +137,27 @@ table { border-collapse: collapse; width: 100%; }
 th {
   text-align: left; font-size: 12px; font-weight: 600; color: var(--dim);
   padding: 8px 10px; border-bottom: 1px solid var(--border-2);
-  position: sticky; top: 53px; background: var(--bg); z-index: 10;
-  cursor: pointer; user-select: none; white-space: nowrap;
+  /* --hdr 는 목록이 잰 헤더 높이다. 재지 않는 페이지는 53px 그대로. */
+  position: sticky; top: var(--hdr, 53px); background: var(--bg); z-index: 10;
+  user-select: none; white-space: nowrap;
 }
 th:hover { color: var(--text); }
+th[data-k] { cursor: pointer; }
+th[aria-sort] { color: var(--text); }
 th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 td { padding: 7px 10px; border-bottom: 1px solid var(--border); }
 tbody tr:hover { background: var(--panel); }
 td.mono { font-family: var(--mono); font-size: 12px; }
+.tbl td.mono, .tbl td.num { white-space: nowrap; }
+.pick { width: 18px; height: 18px; margin: 0; vertical-align: middle; }
+/* 좁은 화면 — 표를 제 칸 안에서 스크롤한다. 머리가 칸 위에 붙는다.
+   🔴 main 아래 패딩을 0 으로 둔다. 남기면 끝까지 내렸을 때 칸 윗변이
+   화면 위로 밀려 머리가 가려진다. */
+@media (max-width: 680px) {
+  header.list + main { padding: 0 12px !important; }
+  .tbl { overflow: auto; max-height: 100dvh; }
+  .tbl th { top: 0; }
+}
 
 .muted { color: var(--muted); }
 .warnc { color: var(--warn); }
@@ -144,6 +177,14 @@ dialog h2 { margin: 0 0 4px; font-size: 15px; }
 body:has(> main.pf) {
   height: 100vh; margin: 0;
   display: flex; flex-direction: column; overflow: hidden;
+
+  /* 계기 색. 기존 팔레트 위에 판정용 세 가지를 얹는다. */
+  --pf-go:   #7dd3a0;          /* 인광 — 통과 */
+  --pf-hold: #e3b341;          /* 호박 — 확인 필요 */
+  --pf-stop: #ff5347;          /* 적 — 진행 불가 */
+  --pf-rail: #30363d;          /* 계기 눈금 */
+  --pf-label: #5a6b7d;         /* 계기 레이블 — 본문보다 한 단계 뒤 */
+  --pf-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 /* 헤더는 줄지 않는다 — flex 안에서 눌리면 제목이 잘린다. */
 body:has(> main.pf) > header { flex: none; }
@@ -166,14 +207,6 @@ body:has(> main.pf) > header { flex: none; }
      높이를 받으면 헤더가 몇 px 이든 맞는다. */
   flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; overflow: hidden;
-
-  /* 계기 색. 기존 팔레트 위에 판정용 세 가지를 얹는다. */
-  --pf-go:   #7dd3a0;          /* 인광 — 통과 */
-  --pf-hold: #e3b341;          /* 호박 — 확인 필요 */
-  --pf-stop: #ff5347;          /* 적 — 진행 불가 */
-  --pf-rail: #30363d;          /* 계기 눈금 */
-  --pf-label: #5a6b7d;         /* 계기 레이블 — 본문보다 한 단계 뒤 */
-  --pf-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 /* `display:flex` 가 `hidden` 속성을 이긴다 — 숨긴 것이 그대로 보였다. */
@@ -187,6 +220,7 @@ body:has(> main.pf) > header { flex: none; }
 .pf-big {
   font-size: 16px; font-weight: 600; padding: 18px 44px; border-radius: 6px;
   font-family: var(--pf-mono); letter-spacing: .04em;
+  background: #fff; color: #0d1117; border-color: #fff;
 }
 /* 🔴 키보드 사용자에게 지금 어디인지 보이게. */
 .pf button:focus-visible,
@@ -205,7 +239,6 @@ body:has(> main.pf) > header { flex: none; }
 
 .pf-note { font-size: 12px; min-height: 1em; font-family: var(--pf-mono); }
 .pf-note.dim { color: var(--dim); }
-.pf-note.bad { color: var(--pf-stop); }
 
 /* ── 점검 목록 ───────────────────────────────────────────────────
    🔴 **줄마다 상자를 두르지 않는다.** 열다섯 줄에 테두리·배경을 주면 테두리
@@ -313,7 +346,7 @@ body:has(> main.pf) > header { flex: none; }
 }
 /* 끝난 줄에만 펼침 화살표가 붙는다 — 누를 수 있다는 표시다. */
 .pf-row.done .pf-rright::after {
-  content: '  ›'; color: var(--pf-rail); font-weight: 400;
+  content: '  ›'; color: var(--muted); font-weight: 400;
   display: inline-block; transition: transform .15s ease;
 }
 .pf-row.done.open .pf-rright::after { transform: rotate(90deg); }
@@ -372,13 +405,13 @@ body:has(> main.pf) > header { flex: none; }
   margin: 16px 0 0; padding: 14px 16px; width: 100%; text-align: left;
   border: 1px solid #7a1f26; border-left: 4px solid var(--pf-stop);
   border-radius: 4px; background: #1a1012;
+  max-width: 560px;
 }
-.pf-failtitle { color: var(--pf-stop); font-weight: 600; margin-bottom: 9px; }
-.pf-failhead {
-  color: var(--pf-label); font-size: 10px; margin: 12px 0 5px;
-  font-family: var(--pf-mono); letter-spacing: .12em; text-transform: uppercase;
-}
-.pf-failnote { color: var(--dim); font-size: 12px; font-family: var(--pf-mono); line-height: 1.8; }
+/* 붙지 못하면 목록이 비어 있다 — 빈 왼쪽 칸을 접고 사유를 가운데 둔다. */
+.pf-split:has(.pf-list:empty) { grid-template-columns: 1fr; }
+.pf-split:has(.pf-list:empty) > .pf-list { display: none; }
+.pf-split:has(.pf-list:empty) .pf-side { border-left: 0; padding-left: 0; }
+.pf-failtitle { color: var(--pf-stop); font-weight: 600; }
 
 /* ── 줄을 펼쳤을 때 나오는 근거 ────────────────────────────────── */
 .pf-items { padding: 3px 0; }
@@ -395,7 +428,7 @@ body:has(> main.pf) > header { flex: none; }
 .pf-item.blk  .pf-mark { color: var(--pf-stop); }
 .pf-item.info .pf-mark { color: var(--pf-label); }
 .pf-iname {
-  font-family: var(--pf-mono); font-size: 11px; color: var(--pf-label);
+  font-family: var(--pf-mono); font-size: 12px; color: var(--dim);
   word-break: break-all;
 }
 .pf-idetail {
@@ -404,7 +437,7 @@ body:has(> main.pf) > header { flex: none; }
 }
 .pf-item.info .pf-idetail { color: var(--dim); }
 /* 왜 막혔는지가 다음 행동을 정한다 — 접지 않는다 (터미널도 안 접는다). */
-.pf-why { grid-column: 3; color: var(--pf-label); font-size: 12px; line-height: 1.65; margin-top: 2px; }
+.pf-why { grid-column: 3; color: var(--dim); font-size: 12px; line-height: 1.65; margin-top: 2px; }
 
 /* ── 암호 창 ─────────────────────────────────────────────────────── */
 .pf-modal {
@@ -424,7 +457,15 @@ body:has(> main.pf) > header { flex: none; }
 }
 .pf-modalerr { color: var(--pf-stop); font-size: 12px; }
 .pf-modalrow { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
-.pf-modalrow button { font-family: var(--pf-mono); font-size: 12px; letter-spacing: .04em; }
+.pf-modalrow button { font-family: var(--pf-mono); font-size: 12px; letter-spacing: .04em; min-height: 44px; min-width: 72px; }
+
+/* 헤더 — 첫 줄 로고·페이지 이름·시각, 둘째 줄 이동 버튼. 한 줄에 다 넣으면
+   점검 중(시각·진행 문구가 붙을 때) 버튼 하나가 제멋대로 떨어진다. */
+@media (max-width: 760px) {
+  body:has(> main.pf) > header { gap: 4px 8px; padding: 10px 14px; }
+  body:has(> main.pf) > header .grow { order: 1; flex: 0 0 100%; }
+  body:has(> main.pf) > header .btn { order: 2; }
+}
 
 /* 좁은 화면 — 현장에서는 휴대폰으로 본다. */
 @media (max-width: 680px) {
@@ -435,6 +476,7 @@ body:has(> main.pf) > header { flex: none; }
   .pf-total { align-items: flex-start; }
   .pf-tactions { max-width: none; }
   .pf-big { width: 100%; padding: 18px 0; }
+  .pf-hero { min-height: 70vh; }
   .pf-split { grid-template-columns: 1fr; gap: 20px; height: auto; }
   .pf-side { border-left: 0; padding-left: 0; justify-content: flex-start;
              position: static; height: auto; }

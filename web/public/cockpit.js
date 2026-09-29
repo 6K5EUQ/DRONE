@@ -23,6 +23,8 @@ let R = null;                      // 비행 기록 요약
 let tab = null;                    // 아무 탭도 안 고른 것이 기본 — 정보 카드·타일 없이 기체만
 let sel = null;                    // 고른 탑재칸
 let mode = '3d';                   // 3d | map
+// 로그 재생 상태 — 첫 frame() 이 모듈 평가 중에 돌므로 여기서 먼저 만든다
+const pb = { on: false, t: 0, dur: 0, rate: 1, playing: false, last: 0, name: '', timer: 0, seeking: false, when: '', fl: null };
 const D = () => (S.live ? (S.d || {}) : {});
 
 // ── 부품 — components/*/README.md 에서 옮긴 요약 ─────────────────────
@@ -213,7 +215,7 @@ new GLTFLoader().load('/model/drone01.glb', (g) => {
   $('loading').remove();
   setView();
 }, (e) => { if (e.total) $('loading').firstChild.style.width = (100 * e.loaded / e.total) + '%'; },
-() => { $('loading').remove(); });
+() => { $('loading').remove(); if (intro) { intro = false; document.body.classList.remove('intro'); setView(); } });
 
 // ── 조작 — 끌면 기체가 돈다, 휠·두 손가락은 거리, 두 번 누르면 제자리, 눌러서 칸 선택 ──
 const VIEWS = {
@@ -369,6 +371,7 @@ function renderCalls() {
 const tmpV = new THREE.Vector3();
 function placeCalls() {
   const r = canvas.getBoundingClientRect();
+  const top = $('tabs').getBoundingClientRect().bottom - r.top;   // 탭 밑까지만 — 넘으면 탭에 가린다
   const moving = goal.on && Math.abs(goal.yaw - cam.yaw) + Math.abs(goal.tilt - cam.tilt) > 0.08;
   for (const [a, el] of callEls) {
     const o = anchors[a];
@@ -376,7 +379,7 @@ function placeCalls() {
     o.getWorldPosition(tmpV); tmpV.project(camera);
     const x = (tmpV.x + 1) / 2 * r.width, y = (1 - tmpV.y) / 2 * r.height;
     el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
-    el.style.opacity = moving || y < 150 ? 0 : 1;   // 시점이 크게 바뀌는 동안은 숨긴다
+    el.style.opacity = moving || y - el.offsetHeight < top ? 0 : 1;   // 시점이 크게 바뀌는 동안은 숨긴다
   }
 }
 
@@ -629,7 +632,7 @@ function placeHome() {
   if (!show) return;
   homeG.getObjectByName('pad').getWorldPosition(hPos).project(camera);
   // 붙는 영역 — 탭 아래부터 타일·재생 막대 위까지
-  const w = canvas.clientWidth, h = canvas.clientHeight, L = 44, R = w - 44, T = 110, B = h - 130;
+  const w = canvas.clientWidth, h = canvas.clientHeight, L = 44, R = w - 44, T = 110, B = h - (document.querySelector('.main').classList.contains('pbmode') ? 200 : 130);
   let x = (hPos.x + 1) / 2 * w, y = (1 - hPos.y) / 2 * h;
   const behind = hPos.z > 1;
   if (behind || x < L || x > R || y < T || y > B) {
@@ -696,6 +699,7 @@ const timer = new THREE.Timer();
 let shiftX = 0, distK = 1;   // 정보 카드를 피해 화면 중심을 옮긴 폭(px), 물러선 배율
 function frame() {
   requestAnimationFrame(frame);
+  if (pb.on) pbAdvance();
   if (!renderer || mode !== '3d') return;
   timer.update();
   const dt = Math.min(timer.getDelta(), 0.05);
@@ -807,7 +811,7 @@ const TILES = {
   pwr: () => [],
   nav: (d) => [
     ['sat', '위성', num(d.sats), '기', lvl(d.sats, 8, 5)],
-    ['pin', '수평 오차', num(d.eph, 1), 'm', lvl(d.eph, 3, 6, false)],
+    ['pin', '위치 오차', num(d.eph, 1), 'm', lvl(d.eph, 3, 6, false)],
     ['hdg', '헤딩', num(d.hdg), '°'],
   ],
   bat: (d) => [
@@ -816,13 +820,13 @@ const TILES = {
     ['cur', '전류', num(d.cur, 1), 'A'],
     ['temp', '온도', num(d.batt_temp, 1), '°C'],
   ],
-  rec: () => R ? [
-    ['count', '비행 횟수', String(R.n), '회'],
-    ['time', '누적 비행', num(R.min), '분'],
-    ['alt', '최고 고도', num(R.alt, 1), 'm'],
-    ['spd', '최대 속도', num(R.spd, 1), 'm/s'],
-    ['cur', '최대 전류', num(R.cur), 'A'],
-  ] : [],
+  rec: () => [
+    ['count', '비행 횟수', R ? String(R.n) : '—', '회'],
+    ['time', '누적 비행', num(R && R.min), '분'],
+    ['alt', '최대 고도', num(R && R.alt, 1), 'm'],
+    ['spd', '최대 속도', num(R && R.spd, 1), 'm/s'],
+    ['cur', '최대 전류', num(R && R.cur), 'A'],
+  ],
   pf: () => [],
 };
 function renderTiles() {
@@ -1020,11 +1024,13 @@ async function pfRun() {
 // 서버 재생 엔진(/api/playback/*, drone_live.py)을 그대로 쓴다. 상태가 실시간과
 // 같은 모양이라 화면의 모든 칸이 그대로 채워진다 — 여기서는 시각만 넘긴다.
 // ⚠️ 재생 세션은 서버에 하나뿐이다 — /live 에서 누가 재생 중이면 그쪽이 바뀐다.
-const pb = { on: false, t: 0, dur: 0, rate: 1, playing: false, last: 0, name: '', timer: 0, seeking: false, when: '' };
 const RATES = [1, 2, 4, 8];
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-const fmtWhen = (utc) => { if (!utc) return ''; const t = new Date(utc + 'Z'), two = (n) => String(n).padStart(2, '0');
-  return `${t.getFullYear()}.${two(t.getMonth() + 1)}.${two(t.getDate())} ${two(t.getHours())}:${two(t.getMinutes())}`; };
+// 목록의 `utc` 는 이름과 달리 이미 **한국시간**이다(extract.py 가 +9 해 둔다) — 다시 더하지 않는다.
+const fmtWhen = (kst) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(kst || '');
+  return m ? `${m[1]}.${m[2]}.${m[3]} ${m[4]}:${m[5]}` : ''; };
+const PB_BADGE = { flight: '실비행', hover: '호버', ground: '지상', abort: '즉시 해제', noarm: '시동 없음', unknown: '판정 불가' };
+const PB_AUTO = { misn: '미션', rtl: 'RTL' };
 
 async function pbSheet(open) {
   const sh = $('pbSheet');
@@ -1034,13 +1040,13 @@ async function pbSheet(open) {
   $('pbSheetX').onclick = () => pbSheet(false);
   try {
     const rows = (await (await fetch('/api/logs', { cache: 'no-store' })).json())
-      .filter((x) => !x.error && !x.corrupt && (x.badge === 'flight' || x.badge === 'hover'))
-      .sort((a, b) => (b.utc || '').localeCompare(a.utc || '')).slice(0, 60);
+      .filter((x) => !x.error && !x.corrupt)
+      .sort((a, b) => (b.utc || '').localeCompare(a.utc || '') || b.name.localeCompare(a.name));
     if (!rows.length) { sh.querySelector('.pbmsg').textContent = '기록 없음'; return; }
     sh.querySelector('.pbmsg').remove();
     const list = document.createElement('div'); list.className = 'pbl';
     list.innerHTML = rows.map((x) => `<button data-log="${esc(x.name)}" data-utc="${esc(x.utc || '')}">
-      <span class="w">${esc(fmtWhen(x.utc))}</span><span class="b ${x.badge}">${x.badge === 'flight' ? '비행' : '호버'}</span>
+      <span class="w">${esc(fmtWhen(x.utc) || x.name)}</span><span class="t"><span class="b ${esc(x.badge || '')}">${PB_BADGE[x.badge] || '—'}</span>${(x.auto || []).map((a) => `<span class="b ${esc(a)}">${esc(PB_AUTO[a] || a)}</span>`).join('')}</span>
       <span class="n">${esc(mins(x.duration))}</span><span class="n">${x.alt_max != null ? x.alt_max.toFixed(0) + ' m' : '—'}</span></button>`).join('');
     sh.append(list);
   } catch { sh.querySelector('.pbmsg').textContent = '목록 오류'; }
@@ -1054,11 +1060,12 @@ $('pbBtn').onclick = () => (pb.on ? null : pbSheet($('pbSheet').hidden));
 async function pbStart(name, utc) {
   pbSheet(false);
   if (pb.on) await pbStop(true);
-  pb.name = name; pb.when = fmtWhen(utc);
+  pb.name = name; pb.when = fmtWhen(utc) || name;
   document.querySelector('.main').classList.add('pbmode');
   $('pbBar').hidden = false;
-  $('pbName').textContent = pb.when + ' · 여는 중';
+  $('pbName').textContent = pb.when;
   $('pbSeek').disabled = true;
+  pb.t = 0; pbSync(); txt('pbTime', '여는 중');
   try {
     const r = await fetch('/api/playback/open?name=' + encodeURIComponent(name), { cache: 'no-store' });
     if (!r.ok) throw new Error();
@@ -1069,8 +1076,13 @@ async function pbStart(name, utc) {
       if (info.state === 'error') throw new Error();
       if ($('pbBar').hidden) return;   // 기다리는 사이에 닫았다
     }
+    const fr = await fetch('/api/playback/frames', { cache: 'no-store' });
+    if (!fr.ok) throw new Error();
+    pb.fl = await fr.json();
+    pb.fl.ix = Object.fromEntries(pb.fl.keys.map((k, c) => [k, c]));
+    if ($('pbBar').hidden) return;
   } catch {
-    $('pbName').textContent = pb.when + ' · 열기 실패';
+    txt('pbTime', '열기 실패');
     return;
   }
   clearTimeout(pollTimer);
@@ -1080,14 +1092,14 @@ async function pbStart(name, utc) {
   $('pbName').textContent = pb.when;
   $('pbSeek').disabled = false;
   trkHave = 0; track = [];
-  pbSync();
+  pbTick();
   clearInterval(pb.timer);
-  pb.timer = setInterval(pbTick, 200);   // 로그 격자 5 Hz
+  pb.timer = setInterval(pbTick, 200);   // 칸·HUD 는 5 Hz, 기체는 화면 프레임마다(pbAdvance)
 }
 async function pbStop(keepBar) {
   clearInterval(pb.timer);
   const was = pb.on;
-  Object.assign(pb, { on: false, playing: false });
+  Object.assign(pb, { on: false, playing: false, fl: null });
   if (was) fetch('/api/playback/close').catch(() => {});
   document.body.classList.remove('replay');
   if (!keepBar) { $('pbBar').hidden = true; document.querySelector('.main').classList.remove('pbmode'); }
@@ -1104,26 +1116,39 @@ function pbSync() {
   if (!pb.seeking) $('pbSeek').value = String(pb.dur ? Math.round(pb.t / pb.dur * 1000) : 0);
   $('pbSeek').style.setProperty('--p', (pb.dur ? pb.t / pb.dur * 100 : 0) + '%');
 }
-let pbInflight = false;
-async function pbTick() {
+// 비행 전체(/api/playback/frames)를 열 때 한 번 받아 두고, 두 격자(0.2 s) 사이를 보간한다.
+// 폴마다 서버에 묻던 때는 웹 왕복(0.2~0.3 s)이 격자보다 길어 갱신이 초당 2~4번,
+// 불규칙하게 왔다 — 기체가 뚝뚝 끊겼다. 위치·자세·속도만 잇고 나머지는 그 칸 값 그대로.
+const PB_LERP = ['lat', 'lon', 'alt', 'roll', 'pitch', 'vx', 'vy', 'vz', 'climb', 'groundspeed'];
+const PB_ANGLE = ['yaw', 'hdg'];
+function pbFrame(t) {
+  const F = pb.fl, n = F.rows.length, x = Math.max(0, Math.min(n - 1, t * F.hz)), i = Math.floor(x), u = x - i;
+  const a = F.rows[i], b = F.rows[Math.min(n - 1, i + 1)], d = {};
+  F.keys.forEach((k, c) => { if (a[c] != null) d[k] = a[c]; });
+  if (u > 0) {
+    for (const k of PB_LERP) { const c = F.ix[k]; if (c != null && a[c] != null && b[c] != null) d[k] = a[c] + (b[c] - a[c]) * u; }
+    for (const k of PB_ANGLE) { const c = F.ix[k]; if (c != null && a[c] != null && b[c] != null) d[k] = (a[c] + unwrap(b[c] - a[c]) * u + 360) % 360; }
+  }
+  return d;
+}
+// 재생 시각을 흘리고 기체 값을 채운다 — 화면 프레임마다(frame) 그리고 틱마다 불린다.
+function pbAdvance() {
   const now = performance.now(), dt = (now - pb.last) / 1000;
   pb.last = now;
   if (pb.playing && !pb.seeking) {
     pb.t += dt * pb.rate;
     if (pb.t >= pb.dur) { pb.t = pb.dur; pb.playing = false; }
   }
+  if (pb.on && pb.fl) { S.d = pbFrame(pb.t); S.pos = pb.t; }
+}
+function pbTick() {
+  pbAdvance();
   pbSync();
-  if (pbInflight) return;
-  pbInflight = true;
-  try {
-    const r = await fetch('/api/playback/state?t=' + pb.t.toFixed(2), { cache: 'no-store' });
-    if (r.ok && pb.on) {
-      S = await r.json();
-      if (Array.isArray(S.track)) track = S.track;   // 재생 시각까지 통째로 온다
-      render();
-    }
-  } catch { /* 다음 틱에서 다시 */ }
-  pbInflight = false;
+  if (!pb.on || !pb.fl) return;
+  const F = pb.fl, t = pb.t;
+  S = { live: true, playback: true, pos: t, d: S.d, home: F.home, mission: [], messages: F.messages.filter((m) => m.t <= t).slice(-40) };
+  track = F.track.filter((p) => p.length > 3 && p[3] <= t).map((p) => [p[0], p[1], p[2]]);
+  render();
 }
 $('pbPlay').onclick = () => { if (!pb.on) return; if (!pb.playing && pb.t >= pb.dur) pb.t = 0; pb.playing = !pb.playing; pb.last = performance.now(); pbSync(); };
 $('pbRate').onclick = () => { pb.rate = RATES[(RATES.indexOf(pb.rate) + 1) % RATES.length]; pbSync(); };
@@ -1233,3 +1258,7 @@ renderInfo(); render(); pollLive(); loadRec(); setInterval(loadRec, 60000);
 // 주소로 바로 열기 — /cockpit#pf 점검, #map 지도
 if (location.hash === '#pf') document.querySelector('[data-t=pf]').click();
 if (location.hash === '#map') setSat(true);
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { if (!$('modal').hidden) $('modal').hidden = true; else if (!$('pbSheet').hidden) pbSheet(false); else if (sel) selectBay(null); }
+  else if (intro && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); launch(); }   // 좁은 창에서 스페이스가 페이지를 내리지 않게
+});
