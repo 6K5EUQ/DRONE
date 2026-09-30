@@ -1235,6 +1235,49 @@ function renderStrip(d) {
   sc('sc-mspread', spread == null ? '' : spread > SPREAD_BAD ? 'bad' : spread > SPREAD_WARN ? 'warn' : '');
   html('st-mavg', u(avg, 0, '%'));
   sc('sc-mavg', avg == null ? '' : avg > MAVG_BAD ? 'bad' : avg > MAVG_WARN ? 'warn' : '');
+  html('st-alt', u(d.alt, 1, 'm'));
+  const ft = flightTime(d);
+  txt('st-ftime', ft == null ? '—' : mmss(ft));
+  const cell = d.volt != null ? d.volt / CELLS : null;
+  html('st-cell', u(cell, 2, 'V'));
+  sc('sc-cell', cell == null ? '' : cell < 3.3 ? 'bad' : cell < 3.5 ? 'warn' : '');
+  // 홈 — 기수 기준 방향(위 = 정면)과 거리
+  const yaw = d.yaw != null ? d.yaw : d.hdg;
+  if (geo.home == null) html('st-home', '—');
+  else {
+    const rel = yaw != null && geo.home > 2 ? (Math.atan2(-geo.e, -geo.n) * 180 / Math.PI - yaw + 720) % 360 : null;
+    html('st-home', (rel == null ? '' : `<svg class="harr" viewBox="0 0 24 24" style="transform:rotate(${rel.toFixed(0)}deg)"><path d="M12 2l7 19-7-4.5L5 21z"/></svg>`) + u(geo.home, 0, 'm'));
+  }
+  const w = fcWarn(), we = $('fcWarn');
+  we.hidden = !w;
+  if (w) we.textContent = w.text;
+}
+// 셀 수 — 전압을 셀당으로 나눠 보인다 (배터리 %는 추정이라 부하 걸린 셀 전압이 더 정직하다)
+const CELLS = 4;
+// 비행 시간 — 시동부터. 재생은 로그에서 처음 시동 걸린 칸을 찾고, 실시간은 시동을 본 순간부터 잰다.
+let armT = null;
+function flightTime(d) {
+  if (pb.on && pb.fl) {
+    const F = pb.fl, c = F.ix.armed;
+    if (c == null) return null;
+    if (F.armT === undefined) { const i = F.rows.findIndex((r) => r[c]); F.armT = i < 0 ? null : i / F.hz; }
+    return F.armT != null && S.pos >= F.armT ? S.pos - F.armT : null;
+  }
+  if (!d.armed) { armT = null; return null; }
+  if (armT == null) armT = Date.now() / 1000;
+  return Date.now() / 1000 - armT;
+}
+// FC 경고 — 최근 15초 안의 WARNING 이상 한 줄. 없으면 칸도 없다.
+const SEV_N = { EMERG: 0, ALERT: 1, CRIT: 2, ERROR: 3, WARN: 4, WARNING: 4 };
+function fcWarn() {
+  const ms = S.messages || [], now = pb.on ? S.pos : Date.now() / 1000;
+  for (let i = ms.length - 1; i >= 0; i--) {
+    const m = ms[i];
+    if (now - m.t > 15) break;
+    const lv = typeof m.sev === 'number' ? m.sev : m.sev != null ? SEV_N[m.sev] ?? 6 : /^ERR/.test(m.text || '') ? 3 : 6;
+    if (lv <= 4 && m.text) return m;
+  }
+  return null;
 }
 
 // ── 상태 반영 ────────────────────────────────────────────────────────
