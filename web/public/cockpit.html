@@ -257,6 +257,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
   .pane, .main, #info { grid-column: 1; grid-row: auto; }
   .main { order: 1; height: 58vh; }
   .pane { order: 2; border-right: 0; padding: 14px 16px; overflow: visible; }
+  .strip .mframe { height: auto; min-height: 0; max-height: 220px; }   /* 폰 — 남은 높이가 없으니 그림은 폭에 맞춘 적당한 크기로 */
   #info { order: 3; width: auto; max-height: none; margin: 0 10px 10px; justify-self: stretch; }
   .dock { order: 4; overflow-x: auto; padding: 0 8px; position: sticky; bottom: 0; }
   body.intro .main { height: auto; }
