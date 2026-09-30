@@ -132,8 +132,6 @@ const homeG = new THREE.Group(); homeG.visible = false; world.add(homeG);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   const pad = new THREE.Mesh(new THREE.CircleGeometry(0.18, 48), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
   pad.name = 'pad'; pad.rotation.x = -Math.PI / 2; pad.position.y = FLOOR + 0.002; pad.renderOrder = 0; homeG.add(pad);
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 1, 8), new THREE.MeshBasicMaterial({ color: 0x3e6ae1, transparent: true, opacity: 0.45, depthWrite: false }));
-  pole.name = 'pole'; homeG.add(pole);
 }
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.ShadowMaterial({ opacity: 0.24 }));
 ground.rotation.x = -Math.PI / 2; ground.position.y = FLOOR; ground.receiveShadow = true; scene.add(ground);
@@ -476,7 +474,6 @@ function ribbon(order) {
   return m;
 }
 const predPath = ribbon(2);     // 공중 길
-const predShadow = ribbon(1);   // 땅 그림자
 const predTicks = (() => {      // 0.5초마다 화살촉
   const g = new THREE.BufferGeometry();
   const n = Math.round(PRED_SEC / PRED_TICK);
@@ -486,18 +483,11 @@ const predTicks = (() => {      // 0.5초마다 화살촉
   m.frustumCulled = false; m.renderOrder = 3; craft.add(m);
   return m;
 })();
-const predPost = (() => {       // 끝 기둥
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
-  const m = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x3e6ae1, transparent: true, depthWrite: false }));
-  m.frustumCulled = false; craft.add(m);
-  return m;
-})();
 const predPts = Array.from({ length: PRED_N + 1 }, () => ({ x: 0, y: 0, z: 0, dx: 0, dz: 1 }));
 function drawPred(k) {
   pred.on += ((pred.show ? 1 : 0) - pred.on) * k;
   const vis = pred.on > 0.01;
-  predPath.visible = predShadow.visible = predTicks.visible = predPost.visible = vis;
+  predPath.visible = predTicks.visible = vis;
   if (!vis) return;
   const L = Math.max(0.7, Math.min(40, pred.v * PRED_SEC * G));
   const turn = THREE.MathUtils.degToRad(Math.max(-160, Math.min(160, pred.omega * PRED_SEC)));
@@ -525,11 +515,6 @@ function drawPred(k) {
   const yAir = (p) => (air ? 0 : floorY + 0.006) + (air ? p.y : 0);
   fill(predPath, yAir, PRED_W / 2);
   predPath.material.opacity = pred.on;
-  predShadow.visible = air;
-  if (air) {
-    fill(predShadow, () => floorY + 0.004, PRED_W / 2 * (1 + depth * 0.1));
-    predShadow.material.opacity = pred.on * 0.35;
-  }
   // 화살촉 — 0.5초 간격. 간격이 곧 속도다 (넓으면 빠르다).
   const ta = predTicks.geometry.attributes.position.array, tc = predTicks.geometry.attributes.color.array;
   const NT = Math.round(PRED_SEC / PRED_TICK);
@@ -542,14 +527,6 @@ function drawPred(k) {
     for (let v = 0; v < 3; v++) tc.set([1, 1, 1, a], ((n - 1) * 3 + v) * 4);   // 흰 화살촉 — 파란 띠 위에서 읽힌다
   }
   predTicks.geometry.attributes.position.needsUpdate = true; predTicks.geometry.attributes.color.needsUpdate = true;
-  // 끝 기둥
-  predPost.visible = air;
-  if (air) {
-    const e = predPts[PRED_N];
-    predPost.geometry.attributes.position.array.set([e.x, yAir(e), e.z, e.x, floorY + 0.004, e.z]);
-    predPost.geometry.attributes.position.needsUpdate = true;
-    predPost.material.opacity = pred.on * 0.5;
-  }
 }
 
 // ── 첫 화면 → 대시보드 — 쿼드라 제자리에서 수직으로 떠올라 사라지면 대시보드가
@@ -596,14 +573,6 @@ function flyFloor() {
   blob.material.opacity = Math.max(0, 1 - Math.abs(flyG.position.y) * 3 - (FLOOR - floorY) * 2) * fly.floor;
 }
 
-// 기체 밑에서 땅까지 내리는 선과 땅에 닿는 고리 — 얼마나 떠 있는지
-const drop = new THREE.Group(); drop.visible = false; craft.add(drop);
-{
-  const m = new THREE.MeshBasicMaterial({ color: 0x3e6ae1, transparent: true, opacity: 0.35, depthWrite: false });
-  const line = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 1, 6), m); line.name = 'line'; drop.add(line);
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.2, 48), m.clone()); ring.name = 'ring';
-  ring.rotation.x = -Math.PI / 2; drop.add(ring);
-}
 // 위치는 1초마다 온다 — 사이는 속도로 이어 가다 받은 값으로 당긴다.
 // 홈은 FC 의 HOME_POSITION(ARM 때 잡힌다), 없으면 ARM 한 순간의 위치.
 const geo = { n: 0, e: 0, alt: 0, psi: 0, armHome: null, armed: false, home: null, hs: null };
@@ -643,16 +612,6 @@ function groundStep(dt, ease) {
   if (on) {
     homeG.position.set(geo.e * G, 0, -geo.n * G);
     homeG.getObjectByName('pad').scale.setScalar(1 + depth * 0.25);
-    const pole = homeG.getObjectByName('pole');
-    pole.scale.y = Math.max(0.001, depth); pole.position.y = FLOOR + depth / 2;
-    pole.visible = depth > 0.05;
-  }
-  drop.visible = depth > 0.1;
-  if (drop.visible) {
-    const line = drop.getObjectByName('line');
-    line.scale.y = depth; line.position.y = FLOOR - depth / 2;
-    const ring = drop.getObjectByName('ring');
-    ring.position.y = floorY + 0.003; ring.scale.setScalar(1 + depth * 0.25);
   }
 }
 
@@ -1305,7 +1264,8 @@ function fitMode() {
   e.style.fontSize = '';
   for (let f = parseFloat(getComputedStyle(e).fontSize); e.scrollWidth > e.clientWidth && f > 14; f -= 2) e.style.fontSize = f - 2 + 'px';
 }
-new ResizeObserver(() => fitMode()).observe(document.querySelector('.spd'));
+let modeW = 0;   // 모드 칸 폭 — 속도 자릿수가 늘면 좁아진다. 폭이 바뀔 때만 다시 맞춘다
+new ResizeObserver(([e]) => { const w = Math.round(e.contentRect.width); if (w !== modeW) { modeW = w; fitMode(); } }).observe(document.querySelector('.spd .arm'));
 // ── 상태 반영 ────────────────────────────────────────────────────────
 function render() {
   const on = !!S.live, d = D();

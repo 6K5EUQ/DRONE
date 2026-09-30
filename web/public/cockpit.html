@@ -201,8 +201,9 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, brandGlint .45s 
 .ident .replay { display: none; margin-left: auto; font-style: normal; font-size: 12px; font-weight: 700; color: #fff; background: var(--acc); border-radius: 5px; padding: 2px 8px; white-space: nowrap; }
 .ident .replay i { font-style: normal; font-weight: 500; }
 body.replay .ident .replay { display: inline-block; }
-#pbSheet { position: absolute; left: 18px; top: 100px; width: 420px; max-height: calc(100% - 130px); overflow-y: auto; z-index: 6;
+#pbSheet { position: absolute; left: 18px; top: 100px; width: 420px; max-height: calc(100% - 130px); overflow-y: auto; z-index: 6; scrollbar-width: none;
   background: rgba(244,244,246,.97); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; box-shadow: 0 10px 30px rgba(23,26,32,.10); }
+#pbSheet::-webkit-scrollbar { display: none; }   /* 스크롤은 되고 막대만 숨긴다 — 오른쪽 둥근 모서리를 덮지 않게 */
 #pbSheet .ih { display: flex; align-items: center; margin-bottom: 6px; }
 #pbSheet .ih b { flex: 1; font-size: 16px; }
 #pbSheet .x { border: 0; background: none; font-size: 22px; color: var(--dim); cursor: pointer; }
