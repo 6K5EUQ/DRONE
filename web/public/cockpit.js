@@ -366,6 +366,7 @@ const MOT_WARN = 70, MOT_BAD = 80;
 const thr = (v) => v == null ? '' : v >= MOT_BAD ? 'bad' : v >= MOT_WARN ? 'warn' : '';
 const THR_COLOR = { '': 0x5a5d63, warn: 0xd99a06, bad: 0xdc2626 };
 const callEls = new Map();
+const MOTOR_OUT = new Set(['LF', 'RF', 'LB', 'RB']), CALL_OUT = 50;   // px
 function renderCalls() {
   let want = sel || mode !== '3d' || !tab ? [] : CALLS[tab](D());
   if (!sel && mode === '3d' && tab !== 'pwr' && tab !== 'fly') {
@@ -377,7 +378,7 @@ function renderCalls() {
     keep.add(a);
     let el = callEls.get(a);
     if (!el) {
-      el = document.createElement('div'); el.className = 'call';
+      el = document.createElement('div'); el.className = MOTOR_OUT.has(a) ? 'call m' : 'call';
       el.innerHTML = '<span class="k"></span><span class="v"></span><i></i>';
       $('calls').append(el); callEls.set(a, el);
     }
@@ -388,7 +389,6 @@ function renderCalls() {
   for (const [a, el] of callEls) if (!keep.has(a)) { el.remove(); callEls.delete(a); }
 }
 const tmpV = new THREE.Vector3();
-const MOTOR_OUT = new Set(['LF', 'RF', 'LB', 'RB']), CALL_OUT = 38;   // px
 function placeCalls() {
   const r = canvas.getBoundingClientRect();
   const top = $('tabs').getBoundingClientRect().bottom - r.top;   // 탭 밑까지만 — 넘으면 탭에 가린다
@@ -406,7 +406,7 @@ function placeCalls() {
       const dx = x - cx, dy = y - cy, n = Math.hypot(dx, dy) || 1;
       x += dx / n * CALL_OUT; y += dy / n * CALL_OUT;
     }
-    el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+    el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, ${MOTOR_OUT.has(a) ? '-50%' : '-100%'})`;   // 모터 라벨은 선 없이 그 자리에
     el.style.opacity = moving || y - el.offsetHeight < top ? 0 : 1;   // 시점이 크게 바뀌는 동안은 숨긴다
   }
 }
