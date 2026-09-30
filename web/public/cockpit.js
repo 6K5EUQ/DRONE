@@ -388,15 +388,24 @@ function renderCalls() {
   for (const [a, el] of callEls) if (!keep.has(a)) { el.remove(); callEls.delete(a); }
 }
 const tmpV = new THREE.Vector3();
+const MOTOR_OUT = new Set(['LF', 'RF', 'LB', 'RB']), CALL_OUT = 38;   // px
 function placeCalls() {
   const r = canvas.getBoundingClientRect();
   const top = $('tabs').getBoundingClientRect().bottom - r.top;   // 탭 밑까지만 — 넘으면 탭에 가린다
   const moving = goal.on && Math.abs(goal.yaw - cam.yaw) + Math.abs(goal.tilt - cam.tilt) > 0.08;
+  // 모터 라벨은 모터 중심이 아니라 기체 중심에서 바깥쪽으로 밀어 둔다 — 멀리 보면 네 개가
+  // 한데 뭉쳐 겹친다. 화면에서 같은 거리(px)만큼 밀어 줌과 상관없이 떨어져 보이게.
+  attitude.getWorldPosition(tmpV); tmpV.project(camera);
+  const cx = (tmpV.x + 1) / 2 * r.width, cy = (1 - tmpV.y) / 2 * r.height;
   for (const [a, el] of callEls) {
     const o = anchors[a];
     if (!o) { el.style.opacity = 0; continue; }
     o.getWorldPosition(tmpV); tmpV.project(camera);
-    const x = (tmpV.x + 1) / 2 * r.width, y = (1 - tmpV.y) / 2 * r.height;
+    let x = (tmpV.x + 1) / 2 * r.width, y = (1 - tmpV.y) / 2 * r.height;
+    if (MOTOR_OUT.has(a)) {
+      const dx = x - cx, dy = y - cy, n = Math.hypot(dx, dy) || 1;
+      x += dx / n * CALL_OUT; y += dy / n * CALL_OUT;
+    }
     el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
     el.style.opacity = moving || y - el.offsetHeight < top ? 0 : 1;   // 시점이 크게 바뀌는 동안은 숨긴다
   }
