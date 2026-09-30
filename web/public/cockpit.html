@@ -127,18 +127,14 @@ body.intro:not(.launch) #brandIntro {
   60% { opacity: 1; transform: translateX(calc(-50% + 8px)) skewX(-8deg); filter: blur(0); }
   100% { opacity: 1; transform: translateX(-50%) skewX(0); filter: blur(0); }
 }
-/* 기체를 눌러 넘어갈 때 — 화면 한가운데 큰 워드마크가 긋고 들어와 빛이 훑고, 커지며 사라진다 */
+/* 기체를 눌러 넘어갈 때 — 화면 한가운데 큰 워드마크 */
 #logoPlay { position: fixed; left: 50%; top: 50%; width: min(64vw, 620px); aspect-ratio: 1237 / 243; transform: translate(-50%, -50%);
   color: var(--ink2); z-index: 50; pointer-events: none; opacity: 0;
   -webkit-mask-image: linear-gradient(105deg, #000 0 42%, rgba(0,0,0,.08) 50%, #000 58% 100%); mask-image: linear-gradient(105deg, #000 0 42%, rgba(0,0,0,.08) 50%, #000 58% 100%);
   -webkit-mask-size: 300% 100%; mask-size: 300% 100%; }
-body.launch #logoPlay { animation: lpIn .35s cubic-bezier(.15, .9, .2, 1) .35s both, brandGlint .45s ease-in-out .75s both, lpOut .45s cubic-bezier(.5, 0, .8, .4) 1.3s forwards; }   /* 기체가 떠나는 사이 — 돌아와 앉기 전에 걷힌다 */
-@keyframes lpIn {
-  0% { opacity: 0; transform: translate(calc(-50% - 45vw), -50%) skewX(-30deg); filter: blur(10px); }
-  70% { opacity: 1; transform: translate(calc(-50% + 12px), -50%) skewX(-6deg); filter: blur(0); }
-  100% { opacity: 1; transform: translate(-50%, -50%) skewX(0); filter: blur(0); }
-}
-@keyframes lpOut { to { opacity: 0; transform: translate(-50%, -50%) scale(1.12); filter: blur(6px); } }
+body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, brandGlint .45s ease-in-out .75s both, lpOut .26s cubic-bezier(.7, 0, 1, .5) 1.3s forwards; }   /* 가운데서 옅게 떠올라 진해지고, 빛이 훑은 뒤 옆으로 날카롭게 긋고 사라진다 */
+@keyframes lpIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lpOut { to { opacity: 0; transform: translate(calc(-50% + 34vw), -50%) skewX(-38deg) scaleX(1.5); filter: blur(8px); } }
 @keyframes brandGlint { from { -webkit-mask-position: 100% 0; mask-position: 100% 0; } to { -webkit-mask-position: 0 0; mask-position: 0 0; } }
 .dock a.brand-dock { width: auto; padding: 0 10px; }
 .dock .brand { width: 104px; height: 21px; color: #fff; display: block; }
