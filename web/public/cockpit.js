@@ -1239,7 +1239,7 @@ function renderStrip(d) {
   txt('st-ftime', ft == null ? '—' : mmss(ft));
   const w = fcWarn(), we = $('fcWarn');
   we.hidden = !w;
-  if (w) we.textContent = w.text;
+  if (w) we.textContent = w.text.replace(/^\s*\[[^\]]*\]\s*/, '');   // [모듈] 머리는 뗀다
 }
 // 비행 시간 — 시동부터. 재생은 로그에서 처음 시동 걸린 칸을 찾고, 실시간은 시동을 본 순간부터 잰다.
 let armT = null;
@@ -1286,11 +1286,11 @@ function render() {
   $('spd').classList.toggle('off', d.groundspeed == null);
   const killed = d.system_status === 8;   // KILL — FC 가 비행 종료 상태를 알린다 (스위치·페일세이프)
   const md = killed ? 'KILL' : (d.mode || '—').replace(/^AUTO\./, '');   // AUTO.RTL → RTL
-  // RTL — FC 가 스스로 건 것(페일세이프)이면 AUTO.RTL 빨강, 조종사가 건 것이면 MANUAL.RTL 노랑.
+  // RTL — FC 가 스스로 건 것(페일세이프)이면 AUTO.RTL 빨강, 조종사가 건 것이면 MAN.RTL 노랑.
   //    재생은 로그의 판단(rtl_auto)을, 실시간은 HEARTBEAT 상태 CRITICAL/EMERGENCY(페일세이프 중)를 본다.
   const rtl = !killed && md === 'RTL', rtlAuto = rtl && (d.rtl_auto != null ? d.rtl_auto : d.system_status === 5 || d.system_status === 6);
   $('mode').className = killed ? 'bad' : rtl ? (rtlAuto ? 'bad' : 'warn') : MODE_TONE[md] || '';
-  const mdShown = rtl ? (rtlAuto ? 'AUTO.RTL' : 'MANUAL.RTL') : md;
+  const mdShown = rtl ? (rtlAuto ? 'AUTO.RTL' : 'MAN.RTL') : md;
   if ($('mode').textContent !== mdShown) { txt('mode', mdShown); fitMode(); }
   const arm = $('arm');
   txt('arm', !on ? '연결 없음' : d.armed ? (d.landed === 2 ? '비행 중' : '시동') : '대기');
