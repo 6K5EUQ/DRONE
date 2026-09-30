@@ -60,7 +60,7 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
 #hudHz, #hudRoll { transform-origin: 0 0; transition: transform .25s linear; }
 
 /* 계기판 — 3칸. 모터 그림이 두 칸, 편차·평균이 셋째 칸 */
-.strip { flex: 1 1 auto; display: grid; grid-template-columns: repeat(2, 1fr); align-content: start; gap: 12px 8px; text-align: center; min-height: 0; }
+.strip { flex: 1 1 auto; margin-top: clamp(10px, 3vh, 28px); display: grid; grid-template-columns: repeat(2, 1fr); align-content: start; gap: 12px 8px; text-align: center; min-height: 0; }
 .strip .sc b { display: block; font-size: clamp(24px, min(2.9vw, 4.2vh), 42px); font-weight: 500; white-space: nowrap; }   /* 좁은 패널에서 넘치지 않게 폭 따라 */
 .strip .sc b small { font-size: .62em; color: var(--dim); margin-left: 1px; font-weight: 500; }
 .strip .sc span { font-size: clamp(12px, min(1.35vw, 2vh), 19.5px); color: var(--dim); }
