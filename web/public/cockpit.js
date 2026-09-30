@@ -1236,22 +1236,10 @@ function renderStrip(d) {
   html('st-alt', u(d.alt, 1, 'm'));
   const ft = flightTime(d);
   txt('st-ftime', ft == null ? '—' : mmss(ft));
-  const cell = d.volt != null ? d.volt / CELLS : null;
-  html('st-cell', u(cell, 2, 'V'));
-  sc('sc-cell', cell == null ? '' : cell < 3.3 ? 'bad' : cell < 3.5 ? 'warn' : '');
-  // 홈 — 기수 기준 방향(위 = 정면)과 거리
-  const yaw = d.yaw != null ? d.yaw : d.hdg;
-  if (geo.home == null) html('st-home', '—');
-  else {
-    const rel = yaw != null && geo.home > 2 ? (Math.atan2(-geo.e, -geo.n) * 180 / Math.PI - yaw + 720) % 360 : null;
-    html('st-home', (rel == null ? '' : `<svg class="harr" viewBox="0 0 24 24" style="transform:rotate(${rel.toFixed(0)}deg)"><path d="M12 2l7 19-7-4.5L5 21z"/></svg>`) + u(geo.home, 0, 'm'));
-  }
   const w = fcWarn(), we = $('fcWarn');
   we.hidden = !w;
   if (w) we.textContent = w.text;
 }
-// 셀 수 — 전압을 셀당으로 나눠 보인다 (배터리 %는 추정이라 부하 걸린 셀 전압이 더 정직하다)
-const CELLS = 4;
 // 비행 시간 — 시동부터. 재생은 로그에서 처음 시동 걸린 칸을 찾고, 실시간은 시동을 본 순간부터 잰다.
 let armT = null;
 function flightTime(d) {
