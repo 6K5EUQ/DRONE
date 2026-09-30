@@ -13,7 +13,6 @@ const $ = (id) => document.getElementById(id);
 const txt = (id, s) => { const e = $(id); if (e && e.textContent !== s) e.textContent = s; };
 const html = (id, s) => { const e = $(id); if (e && e.innerHTML !== s) e.innerHTML = s; };
 const num = (v, n = 0) => (v == null || !Number.isFinite(v)) ? '—' : v.toFixed(n);
-const icon = (n) => `<svg class="i"><use href="#i-${n}"/></svg>`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const lvl = (v, warn, bad, low = true) => v == null ? '' : low ? (v < bad ? 'bad' : v < warn ? 'warn' : '') : (v > bad ? 'bad' : v > warn ? 'warn' : '');
 const mins = (s) => s == null ? '—' : s < 60 ? `${Math.round(s)}초` : `${Math.floor(s / 60)}분 ${String(Math.round(s % 60)).padStart(2, '0')}초`;
@@ -873,7 +872,7 @@ const TILES = {
 };
 function renderTiles() {
   html('tiles', mode !== '3d' || !tab ? '' : TILES[tab](D()).map(([ic, l, v, u, c, on]) =>
-    `<div class="tile ${c || ''}${on ? ' on' : ''}">${icon(ic)}<b class="num">${v}${u && v !== '—' ? `<small>${u}</small>` : ''}</b><span>${l}</span></div>`).join(''));
+    `<div class="tile ${c || ''}${on ? ' on' : ''}"><b class="num">${v}${u && v !== '—' ? `<small>${u}</small>` : ''}</b><span>${l}</span></div>`).join(''));
   renderCalls();
 }
 $('tabs').addEventListener('click', (e) => {
@@ -1236,13 +1235,14 @@ function renderStrip(d) {
   sc('sc-mavg', avg == null ? '' : avg > MAVG_BAD ? 'bad' : avg > MAVG_WARN ? 'warn' : '');
   html('st-alt', u(d.alt, 1, 'm'));
   const ft = flightTime(d);
-  txt('st-ftime', ft == null ? '—' : mmss(ft));
+  txt('st-ftime', ft == null ? '—' : hms(ft));
   const w = fcWarn(), we = $('fcWarn');
   we.hidden = !w;
   if (w) we.textContent = w.text.replace(/^\s*\[[^\]]*\]\s*/, '');   // [모듈] 머리는 뗀다
 }
 // 비행 시간 — 시동부터. 재생은 로그에서 처음 시동 걸린 칸을 찾고, 실시간은 시동을 본 순간부터 잰다.
 let armT = null;
+const hms = (s) => [s / 3600, s / 60 % 60, s % 60].map((v) => String(Math.floor(v)).padStart(2, '0')).join(':');
 function flightTime(d) {
   if (pb.on && pb.fl) {
     const F = pb.fl, c = F.ix.armed;
