@@ -29,6 +29,10 @@ const D = () => (S.live ? (S.d || {}) : {});
 
 // ── 부품 — components/*/README.md 에서 옮긴 요약 ─────────────────────
 const BAYS = {
+  motor: { name: '모터', outside: true, view: 'pwr', rows: [
+    ['모터', 'GT DRONE 3508-380KV × 4'],
+    ['프롭', '12 × 4.5 2엽'],
+    ['회전', '좌전·우후 CW · 우전·좌후 CCW'] ] },
   battery: { name: '배터리', rows: [
     ['배터리', '4S 2,900 mAh 20C'],
     ['위치', '아랫판 밑'] ] },
@@ -38,12 +42,12 @@ const BAYS = {
   fc: { name: 'FC', rows: [
     ['비행제어기', 'Pixhawk 2.4.8 · STM32F427'],
     ['펌웨어', 'ArduCopter 3.6.12'] ] },
-  gps: { name: 'GPS', rows: [
+  gps: { name: 'GPS', outside: true, rows: [
     ['GPS', 'M8N (u-blox)'],
     ['컴퍼스', '외장 GPS 모듈'] ] },
 };
 const TAB_INFO = {
-  sum: { name: '제원', rows: [
+  sum: { name: '제원', bays: ['motor', 'battery', 'power', 'fc', 'gps'], rows: [
     ['형식', '쿼드 X · S500 계열'], ['프롭', '12 × 4.5'], ['목표 중량', '2 kg 이하'] ] },
   pwr: { name: '동력', bays: ['power'], rows: [
     ['모터', 'GT DRONE 3508-380KV × 4'], ['ESC', 'GT DRONE EC-X3 30 A × 4'], ['프롭', '12 × 4.5 2엽'] ] },
@@ -163,7 +167,7 @@ if (renderer) {
 // 모델이 오기 전까지 비어 있다 — 없으면 해당 동작만 건너뛴다
 const rotors = {};          // LF/RF/LB/RB → { node, dir, v, disc }
 let anchors = {};
-const bays = {};            // head/... → { mesh, fill, edges, color, a }
+const bays = {};            // battery/... → { meshes, fills, edges, a } — 부위 하나가 여러 덩이일 수 있다(모터 4개)
 const skin = [];            // 반투명이 되는 겉면 재질
 let skinT = 0;              // 0 불투명 ~ 1 반투명
 const discMat = new THREE.MeshBasicMaterial({ color: 0x5a5d63, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
@@ -189,12 +193,11 @@ new GLTFLoader().load('/model/drone01.glb', (g) => {
     const n = m.getObjectByName('rotor_' + k);
     if (n) rotors[k] = { node: n, dir: (k === 'RF' || k === 'LB') ? 1 : -1, v: 0, disc: addDisc(n, 0.1524) };
   }
-  for (const k of Object.keys(BAYS)) {
-    const mesh = m.getObjectByName('bay_' + k);
-    if (!mesh) continue;
-    // 클릭 영역. 안 보이게 두되 광선은 맞는다 (colorWrite 만 끈다).
+  // 클릭 영역. 안 보이게 두되 광선은 맞는다 (colorWrite 만 끈다). 칠과 테두리는 같은 모양으로 겹친다.
+  const addHit = (k, mesh) => {
     mesh.castShadow = mesh.receiveShadow = false;
     mesh.material = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+    mesh.userData.bay = k;
     const fillM = new THREE.MeshBasicMaterial({ color: 0x3e6ae1, transparent: true, opacity: 0, depthWrite: false });
     const fillMesh = new THREE.Mesh(mesh.geometry, fillM);
     fillMesh.renderOrder = 5;
@@ -202,7 +205,17 @@ new GLTFLoader().load('/model/drone01.glb', (g) => {
       new THREE.LineBasicMaterial({ color: 0x3e6ae1, transparent: true, opacity: 0, depthTest: false }));
     edges.renderOrder = 6;
     mesh.add(fillMesh, edges);
-    bays[k] = { mesh, fill: fillM, edges: edges.material, a: 0 };
+    const b = bays[k] || (bays[k] = { meshes: [], fills: [], edges: [], a: 0 });
+    b.meshes.push(mesh); b.fills.push(fillM); b.edges.push(edges.material);
+  };
+  for (const k of Object.keys(BAYS)) {
+    const mesh = m.getObjectByName('bay_' + k);
+    if (mesh) addHit(k, mesh);
+  }
+  // 모터 — 칸 상자가 없으니 프롭 원판 크기의 납작한 원통을 붙인다
+  for (const r of Object.values(rotors)) {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.1524, 0.1524, 0.025, 48));
+    r.node.add(c); addHit('motor', c);
   }
   // 부위 표시가 붙을 자리
   const at = (name, off = [0, 0, 0]) => { const n = m.getObjectByName(name); if (!n) return null; const a = new THREE.Object3D(); a.position.set(...off); n.add(a); return a; };
@@ -242,8 +255,8 @@ function pickBay(e) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  const hit = ray.intersectObjects(Object.values(bays).map((b) => b.mesh), false)[0];
-  return hit ? Object.keys(bays).find((k) => bays[k].mesh === hit.object) : null;
+  const hit = ray.intersectObjects(Object.values(bays).flatMap((b) => b.meshes), false)[0];
+  return hit ? hit.object.userData.bay : null;
 }
 function hitCraft(e) {
   const r = canvas.getBoundingClientRect();
@@ -293,7 +306,7 @@ canvas.addEventListener('wheel', (e) => { e.preventDefault(); goal.on = false; c
 canvas.addEventListener('dblclick', () => setView());
 
 function setView() {
-  const v = VIEWS[intro ? 'intro' : sel ? 'bay' : tab || 'sum'], twoPi = Math.PI * 2;
+  const v = VIEWS[intro ? 'intro' : sel ? BAYS[sel].view || 'bay' : tab || 'sum'], twoPi = Math.PI * 2;
   goal.yaw = v.yaw + Math.round((cam.yaw - v.yaw) / twoPi) * twoPi;   // 가까운 쪽으로 돈다
   goal.tilt = v.tilt; goal.dist = v.dist; goal.on = true; cam.vYaw = cam.vTilt = 0;
 }
@@ -322,6 +335,7 @@ function bayLook(k) {
     return lv ? { color: LV_COLOR[lv], a: 1 } : { color: 0x3e6ae1, a: 0 };
   }
   if (sel) return { color: 0x3e6ae1, a: k === sel ? 1 : 0 };
+  if (tab === 'sum') return { color: 0x3e6ae1, a: k === hover ? 0.7 : 0.3 };   // 누를 수 있는 부위를 옅게
   const tb = TAB_INFO[tab];
   if (tb && tb.bays && tb.bays.includes(k)) return { color: 0x3e6ae1, a: 0.7 };
   return { color: 0x3e6ae1, a: k === hover ? 0.5 : 0 };
@@ -716,7 +730,7 @@ function frame() {
   craft.rotation.y = cam.yaw;
   craft.updateMatrixWorld();
   // 고른 칸을 가운데로
-  if (sel && bays[sel]) bays[sel].mesh.getWorldPosition(lookGoal); else lookGoal.set(0, 0.02 - Math.min(FLOOR - floorY, 1) * 0.25, 0);   // 조금만 내린다 — 더 내리면 기체가 화면 위로 잘린다
+  if (sel && bays[sel] && !BAYS[sel].view) bays[sel].meshes[0].getWorldPosition(lookGoal); else lookGoal.set(0, 0.02 - Math.min(FLOOR - floorY, 1) * 0.25, 0);   // 조금만 내린다 — 더 내리면 기체가 화면 위로 잘린다
   look.lerp(lookGoal, ease(4));
   // 정보 카드가 기체를 덮을 때만 — 카드 오른쪽 빈 곳으로 화면 중심을 옮기고,
   // 거기에 안 들어가면 물러선다. 기체 반폭 ≈ 0.6·높이/거리 (대각 0.55 m 기준).
@@ -755,7 +769,7 @@ function frame() {
     r.disc.material.opacity = Math.min(w ? 0.28 : 0.09, Math.max(0, (r.v - 12) / (w ? 80 : 200)));
   }
   // 겉면 — 칸을 고르면 비친다
-  skinT += ((sel && sel !== 'gps' ? 1 : 0) - skinT) * ease(5);
+  skinT += ((sel && !BAYS[sel].outside ? 1 : 0) - skinT) * ease(5);
   for (const m of skin) {
     m.opacity = 1 - 0.85 * skinT;
     m.depthWrite = skinT < 0.5;
@@ -764,8 +778,8 @@ function frame() {
   for (const [k, b] of Object.entries(bays)) {
     const L = bayLook(k);
     b.a += (L.a - b.a) * ease(8);
-    b.fill.color.setHex(L.color); b.edges.color.setHex(L.color);
-    b.fill.opacity = 0.24 * b.a; b.edges.opacity = 0.9 * b.a;
+    for (const f of b.fills) { f.color.setHex(L.color); f.opacity = 0.24 * b.a; }
+    for (const e of b.edges) { e.color.setHex(L.color); e.opacity = 0.9 * b.a; }
   }
   drawPred(ease(4));
   renderer.render(scene, camera);
