@@ -1278,6 +1278,8 @@ function fcWarn() {
   return null;
 }
 
+// 모드 색 — 자동 비행은 파랑, 복귀·정지 계열은 노랑, KILL 은 빨강
+const MODE_TONE = { AUTO: 'blue', RTL: 'warn', BRAKE: 'warn' };
 // 모드 글자 — 칸에 들어갈 때까지 줄인다 (STABILIZED 같은 긴 이름)
 function fitMode() {
   const e = $('mode');
@@ -1293,7 +1295,9 @@ function render() {
   renderStrip(d);
   txt('spd', d.groundspeed != null ? d.groundspeed.toFixed(0) : '0');
   $('spd').classList.toggle('off', d.groundspeed == null);
-  const md = (d.mode || '—').replace(/^AUTO\./, '');   // AUTO.RTL → RTL
+  const killed = d.system_status === 8;   // KILL — FC 가 비행 종료 상태를 알린다 (스위치·페일세이프)
+  const md = killed ? 'KILL' : (d.mode || '—').replace(/^AUTO\./, '');   // AUTO.RTL → RTL
+  $('mode').className = killed ? 'bad' : MODE_TONE[md] || '';
   if ($('mode').textContent !== md) { txt('mode', md); fitMode(); }
   const arm = $('arm');
   txt('arm', !on ? '연결 없음' : d.armed ? (d.landed === 2 ? '비행 중' : '시동') : '대기');
