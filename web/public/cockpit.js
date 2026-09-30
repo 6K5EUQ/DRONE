@@ -834,6 +834,34 @@ $('info').addEventListener('click', (e) => {
 });
 
 // ── 탭·타일 ──────────────────────────────────────────────────────────
+// 이동 거리 — 시동 뒤 실제로 움직인 길이(수평). 제자리 GPS 흔들림은 빼려고 0.5 m/s 넘게 움직일 때만 더한다.
+const hav = (a, b, c, d) => { const R = 6371000, r = Math.PI / 180, x = Math.sin((c - a) * r / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin((d - b) * r / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+const trav = { m: 0, last: null, armed: false, now: null };   // now — render 마다 갱신 (탭과 무관하게 잰다)
+function travelled(d) {
+  if (pb.on && pb.fl) {
+    const F = pb.fl, ix = F.ix;
+    if (!F.cum) {   // 칸마다 누적 거리를 한 번 굽는다
+      F.cum = []; let m = 0, p = null;
+      for (const r of F.rows) {
+        const la = r[ix.lat], lo = r[ix.lon];
+        if (la != null && lo != null) {
+          if (p && r[ix.armed] && (r[ix.groundspeed] || 0) > 0.5) m += hav(p[0], p[1], la, lo);
+          p = [la, lo];
+        }
+        F.cum.push(m);
+      }
+    }
+    return F.cum[Math.max(0, Math.min(F.cum.length - 1, Math.floor(S.pos * F.hz)))];
+  }
+  if (d.armed && !trav.armed) { trav.m = 0; trav.last = null; }
+  trav.armed = !!d.armed;
+  if (d.lat != null && d.lon != null) {
+    if (trav.last && d.armed && (d.groundspeed || 0) > 0.5) trav.m += hav(trav.last[0], trav.last[1], d.lat, d.lon);
+    trav.last = [d.lat, d.lon];
+  }
+  return d.armed || trav.m ? trav.m : null;
+}
+const dist = (m) => m == null ? ['—', ''] : m >= 1000 ? [(m / 1000).toFixed(2), 'km'] : [m.toFixed(0), 'm'];
 const TILES = {
   sum: (d) => [
     ['alt', '고도', num(d.alt, 1), 'm'],
@@ -847,6 +875,8 @@ const TILES = {
     ['spd', '대지속도', num(d.groundspeed, 1), 'm/s'],
     ['climb', '상승률', num(d.climb, 1), 'm/s'],
     ['pin', '홈 거리', num(geo.home), 'm'],
+    ['trip', '이동 거리', ...dist(trav.now)],
+    ['volt', '전압', num(d.volt, 1), 'V'],
     ['bat', '배터리', num(d.batt_pct), '%', lvl(d.batt_pct, 35, 20)],
   ],
   pwr: () => [],
@@ -1279,6 +1309,7 @@ new ResizeObserver(() => fitMode()).observe(document.querySelector('.spd'));
 // ── 상태 반영 ────────────────────────────────────────────────────────
 function render() {
   const on = !!S.live, d = D();
+  trav.now = travelled(d);
   updatePred();
   renderHud(d);
   renderStrip(d);
