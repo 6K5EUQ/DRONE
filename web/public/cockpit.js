@@ -1231,19 +1231,6 @@ function renderStrip(d) {
   const mt = d.motors || {}, vs = ['LF', 'RF', 'LB', 'RB'].map((k) => mt[k]).filter((v) => v != null);
   const spread = vs.length ? Math.max(...vs) - Math.min(...vs) : null;
   const avg = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
-  for (const k of ['LF', 'RF', 'LB', 'RB']) {
-    const v = mt[k], rot = $('rot-' + k), arm = $('arm-' + k), t = $('mv-' + k);
-    // 크기·짙기는 비행에 쓰는 40~90% 구간을 편다 (live.js 와 같다)
-    const f = v == null ? 0 : Math.max(0, Math.min(1, (v - 40) / 50));
-    const ml = thr(v);
-    rot.setAttribute('r', v == null ? 18 : (13 + f * 12).toFixed(1));
-    const L = 86 - f * 44;
-    rot.style.fill = ml === 'bad' ? `hsl(0 70% ${L.toFixed(0)}%)` : ml === 'warn' ? `hsl(40 85% ${L.toFixed(0)}%)` : `hsl(240 3% ${L.toFixed(0)}%)`;
-    arm.style.strokeWidth = (5 + f * 8).toFixed(1);
-    arm.setAttribute('class', 'arm' + (ml ? ' ' + ml : ''));
-    t.setAttribute('class', 'mv' + (L < 60 ? ' hi' : ''));
-    t.textContent = v == null ? '—' : v.toFixed(0);
-  }
   html('st-mspread', u(spread, 1, '%p'));
   sc('sc-mspread', spread == null ? '' : spread > SPREAD_BAD ? 'bad' : spread > SPREAD_WARN ? 'warn' : '');
   html('st-mavg', u(avg, 0, '%'));

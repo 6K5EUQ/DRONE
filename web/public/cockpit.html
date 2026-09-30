@@ -60,19 +60,11 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
 #hudHz, #hudRoll { transform-origin: 0 0; transition: transform .25s linear; }
 
 /* 계기판 — 3칸. 모터 그림이 두 칸, 편차·평균이 셋째 칸 */
-.strip { flex: 1 1 auto; display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: auto auto 1fr; gap: 12px 8px; text-align: center; min-height: 0; }
+.strip { flex: 1 1 auto; display: grid; grid-template-columns: repeat(2, 1fr); align-content: start; gap: 12px 8px; text-align: center; min-height: 0; }
 .strip .sc b { display: block; font-size: clamp(28px, 2.9vw, 42px); font-weight: 500; white-space: nowrap; }   /* 좁은 패널에서 넘치지 않게 폭 따라 */
 .strip .sc b small { font-size: .62em; color: var(--dim); margin-left: 1px; font-weight: 500; }
 .strip .sc span { font-size: clamp(13px, 1.35vw, 19.5px); color: var(--dim); }
 .strip .sc.warn b { color: var(--warn); } .strip .sc.bad b { color: var(--bad); }
-.strip .mframe { grid-column: 1 / 3; width: 100%; height: 100%; min-height: 150px; overflow: visible; }
-.mframe .fuse { stroke: var(--track); stroke-width: 8; stroke-linecap: round; fill: none; }
-.mframe .nose { fill: var(--track); }
-.mframe .arm { stroke: var(--track); stroke-width: 5; stroke-linecap: round; }
-.mframe .arm.warn { stroke: var(--warn); } .mframe .arm.bad { stroke: var(--bad); }
-.mframe .rot { fill: #dcdcdf; }
-.mframe .mv { font: 600 15px var(--font); fill: var(--ink2); text-anchor: middle; dominant-baseline: central; }
-.mframe .mv.hi { fill: #fff; }
 
 /* ── 우: 무대 ── */
 .main { position: relative; min-width: 0; min-height: 0; background: radial-gradient(ellipse 70% 60% at 50% 58%, #fbfbfc 0%, var(--stage) 70%, #e6e6ea 100%); overflow: hidden; }
@@ -282,8 +274,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
   .pane, .main, #info { grid-column: 1; grid-row: auto; }
   .main { order: 1; height: 58vh; }
   .pane { order: 2; border-right: 0; padding: 14px 16px; overflow: visible; }
-  .strip .mframe { height: auto; min-height: 0; max-height: 220px; }
-  .strip .sc b { font-size: 42px; } .strip .sc span { font-size: 19.5px; }   /* 폰 — 남은 높이가 없으니 그림은 폭에 맞춘 적당한 크기로 */
+    .strip .sc b { font-size: 42px; } .strip .sc span { font-size: 19.5px; }   /* 폰 — 패널이 화면 폭이라 줄이지 않는다 */
   #info { order: 3; width: auto; max-height: none; margin: 0 10px 10px; justify-self: stretch; }
   .dock { order: 4; overflow-x: auto; padding: 0 8px; position: sticky; bottom: 0; }
   body.intro .main { height: auto; }
@@ -358,16 +349,6 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
       <div class="sc" id="sc-batt"><b class="num" id="st-batt">—</b><span>배터리</span></div>
       <div class="sc" id="sc-mspread"><b class="num" id="st-mspread">—</b><span>모터 편차</span></div>
       <div class="sc" id="sc-mavg"><b class="num" id="st-mavg">—</b><span>모터 평균</span></div>
-      <svg class="mframe" viewBox="0 0 280 260" aria-label="모터">
-        <path class="fuse" d="M140 80 L140 180"/>
-        <path class="nose" d="M140 48 L130 68 L150 68 Z"/>
-        <path class="arm" id="arm-LF" d="M140 130 L50 36"/><path class="arm" id="arm-RF" d="M140 130 L230 36"/>
-        <path class="arm" id="arm-LB" d="M140 130 L50 224"/><path class="arm" id="arm-RB" d="M140 130 L230 224"/>
-        <circle class="rot" id="rot-LF" cx="50" cy="36" r="18"/><circle class="rot" id="rot-RF" cx="230" cy="36" r="18"/>
-        <circle class="rot" id="rot-LB" cx="50" cy="224" r="18"/><circle class="rot" id="rot-RB" cx="230" cy="224" r="18"/>
-        <text class="mv" id="mv-LF" x="50" y="36">—</text><text class="mv" id="mv-RF" x="230" y="36">—</text>
-        <text class="mv" id="mv-LB" x="50" y="224">—</text><text class="mv" id="mv-RB" x="230" y="224">—</text>
-      </svg>
     </div>
 
     <div class="hud">
