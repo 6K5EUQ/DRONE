@@ -122,6 +122,19 @@ body.intro #htag, .main.mapmode #htag { display: none; }
 /* 로고 — 시작 페이지는 기체 아래 가운데(날아가면 사라진다), 대시보드는 도크 왼쪽 */
 #brandIntro { position: absolute; left: 50%; bottom: 40px; width: 150px; height: 30px; transform: translateX(-50%); color: var(--muted); z-index: 2; pointer-events: none; opacity: 0; transition: opacity .4s; }
 body.intro:not(.launch) #brandIntro { opacity: 1; }
+/* 첫 화면 워드마크 — 왼쪽에서 번개처럼 긋고 들어와 멈춘 뒤, 빛줄기가 한 번 훑고 지나간다 */
+body.intro:not(.launch) #brandIntro {
+  animation: brandSwish .5s cubic-bezier(.15, .9, .2, 1) .35s both, brandGlint .9s ease-in-out .9s both;
+  -webkit-mask-image: linear-gradient(105deg, #000 0 42%, rgba(0,0,0,.1) 50%, #000 58% 100%); mask-image: linear-gradient(105deg, #000 0 42%, rgba(0,0,0,.1) 50%, #000 58% 100%);
+  -webkit-mask-size: 300% 100%; mask-size: 300% 100%;
+}
+@keyframes brandSwish {
+  0% { opacity: 0; transform: translateX(calc(-50% - 160px)) skewX(-28deg); filter: blur(6px); }
+  60% { opacity: 1; transform: translateX(calc(-50% + 8px)) skewX(-8deg); filter: blur(0); }
+  100% { opacity: 1; transform: translateX(-50%) skewX(0); filter: blur(0); }
+}
+@keyframes brandGlint { from { -webkit-mask-position: 100% 0; mask-position: 100% 0; } to { -webkit-mask-position: 0 0; mask-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { body.intro:not(.launch) #brandIntro { animation: none; } }
 .dock a.brand-dock { width: auto; padding: 0 10px; }
 .dock .brand { width: 104px; height: 21px; color: #fff; display: block; }
 /* ── 도크 — 라이트 모드에서도 검정 ── */
