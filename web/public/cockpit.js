@@ -366,7 +366,8 @@ const MOT_WARN = 70, MOT_BAD = 80;
 const thr = (v) => v == null ? '' : v >= MOT_BAD ? 'bad' : v >= MOT_WARN ? 'warn' : '';
 const THR_COLOR = { '': 0x5a5d63, warn: 0xd99a06, bad: 0xdc2626 };
 const callEls = new Map();
-const MOTOR_OUT = new Set(['LF', 'RF', 'LB', 'RB']), CALL_OUT = 50;   // px
+const MOTOR_OUT = new Set(['LF', 'RF', 'LB', 'RB']), CALL_OUT = 26;   // 원판 밖에서 라벨 반 폭만큼 더(px)
+const ROTOR_R = 0.1524, tmpW = new THREE.Vector3(), tmpC = new THREE.Vector3(), tmpS = new THREE.Vector3();
 function renderCalls() {
   let want = sel || mode !== '3d' || !tab ? [] : CALLS[tab](D());
   if (!sel && mode === '3d' && tab !== 'pwr' && tab !== 'fly') {
@@ -395,7 +396,7 @@ function placeCalls() {
   const moving = goal.on && Math.abs(goal.yaw - cam.yaw) + Math.abs(goal.tilt - cam.tilt) > 0.08;
   // 모터 라벨은 모터 중심이 아니라 기체 중심에서 바깥쪽으로 밀어 둔다 — 멀리 보면 네 개가
   // 한데 뭉쳐 겹친다. 화면에서 같은 거리(px)만큼 밀어 줌과 상관없이 떨어져 보이게.
-  attitude.getWorldPosition(tmpV); tmpV.project(camera);
+  attitude.getWorldPosition(tmpC); tmpV.copy(tmpC).project(camera);
   const cx = (tmpV.x + 1) / 2 * r.width, cy = (1 - tmpV.y) / 2 * r.height;
   for (const [a, el] of callEls) {
     const o = anchors[a];
@@ -403,6 +404,11 @@ function placeCalls() {
     o.getWorldPosition(tmpV); tmpV.project(camera);
     let x = (tmpV.x + 1) / 2 * r.width, y = (1 - tmpV.y) / 2 * r.height;
     if (MOTOR_OUT.has(a)) {
+      // 로터 원판 바깥 — 기체 중심→로터 방향으로 원판 반지름의 1.25배 떨어진 점을 투영하고,
+      // 라벨 크기만큼 화면에서 더 민다. 어떤 줌에서도 박스가 원판 밖에 있다.
+      o.getWorldPosition(tmpW); tmpW.sub(tmpC); tmpW.y = 0; tmpW.setLength(ROTOR_R * 1.25 * o.getWorldScale(tmpS).x);
+      o.getWorldPosition(tmpV); tmpV.add(tmpW).project(camera);
+      x = (tmpV.x + 1) / 2 * r.width; y = (1 - tmpV.y) / 2 * r.height;
       const dx = x - cx, dy = y - cy, n = Math.hypot(dx, dy) || 1;
       x += dx / n * CALL_OUT; y += dy / n * CALL_OUT;
     }
