@@ -44,7 +44,8 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
 .spd { display: flex; align-items: flex-end; gap: 18px; }
 .spd .v { font-size: 96px; font-weight: 300; line-height: .9; letter-spacing: -.04em; }
 .spd .v.off { color: var(--track); }
-.spd .u { font-size: 13px; font-weight: 700; letter-spacing: .02em; color: var(--ink2); margin-top: 6px; }
+.spd .spdv { display: flex; align-items: flex-end; gap: 6px; }   /* 단위는 숫자 오른쪽 아래 — 세로 칸을 속도가 다 쓴다 */
+.spd .u { font-size: 13px; font-weight: 700; letter-spacing: .02em; color: var(--ink2); margin-bottom: 4px; }
 .spd .arm { flex: 1 1 0; min-width: 0; margin-bottom: 4px; text-align: right; }
 .spd .arm b { display: block; font-size: 13px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }
 .spd .arm b.on { color: var(--ok); } .spd .arm b.air { color: var(--acc); }
@@ -198,7 +199,6 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, brandGlint .45s 
 /* 로그 재생 */
 .pbbtn { display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 5px 12px; font-size: 13px; font-weight: 600; color: var(--ink2); cursor: pointer; }
 .pbbtn svg { width: 12px; height: 12px; fill: currentColor; }
-body.replay .pbbtn { color: var(--muted); cursor: default; }
 .ident .replay { display: none; margin-left: auto; font-style: normal; font-size: 12px; font-weight: 700; color: #fff; background: var(--acc); border-radius: 5px; padding: 2px 8px; white-space: nowrap; }
 .ident .replay i { font-style: normal; font-weight: 500; }
 body.replay .ident .replay { display: inline-block; }
@@ -337,7 +337,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
       </span>
     </div>
     <div class="spd">
-      <div><div class="v num off" id="spd">0</div><div class="u">m/s</div></div>
+      <div class="spdv"><div class="v num off" id="spd">0</div><div class="u">m/s</div></div>
       <div class="arm"><b id="arm">연결 없음</b><span id="mode">—</span></div>
     </div>
 

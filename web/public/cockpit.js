@@ -1097,7 +1097,7 @@ $('pbSheet').addEventListener('click', (e) => {
   const b = e.target.closest('[data-log]');
   if (b) pbStart(b.dataset.log, b.dataset.utc);
 });
-$('pbBtn').onclick = () => (pb.on ? null : pbSheet($('pbSheet').hidden));
+$('pbBtn').onclick = () => pbSheet($('pbSheet').hidden);   // 재생 중에도 연다 — 고르면 그 파일로 바로 바뀐다
 
 async function pbStart(name, utc) {
   pbSheet(false);
@@ -1142,7 +1142,8 @@ async function pbStop(keepBar) {
   clearInterval(pb.timer);
   const was = pb.on;
   Object.assign(pb, { on: false, playing: false, fl: null });
-  if (was) fetch('/api/playback/close').catch(() => {});
+  // 다른 로그로 바꿀 때는 닫기가 끝난 뒤 연다 — 안 기다리면 늦게 닿은 닫기가 새 세션을 닫는다
+  if (was) { const c = fetch('/api/playback/close').catch(() => {}); if (keepBar) await c; }
   document.body.classList.remove('replay');
   if (!keepBar) { $('pbBar').hidden = true; document.querySelector('.main').classList.remove('pbmode'); }
   // 실시간으로 돌아간다 — 로그의 항적을 지우고 다시 받는다
@@ -1285,8 +1286,12 @@ function render() {
   $('spd').classList.toggle('off', d.groundspeed == null);
   const killed = d.system_status === 8;   // KILL — FC 가 비행 종료 상태를 알린다 (스위치·페일세이프)
   const md = killed ? 'KILL' : (d.mode || '—').replace(/^AUTO\./, '');   // AUTO.RTL → RTL
-  $('mode').className = killed ? 'bad' : MODE_TONE[md] || '';
-  if ($('mode').textContent !== md) { txt('mode', md); fitMode(); }
+  // RTL — FC 가 스스로 건 것(페일세이프)이면 AUTO.RTL 빨강, 조종사가 건 것이면 MANUAL.RTL 노랑.
+  //    재생은 로그의 판단(rtl_auto)을, 실시간은 HEARTBEAT 상태 CRITICAL/EMERGENCY(페일세이프 중)를 본다.
+  const rtl = !killed && md === 'RTL', rtlAuto = rtl && (d.rtl_auto != null ? d.rtl_auto : d.system_status === 5 || d.system_status === 6);
+  $('mode').className = killed ? 'bad' : rtl ? (rtlAuto ? 'bad' : 'warn') : MODE_TONE[md] || '';
+  const mdShown = rtl ? (rtlAuto ? 'AUTO.RTL' : 'MANUAL.RTL') : md;
+  if ($('mode').textContent !== mdShown) { txt('mode', mdShown); fitMode(); }
   const arm = $('arm');
   txt('arm', !on ? '연결 없음' : d.armed ? (d.landed === 2 ? '비행 중' : '시동') : '대기');
   arm.className = on && d.armed ? (d.landed === 2 ? 'air' : 'on') : '';

@@ -105,7 +105,9 @@ def load_flight(path):
             ctun.append((ts, msg.Alt, getattr(msg, 'CRt', None),
                          getattr(msg, 'ThO', None)))
         elif t == 'MODE':
-            mode.append((ts, COPTER_MODE.get(int(msg.Mode), 'MODE_%d' % msg.Mode)))
+            # Rsn(모드 바뀐 이유) 1=조종기 2=지상국, 그 밖은 FC 가 스스로(페일세이프 등)
+            mode.append((ts, COPTER_MODE.get(int(msg.Mode), 'MODE_%d' % msg.Mode),
+                         getattr(msg, 'Rsn', None)))
         elif t == 'EV':
             ev_arm.append((ts, msg.Id))
         elif t == 'MSG':
@@ -172,7 +174,7 @@ def load_flight(path):
     frames = []
     track = []
     home = None
-    last_mode = None
+    last_mode = last_rsn = None
     mode_i = 0
 
     for i in range(n_frames):
@@ -239,10 +241,12 @@ def load_flight(path):
         d['armed'] = armed_at(ts)
 
         while mode_i < len(mode) and mode[mode_i][0] <= ts:
-            last_mode = mode[mode_i][1]
+            last_mode, last_rsn = mode[mode_i][1], mode[mode_i][2]
             mode_i += 1
         if last_mode:
             d['mode'] = last_mode
+            if last_mode == 'RTL' and last_rsn is not None:
+                d['rtl_auto'] = int(last_rsn) not in (1, 2)
 
         frames.append({'t': round(ts - t0, 2), 'd': d})
 
