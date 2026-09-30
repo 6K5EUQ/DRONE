@@ -1184,6 +1184,19 @@ $('pbSeek').addEventListener('input', (e) => { pb.seeking = true; pb.t = pb.dur 
 $('pbSeek').addEventListener('change', () => { pb.seeking = false; pb.last = performance.now(); });
 
 // ── HUD ──────────────────────────────────────────────────────────────
+// 자세계는 좌측 패널 남은 높이를 다 채운다 — 상자 비율에 맞춰 보는 창을 늘린다(짧은 변 116).
+new ResizeObserver(([e]) => {
+  const { width: w, height: h } = e.contentRect;
+  if (!w || !h) return;
+  const vw = w >= h ? 116 * w / h : 116, vh = w >= h ? 116 : 116 * h / w;
+  $('att').setAttribute('viewBox', `${-vw / 2} ${-vh / 2} ${vw} ${vh}`);
+  for (const id of ['attClipR', 'attEdge']) {
+    const r = $(id); r.setAttribute('x', -vw / 2 + 2); r.setAttribute('y', -vh / 2 + 2);
+    r.setAttribute('width', vw - 4); r.setAttribute('height', vh - 4);
+  }
+  const L = Math.min(60, vw / 2 - 12);   // 기준 막대가 틀 밖으로 안 나가게
+  $('attRef').setAttribute('d', `M${-L} 0 H-11 L-6 6 L0 0 L6 6 L11 0 H${L}`);
+}).observe(document.querySelector('.hud'));
 function renderHud(d) {
   const r = d.roll || 0, p = Math.max(-40, Math.min(40, d.pitch || 0));
   // 지평선 — 1° 가 1.6px. 기체가 오른쪽으로 기울면 지평선은 반대로 돈다
