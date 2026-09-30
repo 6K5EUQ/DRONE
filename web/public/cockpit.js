@@ -1224,8 +1224,6 @@ const SPREAD_WARN = 10, SPREAD_BAD = 20, MAVG_WARN = 65, MAVG_BAD = 75;
 function renderStrip(d) {
   const sc = (id, c) => { $(id).className = 'sc' + (c ? ' ' + c : ''); };
   const u = (v, n, unit) => v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(n)}<small>${unit}</small>`;
-  html('st-batt', u(d.batt_pct, 0, '%'));
-  sc('sc-batt', d.batt_pct == null ? '' : d.batt_pct < 20 ? 'bad' : d.batt_pct < 35 ? 'warn' : '');
   html('st-cur', u(d.cur, 1, 'A'));
   sc('sc-cur', d.cur > 56 ? 'bad' : d.cur > 40 ? 'warn' : '');
   const mt = d.motors || {}, vs = ['LF', 'RF', 'LB', 'RB'].map((k) => mt[k]).filter((v) => v != null);
@@ -1280,6 +1278,13 @@ function fcWarn() {
   return null;
 }
 
+// 모드 글자 — 칸에 들어갈 때까지 줄인다 (STABILIZED 같은 긴 이름)
+function fitMode() {
+  const e = $('mode');
+  e.style.fontSize = '';
+  for (let f = parseFloat(getComputedStyle(e).fontSize); e.scrollWidth > e.clientWidth && f > 14; f -= 2) e.style.fontSize = f - 2 + 'px';
+}
+new ResizeObserver(() => fitMode()).observe(document.querySelector('.spd'));
 // ── 상태 반영 ────────────────────────────────────────────────────────
 function render() {
   const on = !!S.live, d = D();
@@ -1288,7 +1293,8 @@ function render() {
   renderStrip(d);
   txt('spd', d.groundspeed != null ? d.groundspeed.toFixed(0) : '0');
   $('spd').classList.toggle('off', d.groundspeed == null);
-  txt('mode', d.mode || '—');
+  const md = (d.mode || '—').replace(/^AUTO\./, '');   // AUTO.RTL → RTL
+  if ($('mode').textContent !== md) { txt('mode', md); fitMode(); }
   const arm = $('arm');
   txt('arm', !on ? '연결 없음' : d.armed ? (d.landed === 2 ? '비행 중' : '시동') : '대기');
   arm.className = on && d.armed ? (d.landed === 2 ? 'air' : 'on') : '';
