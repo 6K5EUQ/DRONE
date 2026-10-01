@@ -1223,25 +1223,9 @@ function renderStrip(d) {
   html('st-mavg', u(avg, 0, '%'));
   sc('sc-mavg', avg == null ? '' : avg > MAVG_BAD ? 'bad' : avg > MAVG_WARN ? 'warn' : '');
   html('st-alt', u(d.alt, 1, 'm'));
-  const ft = flightTime(d);
-  txt('st-ftime', ft == null ? '—' : hms(ft));
   const w = fcWarn(), we = $('fcWarn');
   we.hidden = !w;
   if (w) we.textContent = w.text.replace(/^\s*\[[^\]]*\]\s*/, '');   // [모듈] 머리는 뗀다
-}
-// 비행 시간 — 시동부터. 재생은 로그에서 처음 시동 걸린 칸을 찾고, 실시간은 시동을 본 순간부터 잰다.
-let armT = null;
-const hms = (s) => [s / 3600, s / 60 % 60, s % 60].map((v) => String(Math.floor(v)).padStart(2, '0')).join(':');
-function flightTime(d) {
-  if (pb.on && pb.fl) {
-    const F = pb.fl, c = F.ix.armed;
-    if (c == null) return null;
-    if (F.armT === undefined) { const i = F.rows.findIndex((r) => r[c]); F.armT = i < 0 ? null : i / F.hz; }
-    return F.armT != null && S.pos >= F.armT ? S.pos - F.armT : null;
-  }
-  if (!d.armed) { armT = null; return null; }
-  if (armT == null) armT = Date.now() / 1000;
-  return Date.now() / 1000 - armT;
 }
 // FC 경고 — 최근 15초 안의 WARNING 이상 한 줄. 없으면 칸도 없다.
 const SEV_N = { EMERG: 0, ALERT: 1, CRIT: 2, ERROR: 3, WARN: 4, WARNING: 4 };

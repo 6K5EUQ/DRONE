@@ -62,13 +62,13 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
 #hudHz, #hudRoll { transform-origin: 0 0; transition: transform .25s linear; }
 
 /* 계기판 — 3칸. 모터 그림이 두 칸, 편차·평균이 셋째 칸 */
-.strip { flex: 1 1 auto; margin-top: clamp(10px, 3vh, 28px); display: grid; grid-template-columns: repeat(2, 1fr); align-content: start; gap: 12px 8px; text-align: center; min-height: 0; }
-.strip .sc b { display: block; font-size: clamp(24px, min(2.9vw, 4.2vh), 42px); font-weight: 500; white-space: nowrap; }   /* 좁은 패널에서 넘치지 않게 폭 따라 */
+.strip { flex: 1 1 auto; margin-top: 10px; display: flex; flex-direction: column; justify-content: space-evenly; min-height: 0; }   /* 이름 왼쪽 · 값 오른쪽, 남은 높이에 고르게 */
+.strip .sc { display: flex; justify-content: space-between; align-items: baseline; }
+.strip .sc b { order: 2; display: block; font-size: clamp(26px, min(2.7vw, 4.6vh), 38px); font-weight: 300; white-space: nowrap; }   /* 좁은 패널에서 넘치지 않게 폭 따라 */
 .strip .sc b small { font-size: .62em; color: var(--dim); margin-left: 1px; font-weight: 500; }
-.strip .sc span { font-size: clamp(12px, min(1.35vw, 2vh), 19.5px); color: var(--dim); }
+.strip .sc span { order: 1; font-size: 13px; letter-spacing: .08em; color: var(--muted); }
 .fcwarn { color: var(--bad); font-size: 13px; font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .strip .sc.warn b { color: var(--warn); } .strip .sc.bad b { color: var(--bad); }
-.strip .sc.wide { grid-column: 1 / 3; }
 
 /* ── 우: 무대 ── */
 .main { position: relative; min-width: 0; min-height: 0; background: radial-gradient(ellipse 70% 60% at 50% 58%, #fbfbfc 0%, var(--stage) 70%, #e6e6ea 100%); overflow: hidden; }
@@ -273,7 +273,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
   .pane, .main, #info { grid-column: 1; grid-row: auto; }
   .main { order: 1; height: 58vh; }
   .pane { order: 2; border-right: 0; padding: 14px 16px; overflow: visible; }
-    .strip .sc b { font-size: 42px; } .strip .sc span { font-size: 19.5px; }   /* 폰 — 패널이 화면 폭이라 줄이지 않는다 */
+    .strip { gap: 14px; } .strip .sc b { font-size: 38px; }   /* 폰 — 패널이 화면 폭이라 줄이지 않는다 */
   #info { order: 3; width: auto; max-height: none; margin: 0 10px 10px; justify-self: stretch; }
   .dock { order: 4; overflow-x: auto; padding: 0 8px; position: sticky; bottom: 0; }
   body.intro .main { height: auto; }
@@ -347,7 +347,6 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
       <div class="sc" id="sc-cur"><b class="num" id="st-cur">—</b><span>전류</span></div>
       <div class="sc" id="sc-mspread"><b class="num" id="st-mspread">—</b><span>모터 편차</span></div>
       <div class="sc" id="sc-mavg"><b class="num" id="st-mavg">—</b><span>모터 평균</span></div>
-      <div class="sc wide" id="sc-ftime"><b class="num" id="st-ftime">—</b><span>비행 시간</span></div>
     </div>
     <div class="fcwarn" id="fcWarn" hidden></div>
 
