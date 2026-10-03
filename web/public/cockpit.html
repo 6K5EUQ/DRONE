@@ -284,7 +284,8 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
   .main .bar #clk { display: none; }
   .bar { padding: 0 16px; gap: 12px; font-size: 13px; }
   .tabs { top: 52px; }
-  .tabs button { font-size: 14px; padding: 6px 8px; }
+  .tabs button { font-size: 14px; padding: 6px 8px; white-space: nowrap; }
+  .tabs { overflow-x: auto; scrollbar-width: none; justify-content: safe center; padding: 0 8px; }   /* 탭이 많아 넘치면 글자를 세로로 접지 말고 옆으로 민다 */
   .tiles { justify-content: flex-start; overflow-x: auto; bottom: 12px; }
   .main.pbmode .tiles { bottom: 80px; }
   .tile { width: 104px; flex: none; }
