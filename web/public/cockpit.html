@@ -133,9 +133,9 @@ body.intro:not(.launch) #brandIntro {
   color: var(--ink2); z-index: 50; pointer-events: none; opacity: 0;
   -webkit-mask-image: linear-gradient(105deg, #000 0 42%, rgba(0,0,0,.08) 50%, #000 58% 100%); mask-image: linear-gradient(105deg, #000 0 42%, rgba(0,0,0,.08) 50%, #000 58% 100%);
   -webkit-mask-size: 300% 100%; mask-size: 300% 100%; }
-body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, brandGlint .45s ease-in-out .75s both, lpOut .26s cubic-bezier(.7, 0, 1, .5) 1.3s forwards; }   /* 가운데서 옅게 떠올라 진해지고, 빛이 훑은 뒤 옆으로 날카롭게 긋고 사라진다 */
+body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, brandGlint .45s ease-in-out .75s both, lpOut .5s ease-in 1.3s forwards; }   /* 가운데서 옅게 떠올라 진해지고, 빛이 훑은 뒤 제자리에서 흐려진다 */
 @keyframes lpIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes lpOut { to { opacity: 0; transform: translate(calc(-50% + 34vw), -50%) skewX(-38deg) scaleX(1.5); filter: blur(8px); } }
+@keyframes lpOut { to { opacity: 0; transform: translate(-50%, -50%); filter: blur(10px); } }   /* 제자리에서 흐려지며 사라진다 */
 @keyframes brandGlint { from { -webkit-mask-position: 100% 0; mask-position: 100% 0; } to { -webkit-mask-position: 0 0; mask-position: 0 0; } }
 .dock a.brand-dock { width: auto; padding: 0 10px; }
 .dock .brand { width: 104px; height: 21px; color: #fff; display: block; }
