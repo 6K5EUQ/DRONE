@@ -705,6 +705,16 @@ def main():
     Handler.public = roots
     Handler.pb = LogPlayback()
     srv = ThreadingHTTPServer(('127.0.0.1', args.http), Handler)
+    # 브라우저는 localhost 를 ::1(IPv6) 로 먼저 찾는다 — 127.0.0.1 만 들으면 「연결 거부」가 뜬다.
+    # 같은 PC 안의 ::1 도 같이 듣는다 (밖으로는 여전히 안 열린다).
+    try:
+        class _V6(ThreadingHTTPServer):
+            address_family = socket.AF_INET6
+        srv6 = _V6(('::1', args.http), Handler)
+        srv6.daemon_threads = True
+        threading.Thread(target=srv6.serve_forever, daemon=True).start()
+    except OSError:
+        pass
     print('[http] http://localhost:%d  (127.0.0.1 만 듣는다)' % args.http,
           flush=True)
     for i, p in enumerate(roots):
