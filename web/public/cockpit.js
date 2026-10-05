@@ -1069,7 +1069,9 @@ async function pbSheet(open) {
   sh.innerHTML = '<div class="ih"><b>비행 재생</b><button class="x" id="pbSheetX" aria-label="닫기">×</button></div><div class="pbmsg">불러오는 중</div>';
   $('pbSheetX').onclick = () => pbSheet(false);
   try {
-    const rows = (await (await fetch('/api/logs', { cache: 'no-store' })).json())
+    const lj = await (await fetch('/api/logs', { cache: 'no-store' })).json();
+    // 웹은 목록을 배열로, 이 PC 의 트래커는 {logs:[…]} 로 준다
+    const rows = (Array.isArray(lj) ? lj : lj.logs || [])
       .filter((x) => !x.error && !x.corrupt)
       .sort((a, b) => (b.utc || '').localeCompare(a.utc || '') || b.name.localeCompare(a.name));
     if (!rows.length) { sh.querySelector('.pbmsg').textContent = '기록 없음'; return; }
@@ -1301,7 +1303,8 @@ async function pollLive(now) {
     }
   } catch { S = { live: false, d: {} }; }
   render();
-  pollTimer = setTimeout(pollLive, S.live ? 1000 : 4000);
+  // 연결 중에는 응답이 오는 대로 바로 다시 묻는다(최소 0.2초) — 1초 간격이면 그만큼 늦게 보였다
+  pollTimer = setTimeout(pollLive, S.live ? 200 : 4000);
 }
 async function loadRec() {
   try {

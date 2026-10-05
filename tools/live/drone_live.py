@@ -549,6 +549,12 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split('?')[0]
         query = self.path.split('?')[1] if '?' in self.path else ''
 
+        # 콕핏(web/public/cockpit.html)을 이 PC 에서 바로 연다 — 웹은 인터넷을 두 번 거쳐 1~3초 늦는다.
+        # 콕핏은 웹서버 이름(/api/live/state)으로 부르므로 같은 상태를 그 이름으로도 낸다.
+        if path in ('/cockpit', '/cockpit/'):
+            path = '/cockpit.html'
+        if path == '/api/live/state':
+            path = '/api/state'
         if path == '/api/state':
             since = None
             want_track = True
@@ -661,7 +667,7 @@ class Handler(BaseHTTPRequestHandler):
             '.css': 'text/css; charset=utf-8',
             '.js': 'application/javascript; charset=utf-8',
             '.json': 'application/json; charset=utf-8',
-            '.png': 'image/png', '.svg': 'image/svg+xml',
+            '.png': 'image/png', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary', '.woff2': 'font/woff2', '.jpg': 'image/jpeg',
             '.ico': 'image/x-icon',
         }.get(os.path.splitext(full)[1], 'application/octet-stream')
         with open(full, 'rb') as fh:
