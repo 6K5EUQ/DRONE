@@ -56,26 +56,33 @@ const decode = async (r) => new TextDecoder('euc-kr').decode(await r.arrayBuffer
   const seen = new Set(), base = new URL(URL_);
   const links = (h) => [...h.matchAll(/(?:src|href|action)=["']([^"'#]+\.aspx[^"']*)["']|location(?:\.href)?\s*=\s*["']([^"']+)["']|window\.open\(\s*["']([^"']+)["']/gi)]
     .map((m) => m[1] || m[2] || m[3]).map((u) => { try { return new URL(u.replace(/&amp;/g, '&'), base).href; } catch { return null; } })
-    .filter((u) => u && new URL(u).host === base.host);
+    .filter((u) => u && new URL(u).host === base.host && /\.(aspx|html?)(\?|$)/i.test(new URL(u).pathname + new URL(u).search.slice(0, 1)));
+  const clean = (x) => x.replace(/[\u0000-\u001f\u007f-\u009f\ufffd]/g, '');
   const hints = (h) => {
     const t = h.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
-    const near = [...t.matchAll(/(.{0,20}(?:님|성명|이름|학생명|사용자).{0,20})/g)].map((m) => m[1].trim()).slice(0, 6);
+    // 이름은 보통 학번 옆에 있다 — 학번이 나오는 자리 앞뒤, 그리고 「님·성명·이름」 둘레
+    const atId = [...t.matchAll(new RegExp('(.{0,25}' + id + '.{0,25})', 'g'))].map((m) => clean(m[1].trim())).slice(0, 4);
+    const near = [...atId, ...[...t.matchAll(/(.{0,20}(?:님|성명|이름|학생명|사용자).{0,20})/g)].map((m) => clean(m[1].trim()))].slice(0, 8);
     const ids = [...h.matchAll(/<(\w+)[^>]*id=["']([^"']*(?:name|Name|NAME|Nm|NM)[^"']*)["'][^>]*>([^<]{0,40})</g)].map((m) => `#${m[2]}=${m[3].trim()}`).slice(0, 6);
     return { near, ids };
   };
-  const show = (label, h) => { const x = hints(h); console.log(`  ${label}\n     근처 ${JSON.stringify(x.near)}\n     id ${JSON.stringify(x.ids)}`); };
+  const show = (label, h) => {
+    const x = hints(h), out = [...new Set(links(h).map((u) => new URL(u).pathname))];
+    console.log(`  ${label}\n     근처 ${JSON.stringify(x.near)}\n     id ${JSON.stringify(x.ids)}\n     이어지는 곳 ${JSON.stringify(out.slice(0, 12))}`);
+  };
   console.log('\n— 이름 찾기 (본인 정보만, 이 터미널에만 출력)');
   show('로그인 응답', html);
-  const queue = links(html).slice(0, 10);
+  const queue = links(html).slice(0, 10);   // 순서대로 열고, 열린 페이지가 가리키는 곳을 뒤에 붙인다
   for (const u of queue) {
-    if (seen.has(u) || seen.size >= 12) continue;
+    if (seen.has(u) || seen.size >= 20) continue;
     seen.add(u);
     try {
       const r = await fetch(u, { ...opt, signal: AbortSignal.timeout(8000), headers: { ...opt.headers, Cookie: jarAll.join('; ') } });
+      if (!/text\/html/i.test(r.headers.get('content-type') || '')) { console.log(`  건너뜀 ${new URL(u).pathname} (${r.headers.get('content-type')})`); continue; }
       const h = r.status === 200 ? await decode(r) : '';
       const title = (h.match(/<title>([^<]*)/i) || [])[1] || '';
       show(`${r.status} ${new URL(u).pathname}${new URL(u).search.slice(0, 40)}  「${title.trim()}」 ${h.length}자`, h);
-      for (const v of links(h)) if (!seen.has(v) && queue.length < 12) queue.push(v);
+      for (const v of links(h)) if (!seen.has(v) && queue.length < 30) queue.push(v);
     } catch (e) { console.log(`  실패 ${new URL(u).pathname}: ${e.message}`); }
   }
 })().catch((e) => { console.error('실패:', e.message); process.exit(1); });
