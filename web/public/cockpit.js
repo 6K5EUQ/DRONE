@@ -266,7 +266,7 @@ canvas.addEventListener('pointermove', (e) => {
   const p = ptrs.get(e.pointerId);
   if (!p) {   // 끌지 않는 중 — 칸 위면 손 모양
     const mouse = e.pointerType === 'mouse';
-    hover = mouse && !intro ? pickBay(e) : null;
+    hover = mouse && !intro && tab === 'sum' ? pickBay(e) : null;   // 부위 강조는 부품 탭에서만
     canvas.style.cursor = (intro ? mouse && fly.t < 0 && hitCraft(e) : hover) ? 'pointer' : '';
     return;
   }
@@ -327,9 +327,7 @@ function bayLook(k) {
   }
   if (sel) return { color: 0x3e6ae1, a: k === sel ? 1 : 0 };
   if (tab === 'sum') return { color: 0x3e6ae1, a: k === hover ? 0.7 : 0.3 };   // 누를 수 있는 부위를 옅게
-  const tb = TAB_INFO[tab];
-  if (tb && tb.bays && tb.bays.includes(k)) return { color: 0x3e6ae1, a: 0.7 };
-  return { color: 0x3e6ae1, a: k === hover ? 0.5 : 0 };
+  return { color: 0x3e6ae1, a: 0 };
 }
 
 // ── 부위 표시 ────────────────────────────────────────────────────────
