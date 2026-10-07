@@ -159,7 +159,7 @@ async function server() {
   ok(ls.d.armed === true && ls.d.alt > 0, '날고 있는 기체가 실시간 상태에 보인다');
   ok(!!(await until((x) => x.job && x.job.leg === 'pickup' && x.job.phase === 'landed')), '본관 도착·착륙');
   const anon = await state();
-  ok(anon.points.length === 6 && anon.job && anon.job.by === undefined && anon.job.pickup === 'main', '비로그인: 지점·구간은 보이고 사람은 안 보인다');
+  ok(anon.points.length === 6 && anon.job && anon.job.by === 'u01' && anon.job.by_name === '박보냄' && anon.can.length === 0, '비로그인: 사용자까지 다 보이고 동작은 없다');
   ok((await act('u01', 'send', { point: 'field' })).s === 200, '기지(대운동장)로 보내기');
   ok(!!(await until((x) => x.job && x.job.leg === 'dest' && x.job.phase === 'landed')), '기지 도착');
   ok((await act('u02', 'done')).s === 200, '기지에서 수거완료');

@@ -253,15 +253,15 @@ function can(a) {
   return out;
 }
 
-/** 사용자(호출한 사람의 이름·학번)는 로그인한 모두에게 보인다 — 지금 누가 쓰는지 알아야 한다 */
+/** 배송은 접속한 누구에게나 다 보인다 — 지점·구간·기체, 그리고 사용자(호출한 사람의 이름·학번)까지.
+ *  내부 사람들이 함께 쓰는 드론이라 지금 누가 쓰는지 모두 알아야 한다 (2026-10-07 결정). 동작만 로그인한 사람 */
 function view(a) {
   const j = S.job;
   return {
     rev: S.rev, service: SERVICE, status: status(),
     me: a && !a.drone ? { id: a.id, name: a.name } : null,
-    // 지점·진행 구간은 공개(남도 배송이 날아가는 것을 본다). 사람(이름·학번)은 로그인한 사람에게만
     points: S.points, fly: simFly(),
-    job: !j ? null : a ? j : { leg: j.leg, phase: j.phase, at: j.at, pickup: j.pickup, dest: j.dest },
+    job: j,
     can: can(a),
   };
 }
