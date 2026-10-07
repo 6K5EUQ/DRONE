@@ -47,6 +47,7 @@ function syncCatalog() {
     C.log('배송 지점 고정 목록 밖이라 버림:', gone.map((p) => p.name).join(', '));
     const j = S.job;
     if (j && [j.pickup, j.dest, j.at].some((id) => id && !pt(id))) { C.log('그 지점을 쓰던 배송도 끝냄', j.id); S.job = null; }
+    save();   // 정리한 목록을 남긴다 — 안 그러면 재시작마다 같은 정리를 되풀이한다
   }
 }
 const placed = (p) => p && p.lat != null && p.lon != null;
