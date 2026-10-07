@@ -1224,20 +1224,17 @@ function renderStrip(d) {
   const u = (v, n, unit) => v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(n)}<small>${unit}</small>`;
   html('st-cur', u(d.cur, 1, 'A'));
   sc('sc-cur', d.cur > 56 ? 'bad' : d.cur > 40 ? 'warn' : '');
-  if (dlvTab()) {   // 배송·테스트 — 모터 대신 남은 거리·예상 시간 (비행 중일 때만 값)
-    const f = (view() || {}).fly;
-    txt('st-mspread-l', '남은 거리'); html('st-mspread', u(f && f.remain, 0, 'm')); sc('sc-mspread', '');
-    txt('st-mavg-l', '예상 시간'); html('st-mavg', f ? mmss(f.eta) : '—'); sc('sc-mavg', '');
-  } else {
-    const mt = d.motors || {}, vs = ['LF', 'RF', 'LB', 'RB'].map((k) => mt[k]).filter((v) => v != null);
-    const spread = vs.length ? Math.max(...vs) - Math.min(...vs) : null;
-    const avg = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
-    txt('st-mspread-l', '모터 편차'); html('st-mspread', u(spread, 1, '%p'));
-    sc('sc-mspread', spread == null ? '' : spread > SPREAD_BAD ? 'bad' : spread > SPREAD_WARN ? 'warn' : '');
-    txt('st-mavg-l', '모터 평균'); html('st-mavg', u(avg, 0, '%'));
-    sc('sc-mavg', avg == null ? '' : avg > MAVG_BAD ? 'bad' : avg > MAVG_WARN ? 'warn' : '');
-  }
+  const mt = d.motors || {}, vs = ['LF', 'RF', 'LB', 'RB'].map((k) => mt[k]).filter((v) => v != null);
+  const spread = vs.length ? Math.max(...vs) - Math.min(...vs) : null;
+  const avg = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
+  html('st-mspread', u(spread, 1, '%p'));
+  sc('sc-mspread', spread == null ? '' : spread > SPREAD_BAD ? 'bad' : spread > SPREAD_WARN ? 'warn' : '');
+  html('st-mavg', u(avg, 0, '%'));
+  sc('sc-mavg', avg == null ? '' : avg > MAVG_BAD ? 'bad' : avg > MAVG_WARN ? 'warn' : '');
   html('st-alt', u(d.alt, 1, 'm'));
+  // 배송 탭의 왼쪽 패널 — 따로 둔 칸 (#dlvSide). 남은 거리·예상 시간은 비행 중일 때만 값
+  const f = (view() || {}).fly;
+  html('dl-alt', u(d.alt, 1, 'm')); html('dl-remain', u(f && f.remain, 0, 'm')); html('dl-eta', f ? mmss(f.eta) : '—');
   const w = fcWarn(), we = $('fcWarn');
   we.hidden = !w;
   if (w) we.textContent = w.text.replace(/^\s*\[[^\]]*\]\s*/, '');   // [모듈] 머리는 뗀다
@@ -1370,7 +1367,7 @@ async function dlvEnter() {
   dlv.satPrev = sat.on; setSat(true);   // 배송은 위성 지도 바닥으로 연다 — 나가면 원래대로
   pollLive(true);                       // 기체를 배송 기체로 바로 바꿔 받는다
   dlvG.visible = true; $('dlvPts').hidden = false;
-  document.body.classList.add('dlvmode'); $('dlvPane').hidden = false;
+  document.body.classList.add('dlvmode');
   dlvDraw(true);
   await dlvPoll();
 }
@@ -1380,7 +1377,7 @@ function dlvLeave() {
   if (!dlv.satPrev) setSat(false);
   pollLive(true);                       // 다시 실제 실시간 상태로
   dlvG.visible = false; $('dlvPts').hidden = true;
-  document.body.classList.remove('dlvmode'); $('dlvPane').hidden = true;
+  document.body.classList.remove('dlvmode');
   render();
 }
 
@@ -1467,8 +1464,8 @@ $('dlvPts').addEventListener('click', (e) => {
 const DLV_STATUS = { busy: '사용 중', ready: '대기 중', down: '사용 불가' };
 function renderDlv() {
   // 상자는 늘 같은 꼴·같은 크기다 — 상태 줄, 지점 격자, 버튼 한 칸. 할 수 없으면 비활성으로만 바뀐다
-  const box = $('dlvPane'); box.hidden = tab !== 'dlv';   // 배송 탭에서만 — 탭을 떠난 뒤 도착한 응답이 다시 띄우지 않게
-  if (box.hidden) return;
+  const box = $('dlvPane');
+  if (tab !== 'dlv') return;   // 배송 탭에서만 — 탭을 떠난 뒤 도착한 응답이 다시 그리지 않게
   const st = view(), me = st && st.me, can = new Set(st ? st.can : []), j = st && st.job;
   const stt = dlv.off ? 'down' : st ? st.status || 'down' : null;   // 첫 응답 전에는 모른다 — 비워 둔다
   // 상태 줄 — 왼쪽 상태, 오른쪽 지금 쓰는 사람 「이름 (학번)」(누구에게나 보인다), 없으면 로그인한 나. 오류는 같은 자리에 빨갛게
