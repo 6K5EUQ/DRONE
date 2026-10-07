@@ -18,6 +18,7 @@ const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+const delivery = require('./delivery');
 
 const REPO = path.dirname(__dirname);
 const PUBLIC = path.join(__dirname, 'public');
@@ -860,11 +861,16 @@ async function route(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
 
+  // 교내 배송 — 학교 계정 로그인과 배송 상태머신 (delivery.js). 405 차단보다 위에 있어야 한다.
+  const dr = delivery.handle(req, res, url);
+  if (dr) return dr;
+
   if (p === '/api/health') {
     return sendJson(req, res, 200, {
       ok: true, logs: catalog.size, fingerprint: FINGERPRINT,
       running, queued: queue.length, upload: UPLOAD_PASSWORD ? 'enabled' : 'disabled',
       preflight: (PREFLIGHT_KEY && PREFLIGHT_PASSWORD) ? 'enabled' : 'disabled',
+      delivery: delivery.health(),
     });
   }
 
@@ -993,6 +999,7 @@ async function main() {
   else if (!PREFLIGHT_PASSWORD) log('⚠️  PREFLIGHT_PASSWORD 미설정 — 비행 전 점검이 막힌 채로 뜬다');
   else log(`점검 에이전트 후보: ${PREFLIGHT_AGENTS.join(', ')}`);
   log(`지문 ${FINGERPRINT}, 로그 ${LOGS}`);
+  delivery.init({ dataDir: DATA, env: process.env, send, readBody, log, getLive: () => live });
   await reconcile();
 
   http.createServer((req, res) => {

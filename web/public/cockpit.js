@@ -51,6 +51,7 @@ const TAB_INFO = {
   fly: null,
   rec: null,
   pf: null,
+  dlv: null,
 };
 
 // 점검 묶음 → 기체 부위. 소프트웨어 설정(failsafe·미션 등)은 부위가 없다.
@@ -232,6 +233,7 @@ const VIEWS = {
   pf: { yaw: -2.1, tilt: 0.75, dist: 1.5 },
   bay: { yaw: -1.25, tilt: 0.62, dist: 0.95 },
 };
+VIEWS.dlv = VIEWS.fly;   // 배송 탭은 지도라 3D 시점은 비행과 같게 둔다
 let intro = document.body.classList.contains('intro');
 if (intro && !renderer) { intro = false; document.body.classList.remove('intro'); }
 const cam = { ...VIEWS[intro ? 'intro' : 'sum'], vYaw: 0, vTilt: 0 };
@@ -343,6 +345,7 @@ const CALLS = {
             ['bat', '배터리', d.volt != null ? `${d.volt.toFixed(1)}V · ${num(d.cur, 1)}A` : '—', lvl(d.batt_pct, 35, 20)]]; },
   rec: () => [],
   pf: () => [],
+  dlv: () => [],
 };
 // 모터 부하 판정 — 좌측 계기판(모터 그림)과 3D 기체 위(라벨·로터 원판)가 **같은 함수**를 쓴다.
 // 기준은 /live 와 같다: 한 모터가 70% 넘으면 노랑, 80% 넘으면 빨강.
@@ -759,6 +762,7 @@ function rowsHtml(rows) {
 }
 function renderInfo() {
   const box = $('info');
+  if (tab === 'dlv') { renderDlv(); return; }   // 배송은 지도 위에 카드를 둔다
   if (mode !== '3d') { box.hidden = true; return; }
   if (sel) {
     const b = BAYS[sel];
@@ -837,6 +841,7 @@ const TILES = {
     ['cur', '최대 전류', num(R && R.cur), 'A'],
   ],
   pf: () => [],
+  dlv: () => [],
 };
 function renderTiles() {
   html('tiles', mode !== '3d' || !tab ? '' : TILES[tab](D()).map(([ic, l, v, u, c, on]) =>
@@ -845,9 +850,11 @@ function renderTiles() {
 }
 $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
+  const prev = tab;
   tab = tab === b.dataset.t ? null : b.dataset.t; sel = null;   // 고른 탭을 다시 누르면 풀린다
   for (const x of $('tabs').children) x.classList.toggle('on', x.dataset.t === tab);
   setView(); renderTiles(); renderInfo();
+  if (tab === 'dlv') dlvEnter(); else if (prev === 'dlv') dlvLeave();
 });
 
 // ── 기체 / 지도 ──────────────────────────────────────────────────────
@@ -967,6 +974,7 @@ $('info').addEventListener('click', (e) => {
 });
 
 function pfAsk(err) {
+  $('dlvForm').hidden = true; $('pwForm').hidden = false;
   $('pwErr').hidden = !err; $('pwErr').textContent = err || '';
   $('modal').hidden = false; $('pw').value = ''; $('pw').focus();
 }
@@ -1296,12 +1304,213 @@ async function loadRec() {
     if (tab === 'rec') renderTiles();
   } catch {}
 }
+// ── 배송 ────────────────────────────────────────────────────────────
+// 서버(/api/delivery/*, web/delivery.js)가 상태와 권한을 정한다. 화면은 받은 `can` 의 버튼만 그린다.
+// 로컬 트래커(:4410)에는 배송 API 가 없다 — 그때는 지도만 보인다.
+const dlv = { st: null, off: false, sel: null, add: null, err: '', timer: 0, drawn: '', card: '', cardSer: '', to: '', name: '' };
+let dlvLayer = null, dlvLine = null, dlvAddMk = null, dlvFitted = false;
+const DLV_ERR = { busy: '진행 중 배송', stage: '단계 아님', nobase: '기지 없음', unverified: '미검증 지점', nofix: 'GPS 없음',
+  inuse: '사용 중 지점', off: '운행 중지', input: '입력 오류', to: '학번 오류', point: '지점 오류', login: '로그인 필요' };
+const LOGIN_ERR = { 400: '입력 오류', 401: '로그인 실패', 429: '잠시 후 다시', 502: '학교 응답 없음', 503: '로그인 준비 중' };
+const dpt = (id) => (dlv.st && dlv.st.points.find((p) => p.id === id)) || null;
+
+function dlvStage(st) {
+  const j = st && st.job;
+  if (!st) return '';
+  if (!j) return st.service ? '대기' : '운행 중지';
+  if (j.leg === 'home') return '복귀';
+  if (j.leg === 'pickup') return j.phase === 'wait' ? '호출' : j.phase === 'fly' ? '이동' : '적재';
+  return j.phase === 'landed' ? '수거대기' : '배송';
+}
+
+async function dlvEnter() {
+  document.querySelector('.main').classList.add('dlv');
+  await setMode('map');
+  if (tab !== 'dlv') return;   // 지도를 여는 동안 다른 탭으로 갔다
+  if (!dlvLayer) {
+    const L = window.L;
+    dlvLine = L.polyline([], { color: '#3e6ae1', weight: 3, opacity: 0.9, dashArray: '6 8' }).addTo(lmap);
+    dlvLayer = L.layerGroup().addTo(lmap);
+    // 관리자 — 지도를 누르면 그 자리에 새 지점
+    lmap.on('click', (e) => {
+      if (tab !== 'dlv' || !(dlv.st && dlv.st.me && dlv.st.me.admin)) return;
+      dlv.add = [e.latlng.lat, e.latlng.lng]; dlv.sel = null;
+      if (!dlvAddMk) dlvAddMk = L.circleMarker(dlv.add, { radius: 7, color: '#3e6ae1', weight: 2, fillColor: '#fff', fillOpacity: 1 });
+      dlvAddMk.setLatLng(dlv.add).addTo(lmap);
+      dlvDraw(true); renderDlv();
+    });
+  }
+  if (!dlvFitted && !(S.live && D().lat != null)) lmap.setView(SAT_FIELD, 17);
+  dlvDraw(true);
+  dlvPoll();
+}
+function dlvLeave() {
+  clearTimeout(dlv.timer);
+  document.querySelector('.main').classList.remove('dlv');
+  dlv.add = null; if (dlvAddMk) dlvAddMk.remove();
+  setMode('3d');
+}
+
+function dlvDraw(force) {
+  if (!dlvLayer || !dlv.st) return;
+  const st = dlv.st, admin = !!(st.me && st.me.admin);
+  const key = JSON.stringify([st.rev, dlv.sel, st.me && st.me.id, admin, st.points.length]);   // 로그인·로그아웃하면 보이는 지점이 바뀐다
+  if (!force && key === dlv.drawn) return;
+  dlv.drawn = key;
+  const L = window.L;
+  dlvLayer.clearLayers();
+  for (const p of st.points) {
+    const cls = 'dp' + (p.base ? ' base' : '') + (p.verified ? '' : ' unv') + (p.id === dlv.sel ? ' on' : '');
+    const mk = L.marker([p.lat, p.lon], { draggable: admin, keyboard: false,
+      icon: L.divIcon({ className: 'dpw', html: `<b class="${cls}">${esc(p.name)}</b>`, iconSize: [0, 0] }) });
+    mk.on('click', () => {
+      dlv.sel = dlv.sel === p.id ? null : p.id; dlv.add = null; dlv.err = '';
+      if (dlvAddMk) dlvAddMk.remove();
+      dlvDraw(true); renderDlv();
+    });
+    if (admin) mk.on('dragend', () => { const ll = mk.getLatLng(); dlvAct('pt_set', { point: p.id, lat: +ll.lat.toFixed(7), lon: +ll.lng.toFixed(7) }); });
+    dlvLayer.addLayer(mk);
+  }
+  // 지금 구간 — 출발 지점에서 도착 지점까지 점선
+  const j = st.job, base = st.points.find((p) => p.base);
+  const a = j && dpt(j.at), b = j && dpt(j.leg === 'pickup' ? j.pickup : j.leg === 'dest' ? j.dest : base && base.id);
+  dlvLine.setLatLngs(a && b && j.phase !== 'landed' ? [[a.lat, a.lon], [b.lat, b.lon]] : []);
+  if (!dlvFitted && st.points.length && !(S.live && D().lat != null)) {
+    dlvFitted = true;
+    if (st.points.length === 1) lmap.setView([st.points[0].lat, st.points[0].lon], 18);
+    else lmap.fitBounds(st.points.map((p) => [p.lat, p.lon]), { padding: [90, 90], maxZoom: 18 });
+  }
+}
+
+function renderDlv() {
+  const box = $('info'); box.hidden = false;
+  const st = dlv.st, me = st && st.me, can = new Set(st ? st.can : []), j = st && st.job;
+  let h = `<div class="ih"><b>배송</b><span class="at">${dlv.off ? '서버 없음' : esc(dlvStage(st))}</span></div>`;
+  if (st && !dlv.off) {
+    const name = (id) => { const p = dpt(id); return p ? p.name : '—'; };
+    if (j && me) {
+      h += `<div class="row"><span>픽업</span><b>${esc(name(j.pickup))}</b></div>`;
+      if (j.dest) h += `<div class="row"><span>목적지</span><b>${esc(name(j.dest))}</b></div>`;
+      if (j.to) h += `<div class="row"><span>받는 사람</span><b>${esc(j.to)}</b></div>`;
+    }
+    const sp = dpt(dlv.sel);
+    if (sp) {
+      h += `<div class="row"><span>지점</span><b>${esc(sp.name)}${sp.base ? ' · 기지' : ''}${sp.verified ? '' : ' · 미검증'}</b></div>`;
+      if (me && me.admin) h += `<div class="chips">${sp.base ? '' : '<button class="chip" data-dlv="base">기지</button>'}<button class="chip" data-dlv="measure">실측</button><button class="chip" data-dlv="del">삭제</button></div>`;
+    }
+    if (dlv.add && me && me.admin) h += `<input class="dlvin" id="dlvName" maxlength="20" placeholder="이름"><button class="pfgo" data-dlv="add">추가</button>`;
+    if (!me) h += `<button class="pfgo" data-dlv="login">로그인</button>`;
+    else {
+      const pick = sp && !sp.base;
+      if (can.has('call')) h += `<button class="pfgo" data-dlv="call"${pick ? '' : ' disabled'}>호출</button>`;
+      if (can.has('send')) h += `<input class="dlvin" id="dlvTo" maxlength="20" placeholder="받는 사람 학번" autocapitalize="off" spellcheck="false"><button class="pfgo" data-dlv="send"${pick && sp.id !== j.pickup ? '' : ' disabled'}>보내기</button>`;
+      if (can.has('done')) h += '<button class="pfgo" data-dlv="done">수거완료</button>';
+      if (can.has('depart')) h += '<button class="pfgo" data-dlv="depart">출발</button>';
+      if (can.has('land')) h += '<button class="pfgo" data-dlv="land">착륙</button>';
+      if (can.has('cancel')) h += '<button class="pfgo" data-dlv="cancel">취소</button>';
+      h += `<div class="chips">${can.has('service') ? `<button class="chip" data-dlv="service">${st.service ? '운행 중지' : '운행 시작'}</button>` : ''}<button class="chip" data-dlv="logout">${esc(me.id)} · 로그아웃</button></div>`;
+    }
+    if (dlv.err) h += `<div class="dlverr">${esc(dlv.err)}</div>`;
+  }
+  // 2초마다 다시 그리면 입력 중인 칸이 지워진다 — 바뀐 것이 있을 때만 다시 그린다
+  if (h === dlv.card && box.innerHTML === dlv.cardSer) return;
+  box.innerHTML = h; dlv.card = h; dlv.cardSer = box.innerHTML;
+  const to = $('dlvTo'); if (to) { to.value = dlv.to; to.oninput = () => { dlv.to = to.value; }; }
+  const nm = $('dlvName'); if (nm) { nm.value = dlv.name; nm.oninput = () => { dlv.name = nm.value; }; nm.focus(); }
+}
+$('info').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-dlv]');
+  if (!b || tab !== 'dlv' || b.disabled) return;
+  const k = b.dataset.dlv, sp = dlv.sel;
+  if (k === 'login') return dlvLoginAsk();
+  if (k === 'logout') return dlvLogout();
+  if (k === 'call') return dlvAct('call', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
+  if (k === 'send') {
+    const to = dlv.to.trim();
+    if (!/^[A-Za-z0-9]{3,20}$/.test(to)) { dlv.err = '학번 오류'; return renderDlv(); }
+    return dlvAct('send', { point: sp, to }).then((ok) => { if (ok) { dlv.sel = null; dlv.to = ''; dlvDraw(true); renderDlv(); } });
+  }
+  if (k === 'add') {
+    const n = dlv.name.trim();
+    if (!n) return;
+    return dlvAct('pt_add', { name: n, lat: +dlv.add[0].toFixed(7), lon: +dlv.add[1].toFixed(7) }).then((ok) => {
+      if (ok) { dlv.add = null; dlv.name = ''; if (dlvAddMk) dlvAddMk.remove(); renderDlv(); }
+    });
+  }
+  if (k === 'base') return dlvAct('pt_set', { point: sp, base: true });
+  if (k === 'measure') return dlvAct('pt_measure', { point: sp });
+  if (k === 'del') return dlvAct('pt_del', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
+  if (k === 'service') return dlvAct('service', { on: !dlv.st.service });
+  return dlvAct(k);   // done · depart · land · cancel
+});
+
+function dlvSet(st) {
+  dlv.st = st;
+  if (dlv.sel && !dpt(dlv.sel)) dlv.sel = null;
+  dlvDraw(); renderDlv();
+}
+async function dlvAct(act, args = {}) {
+  if (!dlv.st) return false;
+  dlv.err = '';
+  try {
+    const r = await fetch('/api/delivery/act', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ act, rev: dlv.st.rev, ...args }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) { dlvSet(j); return true; }
+    if (j.state) dlvSet(j.state);
+    if (r.status === 401) { dlvLoginAsk(); return false; }
+    if (j.error !== 'stale') dlv.err = DLV_ERR[j.error] || '실패';
+  } catch { dlv.err = '연결 없음'; }
+  renderDlv();
+  return false;
+}
+async function dlvPoll() {
+  clearTimeout(dlv.timer);
+  if (tab !== 'dlv' || document.hidden) return;
+  try {
+    const r = await fetch('/api/delivery/state', { cache: 'no-store' });
+    if (r.status === 404 || r.status === 405) { dlv.off = true; renderDlv(); return; }
+    if (r.ok) { dlv.off = false; dlvSet(await r.json()); }
+  } catch { /* 다음 차례에 다시 */ }
+  dlv.timer = setTimeout(dlvPoll, 2000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && tab === 'dlv') dlvPoll(); });
+
+// 학교 계정 로그인 — 점검 암호와 같은 모달에 폼만 바꿔 띄운다
+function dlvLoginAsk(err) {
+  $('pwForm').hidden = true; $('dlvForm').hidden = false;
+  $('dlvErr').hidden = !err; $('dlvErr').textContent = err || '';
+  $('modal').hidden = false; $('dlvPw').value = '';
+  ($('dlvId').value ? $('dlvPw') : $('dlvId')).focus();
+}
+$('dlvCancel').onclick = () => { $('modal').hidden = true; };
+$('dlvForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = $('dlvId').value.trim(), pw = $('dlvPw').value;
+  if (!id || !pw) return;
+  const btn = $('dlvForm').querySelector('.p');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, pw }) });
+    $('dlvPw').value = '';
+    if (r.ok) { $('modal').hidden = true; dlv.err = ''; dlvPoll(); }
+    else dlvLoginAsk(LOGIN_ERR[r.status] || '로그인 실패');
+  } catch { dlvLoginAsk('연결 없음'); }
+  finally { btn.disabled = false; }
+});
+async function dlvLogout() {
+  try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); } catch { /* 쿠키는 만료로 끝난다 */ }
+  dlv.sel = null; dlv.add = null; if (dlvAddMk) dlvAddMk.remove();
+  dlvPoll();
+}
+
 function tick() { const n = new Date(); txt('clk', `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`); }
 tick(); setInterval(tick, 5000);
 renderInfo(); render(); pollLive(); loadRec(); setInterval(loadRec, 60000);
 // 주소로 바로 열기 — /cockpit#pf 점검, #map 지도
 if (location.hash === '#pf') document.querySelector('[data-t=pf]').click();
 if (location.hash === '#map') setSat(true);
+if (location.hash === '#dlv') document.querySelector('[data-t=dlv]').click();
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (!$('modal').hidden) $('modal').hidden = true; else if (!$('pbSheet').hidden) pbSheet(false); else if (sel) selectBay(null); }
   else if (intro && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); launch(); }   // 좁은 창에서 스페이스가 페이지를 내리지 않게

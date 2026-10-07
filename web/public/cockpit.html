@@ -147,6 +147,18 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, brandGlint .45s 
 .main.mapmode #view, .main.mapmode .tabs, .main.mapmode #calls, .main.mapmode .tiles { display: none; }
 .main.mapmode .bar { background: linear-gradient(rgba(244,244,246,.92), rgba(244,244,246,0)); }
 #map .leaflet-tile-pane { filter: saturate(.75) brightness(1.04); }
+/* 배송 — 지도로 바뀌어도 탭바는 남는다 */
+.main.mapmode.dlv .tabs { display: flex; }
+.main.mapmode.dlv .tabs button:not(.on) { color: #fff; text-shadow: 0 0 4px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.85); }
+.dpw { background: none; border: 0; }
+.dp { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; background: #fff; color: var(--ink2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; font: 600 13px/1.2 inherit; box-shadow: 0 1px 4px rgba(0,0,0,.25); cursor: pointer; }
+.dp.base { background: #171a20; color: #fff; border-color: #171a20; }
+.dp.unv { border-style: dashed; color: var(--dim); }
+.dp.base.unv { border-color: #fff; color: #fff; }
+.dp.on { border-color: #3e6ae1; box-shadow: 0 0 0 2px #3e6ae1; }
+#info .dlvin { width: 100%; font: inherit; font-size: 14px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; margin: 8px 0 2px; box-sizing: border-box; }
+#info .pfgo + .pfgo { margin-top: 6px; }
+#info .dlverr { color: var(--bad); font-size: 13px; margin-top: 8px; }
 .ac svg { transition: transform .4s; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
 
 /* 정보 카드 — 탭 요약·칸 부품·점검 */
@@ -234,14 +246,14 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
 
 /* 암호 */
 #modal { position: fixed; inset: 0; z-index: 20; background: rgba(23,26,32,.35); display: grid; place-items: center; }
-#modal[hidden] { display: none; }
-#pwForm { background: var(--bg); border-radius: 12px; padding: 20px; width: min(320px, calc(100% - 32px)); display: grid; gap: 10px; }
-#pwForm label { font-weight: 700; }
-#pwForm input { font: inherit; font-size: 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-#pwErr { color: var(--bad); font-size: 13px; }
-#pwForm .r { display: flex; gap: 8px; justify-content: flex-end; }
-#pwForm .r button { border: 0; border-radius: 8px; padding: 9px 18px; font-weight: 600; cursor: pointer; background: var(--card); }
-#pwForm .r button.p { background: #fff; color: var(--ink2); border: 1px solid var(--line); }
+#modal[hidden], #modal form[hidden] { display: none; }
+:is(#pwForm, #dlvForm) { background: var(--bg); border-radius: 12px; padding: 20px; width: min(320px, calc(100% - 32px)); display: grid; gap: 10px; }
+:is(#pwForm, #dlvForm) label { font-weight: 700; }
+:is(#pwForm, #dlvForm) input { font: inherit; font-size: 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+#pwErr, #dlvErr { color: var(--bad); font-size: 13px; }
+:is(#pwForm, #dlvForm) .r { display: flex; gap: 8px; justify-content: flex-end; }
+:is(#pwForm, #dlvForm) .r button { border: 0; border-radius: 8px; padding: 9px 18px; font-weight: 600; cursor: pointer; background: var(--card); }
+:is(#pwForm, #dlvForm) .r button.p { background: #fff; color: var(--ink2); border: 1px solid var(--line); }
 
 /* 낮은 화면 — 좌측 패널이 스크롤 없이 들어오게 줄인다 */
 @media (min-width: 901px) and (max-height: 820px) {
@@ -375,6 +387,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
       <button data-t="sum">부품</button>
       <button data-t="rec">기록</button>
       <button data-t="pf">점검</button>
+      <button data-t="dlv">배송</button>
     </nav>
     <div id="loading"><i></i></div>
     <svg class="brand" id="brandIntro" role="img" aria-label="SHADE SIGNALS"><use href="#i-brand"/></svg>
@@ -403,6 +416,14 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
     <input type="password" id="pw" inputmode="numeric" autocomplete="current-password">
     <div id="pwErr" hidden></div>
     <div class="r"><button type="button" id="pwCancel">취소</button><button type="submit" class="p">점검</button></div>
+  </form>
+  <form id="dlvForm" hidden>
+    <label for="dlvId">학번</label>
+    <input id="dlvId" autocomplete="username" autocapitalize="off" spellcheck="false">
+    <label for="dlvPw">비밀번호</label>
+    <input type="password" id="dlvPw" autocomplete="current-password">
+    <div id="dlvErr" hidden></div>
+    <div class="r"><button type="button" id="dlvCancel">취소</button><button type="submit" class="p">로그인</button></div>
   </form>
 </div>
 

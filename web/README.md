@@ -9,6 +9,7 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 실시간    https://drone01.bewe.co.kr/live
 콕핏      https://drone01.bewe.co.kr/cockpit
 점검      https://drone01.bewe.co.kr/preflight
+배송      https://drone01.bewe.co.kr/cockpit#dlv
 소개      https://drone01.bewe.co.kr/intro
 상태      https://drone01.bewe.co.kr/api/health
 ```
@@ -18,6 +19,8 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 | 파일 | 역할 |
 |---|---|
 | `server.js` | node 내장만 쓴다. 업로드·카탈로그·캐시·라이브 중계·재생 프록시 |
+| `delivery.js` | 교내 배송 — 학교 계정 대리 로그인, 배송 상태머신, 지점 ([설계 02](../docs/design/02-delivery-system.md)) |
+| `test/` | 배송 시험 `delivery_test.js` 와 가짜 학교 로그인 서버 `fake_sugang.js` |
 | `extract.py` | ArduCopter `.BIN` → 목록 한 줄(`row`) / 요약+시계열(`full`). **유일한 파싱 경로** |
 | `public/` | 목록·분석·비교·콕핏·점검·소개 화면, `vendor/`(leaflet·three·inter) |
 | `live/public/` | 실시간 화면 (rim3 의 `drone-live` 와 같은 파일) |
@@ -43,7 +46,7 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 
 - **첫 화면**은 기체만 크게, 아래 가운데에 SHADE SIGNALS 워드마크. 기체를 누르면 로터를
   올려 **수직으로 떠올라** 사라지고, 대시보드가 열리면 위에서 내려와 착지한다.
-  `#pf`·`#map` 으로 열면 건너뛴다.
+  `#pf`·`#map`·`#dlv` 로 열면 건너뛴다.
 - **탭**은 기본으로 아무것도 안 고른다. 고른 탭을 다시 누르면 풀린다.
 - 상단줄 GPS 는 `위성 수 (수평 오차 m)`. 좌측은 자세계와 계기판(고도·배터리·전류, 모터 X 그림·편차·평균).
 - **모터 부하** — 한 모터가 70% 넘으면 노랑, 80% 넘으면 빨강. 좌측 모터 그림과 3D 로터가
@@ -55,6 +58,35 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 - **지도** — 기체/지도 스위치의 지도는 3D 바닥에 위성사진(Esri World Imagery)을 땅 축척으로
   깔고 격자를 걷는다. 진하기·줌은 `cockpit.js` 의 `SAT` (0.70 · 줌 18).
 - 워드마크는 `i-brand` 심볼(shade-signals.com 의 wordmark.js 자형) — 첫 화면 아래. 하단 도크(다른 페이지 링크)는 없다.
+
+## 배송
+
+콕핏의 `배송` 탭. 무대가 위성 지도로 바뀌고(`setMode('map')` + `.main.dlv`, 탭바는 남는다)
+지점이 이름 버튼으로 뜬다. 상태·권한은 서버(`delivery.js`)가 정하고 화면은 받은 `can` 의
+버튼만 그린다. 설계·상태표는 [설계 02](../docs/design/02-delivery-system.md).
+
+| 라우트 | 쓰임 |
+|---|---|
+| `POST /api/auth/login {id,pw}` | 학교 계정 대리 로그인 → 쿠키 `__Host-dlv` (12시간). 비번은 저장 안 함 |
+| `POST /api/auth/logout` | 쿠키 삭제 |
+| `GET /api/delivery/state` | `{rev, service, me, points, job, can}` — 비로그인은 단계만 |
+| `POST /api/delivery/act {act, rev, …}` | 호출·보내기·수거완료·취소, 관리자: 출발·착륙·운행·지점 편집·실측 |
+| `GET /api/delivery/job` | 기체(Pi)용 일감, `X-Delivery-Key` |
+
+- POST 는 `application/json` 만, `Origin` 은 같은 Host 나 `DELIVERY_ORIGINS` 만 (CSRF)
+- 상태 `DATA_DIR/delivery.json`, 전이 기록 `DATA_DIR/delivery-log.jsonl`
+- 시험: `node web/test/delivery_test.js` (가짜 학교 서버로 한 바퀴, 데이터는 임시 폴더)
+- 학교 로그인 성공 신호 실측: `node tools/delivery/sugang_probe.js <학번>` — 🔶 실측 전에는 `SUGANG_URL` 을 비워 둔다
+
+| `.env` | 뜻 |
+|---|---|
+| `SUGANG_URL` | 학교 로그인 주소. **비우면 배송 로그인이 막힌다(503)** |
+| `SUGANG_LOGOUT` | 확인 직후 학교 세션을 끊을 주소 (실측 후) |
+| `DELIVERY_ADMINS` | 관리자 학번, 쉼표로 |
+| `DELIVERY_SECRET` | 쿠키 서명 키. 비우면 재시작 때마다 전원 재로그인 |
+| `DELIVERY_KEY` | 기체(Pi)가 act·job 을 부를 키 |
+| `DELIVERY_ORIGINS` | 허용 Origin (기본 `https://drone01.bewe.co.kr`) |
+| `PICKUP_WAIT`·`DEST_WAIT` | 착륙 후 대기 초과 시 복귀, 초 (기본 300·600, 운영값) |
 
 ## 포트
 
