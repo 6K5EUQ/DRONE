@@ -938,10 +938,8 @@ function setSat(on) {
 $('modes').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setSat(b.dataset.m === 'map'); });
 
 // ── 비행 전 점검 ─────────────────────────────────────────────────────
-// 점검 스트림(/api/preflight/stream)과 암호(sessionStorage pf_pw).
+// 점검 스트림(/api/preflight/stream).
 const pf = { state: 'idle', groups: [], res: {}, prog: {}, verdict: null, error: null, at: null, open: null, bayLevel: {} };
-let pfPw = '';
-try { pfPw = sessionStorage.getItem('pf_pw') || ''; } catch { /* 사설 모드 */ }
 const PF_SECS = 10;
 const PF_MARK = { blk: '✖', warn: '▲', ok: '✔', info: '·' };
 
@@ -990,20 +988,7 @@ $('info').addEventListener('click', (e) => {
   renderPf();
 });
 
-function pfAsk(err) {
-  $('dlvForm').hidden = true; $('pwForm').hidden = false;
-  $('pwErr').hidden = !err; $('pwErr').textContent = err || '';
-  $('modal').hidden = false; $('pw').value = ''; $('pw').focus();
-}
-$('pwCancel').onclick = () => { $('modal').hidden = true; };
 $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) $('modal').hidden = true; });
-$('pwForm').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const v = $('pw').value;
-  if (!v) return;
-  pfPw = v; $('modal').hidden = true; pfRun();
-});
-
 function pfLine(d) {
   if (d.t === 'agent' || d.t === 'start' || d.t === 'done') if (d.at) pf.at = d.at;
   if (d.t === 'start') { pf.groups = d.groups || []; pf.res = {}; pf.prog = {}; }
@@ -1020,16 +1005,10 @@ function pfLine(d) {
 
 async function pfRun() {
   if (pf.state === 'run') return;
-  if (!pfPw) { pfAsk(); return; }
   Object.assign(pf, { state: 'run', groups: [], res: {}, prog: {}, verdict: null, error: null, open: null, bayLevel: {} });
   renderPf();
   try {
-    const res = await fetch('/api/preflight/stream?t=' + PF_SECS, { method: 'POST', headers: { 'X-Preflight-Password': pfPw } });
-    if (res.status === 401) {
-      pfPw = ''; try { sessionStorage.removeItem('pf_pw'); } catch { /* 사설 모드 */ }
-      pf.state = 'idle'; renderPf(); pfAsk('암호 오류'); return;
-    }
-    try { sessionStorage.setItem('pf_pw', pfPw); } catch { /* 사설 모드 */ }
+    const res = await fetch('/api/preflight/stream?t=' + PF_SECS, { method: 'POST' });
     if (!(res.headers.get('content-type') || '').includes('ndjson')) {
       let msg = null;
       try { msg = (await res.json()).error; } catch { /* 본문 없음 */ }
@@ -1544,9 +1523,9 @@ async function dlvPoll() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && tab === 'dlv') dlvPoll(); });
 
-// 학교 계정 로그인 — 점검 암호와 같은 모달에 폼만 바꿔 띄운다
+// 학교 계정 로그인
 function dlvLoginAsk(err) {
-  $('pwForm').hidden = true; $('dlvForm').hidden = false;
+  $('dlvForm').hidden = false;
   $('dlvErr').hidden = !err; $('dlvErr').textContent = err || '';
   $('modal').hidden = false; $('dlvPw').value = '';
   ($('dlvId').value ? $('dlvPw') : $('dlvId')).focus();

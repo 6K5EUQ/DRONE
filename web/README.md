@@ -156,7 +156,7 @@ sed "s/REPLACE_WITH_TUNNEL_UUID/<UUID>/g" ~/DRONE/web/deploy/config-drone01.yml 
 sudo systemctl enable --now lab-tunnel-drone01
 ```
 
-점검(콕핏 점검 탭)은 `.env` 에 `PREFLIGHT_KEY`·`PREFLIGHT_PASSWORD`·`PREFLIGHT_AGENTS` 가
+점검(콕핏 점검 탭)은 `.env` 에 `PREFLIGHT_KEY`·`PREFLIGHT_AGENTS` 가
 있어야 켜진다. 에이전트는 아직 없다 — 탭은 뜨고 점검만 막힌다.
 
 ## 배포 (이후)

@@ -269,13 +269,13 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
 /* 암호 */
 #modal { position: fixed; inset: 0; z-index: 20; background: rgba(23,26,32,.35); display: grid; place-items: center; }
 #modal[hidden], #modal form[hidden] { display: none; }
-:is(#pwForm, #dlvForm) { background: var(--bg); border-radius: 12px; padding: 20px; width: min(320px, calc(100% - 32px)); display: grid; gap: 10px; }
-:is(#pwForm, #dlvForm) label { font-weight: 700; }
-:is(#pwForm, #dlvForm) input { font: inherit; font-size: 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-#pwErr, #dlvErr { color: var(--bad); font-size: 13px; }
-:is(#pwForm, #dlvForm) .r { display: flex; gap: 8px; justify-content: flex-end; }
-:is(#pwForm, #dlvForm) .r button { border: 0; border-radius: 8px; padding: 9px 18px; font-weight: 600; cursor: pointer; background: var(--card); }
-:is(#pwForm, #dlvForm) .r button.p { background: #fff; color: var(--ink2); border: 1px solid var(--line); }
+#dlvForm { background: var(--bg); border-radius: 12px; padding: 20px; width: min(320px, calc(100% - 32px)); display: grid; gap: 10px; }
+#dlvForm label { font-weight: 700; }
+#dlvForm input { font: inherit; font-size: 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+#dlvErr { color: var(--bad); font-size: 13px; }
+#dlvForm .r { display: flex; gap: 8px; justify-content: flex-end; }
+#dlvForm .r button { border: 0; border-radius: 8px; padding: 9px 18px; font-weight: 600; cursor: pointer; background: var(--card); }
+#dlvForm .r button.p { background: #fff; color: var(--ink2); border: 1px solid var(--line); }
 
 /* 낮은 화면 — 좌측 패널이 스크롤 없이 들어오게 줄인다 */
 @media (min-width: 901px) and (max-height: 820px) {
@@ -444,12 +444,6 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
 </div>
 
 <div id="modal" hidden>
-  <form id="pwForm">
-    <label for="pw">점검 암호</label>
-    <input type="password" id="pw" inputmode="numeric" autocomplete="current-password">
-    <div id="pwErr" hidden></div>
-    <div class="r"><button type="button" id="pwCancel">취소</button><button type="submit" class="p">점검</button></div>
-  </form>
   <form id="dlvForm" hidden>
     <label for="dlvId">학번</label>
     <input id="dlvId" autocomplete="username" autocapitalize="off" spellcheck="false">

@@ -47,10 +47,6 @@ const PREFLIGHT_KEY = process.env.PREFLIGHT_KEY || '';
 const PREFLIGHT_AGENTS = (process.env.PREFLIGHT_AGENTS || '')
   .split(',').map((x) => x.trim()).filter(Boolean);
 const PREFLIGHT_TIMEOUT = parseInt(process.env.PREFLIGHT_TIMEOUT || '60000', 10);
-// 🔴 화면 접속 암호. **업로드 암호와 따로 둔다** — 업로드는 이 사이트에 로그를
-//    영구히 남기는 일이고 점검은 그때뿐인 조회라, 같은 값으로 묶으면 한쪽을
-//    현장용으로 쉽게 바꾸는 순간 다른 쪽까지 같이 약해진다.
-const PREFLIGHT_PASSWORD = process.env.PREFLIGHT_PASSWORD || '';
 const PARSE_TIMEOUT = parseInt(process.env.PARSE_TIMEOUT || '60000', 10);
 const MAX_JOBS = parseInt(process.env.MAX_JOBS || '3', 10);
 
@@ -596,13 +592,6 @@ function askAgent(addr, secs) {
   });
 }
 
-/** 점검 화면 암호. 길이가 달라도 비교 시간이 안 새게 해시를 맞대 본다. */
-function preflightPasswordOk(given) {
-  if (!PREFLIGHT_PASSWORD) return false;        // 미설정이면 점검 자체를 막는다
-  const h = (v) => crypto.createHash('sha256').update(String(v == null ? '' : v)).digest();
-  return crypto.timingSafeEqual(h(given), h(PREFLIGHT_PASSWORD));
-}
-
 let preflightBusy = false;
 
 /** 점검을 돌리면서 나오는 NDJSON 을 브라우저로 그대로 흘린다.
@@ -649,14 +638,11 @@ function streamFromAgent(addr, secs, res) {
 }
 
 async function handlePreflightStream(req, res, url) {
-  if (!PREFLIGHT_KEY || !PREFLIGHT_PASSWORD) {
+  if (!PREFLIGHT_KEY) {
     return sendJson(req, res, 503, {
       ok: false, verdict: 'NO-GO', error: '점검 차단',
       groups: [], standing: [],
     });
-  }
-  if (!preflightPasswordOk(req.headers['x-preflight-password'])) {
-    return sendJson(req, res, 401, { ok: false, error: '암호 오류' });
   }
   if (preflightBusy) {
     return sendJson(req, res, 409, {
@@ -690,14 +676,11 @@ async function handlePreflightStream(req, res, url) {
 }
 
 async function handlePreflight(req, res, url) {
-  if (!PREFLIGHT_KEY || !PREFLIGHT_PASSWORD) {
+  if (!PREFLIGHT_KEY) {
     return sendJson(req, res, 503, {
       ok: false, verdict: 'NO-GO', error: '점검 차단',
       groups: [], standing: [],
     });
-  }
-  if (!preflightPasswordOk(req.headers['x-preflight-password'])) {
-    return sendJson(req, res, 401, { ok: false, error: '암호 오류' });
   }
   // 점검은 FC 링크를 쓴다. 겹쳐 돌리면 서로 밟으므로 한 번에 하나만 보낸다.
   if (preflightBusy) {
@@ -757,7 +740,7 @@ async function route(req, res) {
     return sendJson(req, res, 200, {
       ok: true, logs: catalog.size, fingerprint: FINGERPRINT,
       running, queued: queue.length, upload: UPLOAD_PASSWORD ? 'enabled' : 'disabled',
-      preflight: (PREFLIGHT_KEY && PREFLIGHT_PASSWORD) ? 'enabled' : 'disabled',
+      preflight: PREFLIGHT_KEY ? 'enabled' : 'disabled',
       delivery: delivery.health(),
     });
   }
@@ -875,7 +858,6 @@ async function main() {
 
   if (!UPLOAD_PASSWORD) log('⚠️  UPLOAD_PASSWORD 미설정 — 업로드가 막힌 채로 뜬다');
   if (!PREFLIGHT_KEY) log('⚠️  PREFLIGHT_KEY 미설정 — 비행 전 점검이 막힌 채로 뜬다');
-  else if (!PREFLIGHT_PASSWORD) log('⚠️  PREFLIGHT_PASSWORD 미설정 — 비행 전 점검이 막힌 채로 뜬다');
   else log(`점검 에이전트 후보: ${PREFLIGHT_AGENTS.join(', ')}`);
   log(`지문 ${FINGERPRINT}, 로그 ${LOGS}`);
   delivery.init({ dataDir: DATA, env: process.env, send, readBody, log, getLive: () => live });
