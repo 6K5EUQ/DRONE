@@ -532,8 +532,6 @@ async function handleLivePush(req, res) {
  *  같은 live.js 가 로컬에서도 여기서도 돌기 때문이다. */
 function handleLiveState(req, res, url) {
   const stale = !live.state || (Date.now() - live.at) > LIVE_STALE_MS;
-  // 진짜 기체가 조용하면 배송 시뮬레이션 기체를 낸다 (DELIVERY_SIM=on 일 때만, live:false·sim:true)
-  if (stale) { const sim = delivery.simSnapshot(url); if (sim) return sendJson(req, res, 200, sim); }
   if (!live.state) {
     return sendJson(req, res, 200, {
       live: false, seq: 0, age: null, packets: 0, bytes: 0,
@@ -746,6 +744,11 @@ async function route(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
 
+  // 배송 탭의 기체 — 시뮬레이션이 켜져 있으면 그 기체, 아니면 실제 실시간 상태 (같은 모양)
+  if (p === '/api/delivery/live' && req.method === 'GET') {
+    const sim = delivery.simSnapshot(url);
+    return sim ? sendJson(req, res, 200, sim) : handleLiveState(req, res, url);
+  }
   // 교내 배송 — 학교 계정 로그인과 배송 상태머신 (delivery.js). 405 차단보다 위에 있어야 한다.
   const dr = delivery.handle(req, res, url);
   if (dr) return dr;

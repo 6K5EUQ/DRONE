@@ -1305,7 +1305,8 @@ async function pollLive(now) {
   try {
     // 지도일 때만 항적을 받는다 — 증분(since)으로, 서버가 앞을 버렸으면 새로 받는다
     const q = mode === 'map' ? `since=${trkHave}` : 'track=0';
-    const r = await fetch('/api/live/state?' + q, { cache: 'no-store' });
+    // 배송 탭은 배송 기체(서버 시뮬레이션 — 실제 링크 전)를, 다른 탭은 실제 실시간 상태를 본다
+    const r = await fetch((tab === 'dlv' ? '/api/delivery/live?' : '/api/live/state?') + q, { cache: 'no-store' });
     if (r.ok) {
       S = await r.json();
       if (mode === 'map' && Array.isArray(S.track)) {
@@ -1337,7 +1338,7 @@ async function loadRec() {
 // 테스트 탭 — 같은 화면을 **이 브라우저 안의 시뮬레이터**로 돌린다. 기체가 기지에 연결된 것처럼
 // 놓이고, 지점을 부르면 상승·직선 순항·하강으로 날아간다. 서버에는 아무것도 쓰지 않는다
 // (배송 상태·기록, 다른 사람 화면, 앱 알림 모두 그대로). 지점 목록만 서버에서 읽는다.
-const dlv = { st: null, off: false, test: false, sel: null, err: '', timer: 0, drawn: '', card: '', cardSer: '', choosing: false };
+const dlv = { st: null, off: false, sel: null, err: '', timer: 0, drawn: '', card: '', cardSer: '', satPrev: false };
 // 3D — 지점 원판·진행 구간 선은 땅(world)에, 이름표는 화면(#dlvPts)에
 const dlvG = new THREE.Group(); dlvG.visible = false; world.add(dlvG);
 const dlvPads = new Map();          // 지점 id → { g, el }
@@ -1365,6 +1366,8 @@ const view = () => dlv.st;
 
 async function dlvEnter() {
   dlv.err = ''; dlv.card = '';
+  dlv.satPrev = sat.on; setSat(true);   // 배송은 위성 지도 바닥으로 연다 — 나가면 원래대로
+  pollLive(true);                       // 기체를 배송 기체로 바로 바꿔 받는다
   dlvG.visible = true; $('dlvPts').hidden = false;
   document.body.classList.add('dlvmode'); $('dlvPane').hidden = false;
   dlvDraw(true);
@@ -1372,7 +1375,9 @@ async function dlvEnter() {
 }
 function dlvLeave() {
   clearTimeout(dlv.timer);
-  dlv.sel = null; dlv.choosing = false;
+  dlv.sel = null;
+  if (!dlv.satPrev) setSat(false);
+  pollLive(true);                       // 다시 실제 실시간 상태로
   dlvG.visible = false; $('dlvPts').hidden = true;
   document.body.classList.remove('dlvmode'); $('dlvPane').hidden = true;
   render();
@@ -1480,9 +1485,6 @@ function renderDlv() {
     else h += `<button class="pfgo" data-dlv="${sending ? 'send' : 'call'}"${choosing && pick && !(sending && sp.id === j.pickup) ? '' : ' disabled'}>호출</button>`;
     h += '<button class="lo" data-dlv="logout">로그아웃</button>';
   }
-  // 지점을 고를 차례가 되면 바닥을 위성 지도로 — 들어설 때 한 번만 (직접 기체로 돌려도 다시 강제하지 않는다)
-  if (choosing && !dlv.choosing && !sat.on) setSat(true);
-  dlv.choosing = choosing;
   // 자주 다시 그리면 입력 중인 칸이 지워진다 — 바뀐 것이 있을 때만 다시 그린다
   if (h === dlv.card && box.innerHTML === dlv.cardSer) return;
   box.innerHTML = h; dlv.card = h; dlv.cardSer = box.innerHTML;

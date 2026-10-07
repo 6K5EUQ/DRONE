@@ -234,8 +234,12 @@ const atBase = (j) => j.phase === 'landed' && base() && j.at === base().id;
 const READY_VOLT = 14.0, LIVE_FRESH_MS = 12000;
 const liveFresh = () => { const L = C.getLive(); return !!(L && L.state && Date.now() - L.at <= LIVE_FRESH_MS); };
 function ready() {
-  if (liveFresh()) { const d = C.getLive().state.d || {}; return d.fix >= 3 && d.volt >= READY_VOLT; }   // 진짜 기체가 먼저다
-  return SIM && simVolt() >= READY_VOLT;                                                              // 없으면 시뮬레이션 기체
+  // 시뮬레이션이 켜져 있으면 배송은 시뮬레이션 기체만 본다 — rim3 에 FC 를 꽂아 다른 작업을 해도 배송이 막히지 않게.
+  // 실제 기체로 배송할 때가 되면 DELIVERY_SIM 을 끈다 (2026-10-07: 「실제 기체 연결은 추후」)
+  if (SIM) return simVolt() >= READY_VOLT;
+  if (!liveFresh()) return false;
+  const d = C.getLive().state.d || {};
+  return d.fix >= 3 && d.volt >= READY_VOLT;
 }
 /** 화면 오른쪽 위 상태 — 사용 중 / 대기 중 / 사용 불가 */
 const status = () => S.job ? 'busy' : SERVICE && ready() ? 'ready' : 'down';
@@ -335,7 +339,7 @@ function apply(a, b) {
 // 실제 기체 링크가 붙기 전까지(DELIVERY_SIM=on) 서버가 기체 몫을 한다 — 호출 3초 뒤 이륙, 출발 지점에서 수직 상승,
 // 순항고도 직선, 도착 지점에서 수직 하강, 착륙. 위치는 시간만으로 정해지고 /api/live/state 로 모두에게 같은 기체가 보인다.
 // 값은 시연용이지 운용 고도·속도가 아니다 (설계 02 §4: 실제 고도는 수동 비행 데이터로 정한다).
-// 진짜 기체 신호가 오면 그쪽이 먼저다 (server.js handleLiveState, ready()).
+// 실제 기체 신호와 섞지 않는다 — 배송 탭만 /api/delivery/live 로 이 기체를 보고, 다른 탭·/live 는 실제 FC 신호를 본다.
 let SIM = false;
 const SIMV = { alt: 30, speed: 8, climb: 2.5, desc: 1.5, wait: 3 };
 const SIM_ACTOR = { id: 'sim', drone: true };
@@ -369,13 +373,13 @@ function simPos(now) {
 }
 /** 화면 계기 — 남은 거리·예상 시간 (시뮬레이션이 날고 있을 때만) */
 function simFly() {
-  if (!SIM || liveFresh() || !S.job || S.job.phase !== 'fly') return null;
+  if (!SIM || !S.job || S.job.phase !== 'fly') return null;
   const p = simPos(Date.now());
   return p && { alt: Math.round(p.alt), remain: Math.round(p.remain), eta: Math.ceil(p.eta) };
 }
 function simTick() {
   const now = Date.now(), dt = (now - simLast) / 1000; simLast = now;
-  if (!SIM || !S || liveFresh()) return;   // 진짜 기체가 붙어 있으면 손대지 않는다
+  if (!SIM || !S) return;
   const j = S.job;
   if (!j) return;
   if (j.phase === 'wait' && now - j.since >= SIMV.wait * 1000) { apply(SIM_ACTOR, { act: 'depart', rev: S.rev }); return; }
@@ -388,7 +392,7 @@ function simTick() {
   if (simTrack.length > 12000) simTrack.splice(0, simTrack.length - 12000);
   if (p.stage === 'done') apply(SIM_ACTOR, { act: 'land', rev: S.rev });
 }
-/** /api/live/state 와 같은 모양 — live:false(진짜 링크가 아니다, 앱 링크 알림이 오인하지 않게), sim:true */
+/** /api/delivery/live — /api/live/state 와 같은 모양. live:false(진짜 링크가 아니다), sim:true */
 function simSnapshot(url) {
   if (!SIM || !S) return null;
   const p = simPos(Date.now()), b = base();
@@ -466,7 +470,7 @@ function init(ctx) {
   load();
   setInterval(tick, 5000).unref();
   setInterval(simTick, 250).unref();
-  if (SIM) ctx.log('배송 기체 시뮬레이션 켜짐 (DELIVERY_SIM=on) — 진짜 기체 신호가 오면 그쪽이 먼저');
+  if (SIM) ctx.log('배송 기체 시뮬레이션 켜짐 (DELIVERY_SIM=on) — 배송 탭은 /api/delivery/live 의 시뮬레이션 기체만 본다');
 }
 
 function health() {

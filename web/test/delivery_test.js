@@ -146,17 +146,19 @@ async function server() {
   console.log('— 서버 시뮬레이션 기체 (DELIVERY_SIM=on)');
   srv.kill(); await sleep(500);
   Object.assign(ENV, { DELIVERY_SIM: 'on', SIM_ALT: '4', SIM_SPEED: '200', SIM_CLIMB: '20', SIM_DESC: '20', SIM_WAIT: '0.3' });
-  await sleep(13000);   // 앞에서 올린 진짜 링크가 식을 때까지 — 진짜가 먼저다
   srv = await server();
+  await link({ fix: 1, volt: 0.03 });   // rim3 에 FC 만 꽂힌 실내 상태 — 배송은 이걸 보지 않는다
   st = await state('u01');
-  ok(st.status === 'ready', '시뮬레이션 기체 → 대기 중', st.status);
-  let ls = await (await fetch(H + '/api/live/state?track=0')).json();
-  ok(ls.sim === true && ls.live === false && Math.abs(ls.d.lat - 35.181070) < 1e-6, '실시간 상태 = 기지의 시뮬레이션 기체 (live:false)');
+  ok(st.status === 'ready', '실제 FC 가 비행 불가로 붙어 있어도 시뮬레이션 기체 → 대기 중', st.status);
+  let ls = await (await fetch(H + '/api/delivery/live?track=0')).json();
+  ok(ls.sim === true && ls.live === false && Math.abs(ls.d.lat - 35.181070) < 1e-6, '배송 기체 = 기지의 시뮬레이션 기체 (live:false)');
+  const real = await (await fetch(H + '/api/live/state?track=0')).json();
+  ok(real.sim === undefined && real.live === true && real.d.fix === 1, '/api/live/state 는 실제 FC 신호 그대로 (섞이지 않음)');
   ok((await act('u01', 'call', { point: 'main' })).s === 200, '본관 호출');
   const until = async (f, ms = 15000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const x = await state('u01'); if (f(x)) return x; await sleep(250); } return null; };
   ok(!!(await until((x) => x.job && x.job.phase === 'fly')), '스스로 이륙');
-  ls = await (await fetch(H + '/api/live/state?track=0')).json();
-  ok(ls.d.armed === true && ls.d.alt > 0, '날고 있는 기체가 실시간 상태에 보인다');
+  ls = await (await fetch(H + '/api/delivery/live?track=0')).json();
+  ok(ls.d.armed === true && ls.d.alt > 0, '날고 있는 기체가 배송 기체 상태에 보인다');
   ok(!!(await until((x) => x.job && x.job.leg === 'pickup' && x.job.phase === 'landed')), '본관 도착·착륙');
   const anon = await state();
   ok(anon.points.length === 6 && anon.job && anon.job.by === 'u01' && anon.job.by_name === '박보냄' && anon.can.length === 0, '비로그인: 사용자까지 다 보이고 동작은 없다');
