@@ -73,6 +73,12 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 | `POST /api/delivery/act {act, rev, …}` | 호출·보내기·수거완료·취소, 관리자: 출발·착륙·운행·지점 편집·실측 |
 | `GET /api/delivery/job` | 기체(Pi)용 일감, `X-Delivery-Key` |
 
+**테스트 탭** (배송 오른쪽) — 같은 화면을 **브라우저 안의 시뮬레이터**로 돌리는 시연 모드. 기체가 기지에
+연결된 것처럼 놓이고(링크·GPS·배터리), 지점을 호출하면 상승 → 순항고도 직선 → 하강 → 착륙으로 날아간다.
+적재·보내기·수거완료·복귀까지 배송 탭과 같은 순서다. 서버에는 아무것도 쓰지 않는다 — 배송 상태·기록,
+다른 사람 화면, 앱 알림(`live` 는 서버에서 계속 false) 모두 그대로. 지점 목록과 로그인만 서버에서 읽는다.
+값(순항 30 m, 8 m/s, 상승 2.5 m/s, 하강 1.5 m/s, 호출 3초 뒤 이륙)은 `cockpit.js` 의 `SIMV` — **시연용이지 운용값이 아니다.**
+
 - POST 는 `application/json` 만, `Origin` 은 같은 Host 나 `DELIVERY_ORIGINS` 만 (CSRF)
 - 상태 `DATA_DIR/delivery.json`, 전이 기록 `DATA_DIR/delivery-log.jsonl`
 - 시험: `node web/test/delivery_test.js` (가짜 학교 서버로 한 바퀴, 데이터는 임시 폴더)

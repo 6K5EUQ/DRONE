@@ -172,6 +172,7 @@ seq 3  LAND      목적지
 |---|---|
 | `web/delivery.js` | 대리 로그인, 상태머신, 지점, API (`/api/auth/*`, `/api/delivery/*`) |
 | `web/public/cockpit.*` | 배송 탭 — 지도 위 지점 버튼, 카드의 단계·버튼, 로그인, 관리자 지점 편집 |
+| `web/public/cockpit.js` 테스트 탭 | 브라우저 안 시뮬레이터로 배송 한 바퀴 시연 — 서버 상태 안 바뀜. 고도·속도는 시연값 (`SIMV`) |
 | `web/test/delivery_test.js` | 가짜 학교 서버로 배송 한 바퀴 시험 (50 항목) |
 | `web/test/fake_sugang.js` | 가짜 학교 로그인 서버 |
 | `tools/delivery/sugang_probe.js` | 학교 로그인 성공 신호 실측 |
