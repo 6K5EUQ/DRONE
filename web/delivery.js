@@ -456,7 +456,7 @@ function init(ctx) {
   for (const [k, e] of [['alt', 'SIM_ALT'], ['speed', 'SIM_SPEED'], ['climb', 'SIM_CLIMB'], ['desc', 'SIM_DESC'], ['wait', 'SIM_WAIT']]) if (env[e]) SIMV[k] = parseFloat(env[e]);
   SUGANG_URL = env.SUGANG_URL || '';
   SUGANG_LOGOUT = env.SUGANG_LOGOUT || '';
-  ORIGINS = new Set(String(env.DELIVERY_ORIGINS || 'https://drone01.shade-signals.com,https://drone01.bewe.co.kr').split(',').map((x) => x.trim()).filter(Boolean));
+  ORIGINS = new Set(String(env.DELIVERY_ORIGINS || 'https://drone01.shade-signals.com').split(',').map((x) => x.trim()).filter(Boolean));
   PICKUP_WAIT = parseInt(env.PICKUP_WAIT || '300', 10);
   DEST_WAIT = parseInt(env.DEST_WAIT || '600', 10);
   if (env.DELIVERY_SECRET) SECRET = Buffer.from(env.DELIVERY_SECRET);

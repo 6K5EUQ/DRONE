@@ -101,7 +101,7 @@ DRONE01 의 콕핏·비행로그 사이트. **조회는 공개, 업로드만 공
 | `DELIVERY_SIM` | `on` 이면 서버가 기체를 시뮬레이션 (실제 링크 전). `SIM_ALT`·`SIM_SPEED`·`SIM_CLIMB`·`SIM_DESC`·`SIM_WAIT` 로 값 조정 |
 | `DELIVERY_SECRET` | 쿠키 서명 키. 비우면 재시작 때마다 전원 재로그인 |
 | `DELIVERY_KEY` | 기체(Pi)가 act·job 을 부를 키 |
-| `DELIVERY_ORIGINS` | 허용 Origin (기본 `https://drone01.shade-signals.com,https://drone01.bewe.co.kr`) |
+| `DELIVERY_ORIGINS` | 허용 Origin (기본 `https://drone01.shade-signals.com`) |
 | `PICKUP_WAIT`·`DEST_WAIT` | 착륙 후 대기 초과 시 복귀, 초 (기본 300·600, 운영값) |
 
 ## 포트
