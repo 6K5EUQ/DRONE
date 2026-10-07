@@ -76,7 +76,7 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 - POST 는 `application/json` 만, `Origin` 은 같은 Host 나 `DELIVERY_ORIGINS` 만 (CSRF)
 - 상태 `DATA_DIR/delivery.json`, 전이 기록 `DATA_DIR/delivery-log.jsonl`
 - 시험: `node web/test/delivery_test.js` (가짜 학교 서버로 한 바퀴, 데이터는 임시 폴더)
-- 학교 로그인 성공 신호 실측: `node tools/delivery/sugang_probe.js <학번>` — 🔶 실측 전에는 `SUGANG_URL` 을 비워 둔다
+- 학교 로그인 성공 신호: 성공은 `.ASPXAUTH` 쿠키 발급(2026-10-07 실측, 상태코드는 맞든 틀리든 200). 다시 잴 때 `node tools/delivery/sugang_probe.js <학번>`
 
 | `.env` | 뜻 |
 |---|---|

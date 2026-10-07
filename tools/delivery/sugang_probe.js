@@ -46,5 +46,5 @@ const decode = async (r) => new TextDecoder('euc-kr').decode(await r.arrayBuffer
   const alerts = [...html.matchAll(/alert\(\s*["']([^"']{0,120})/g)].map((m) => m[1]);
   console.log(`POST ${p.status}  Location ${JSON.stringify(p.headers.get('location'))}  쿠키 ${JSON.stringify(names(p))}`);
   console.log(`     alert ${JSON.stringify(alerts)}  로그인 폼 다시 나옴 ${/name=["']?txtPassword/i.test(html)}  본문 ${html.length}자`);
-  console.log(`judge() 판정: ${judge(p.status, p.headers.get('location'), html)}`);
+  console.log(`judge() 판정: ${judge(p.status, p.headers.getSetCookie ? p.headers.getSetCookie() : [], html)}`);
 })().catch((e) => { console.error('실패:', e.message); process.exit(1); });

@@ -120,12 +120,16 @@ const decode = async (r) => new TextDecoder('euc-kr').decode(await r.arrayBuffer
 
 /**
  * 학교 로그인 결과 판정 — fail-closed.
- * 🔶 성공 신호는 실계정으로 아직 실측 전이다 (tools/delivery/sugang_probe.js 로 잰다).
- *    그래서 SUGANG_URL 이 비어 있으면 로그인 자체를 막는다. 실측 후 이 함수를 맞춘다.
+ * 2026-10-07 실계정 실측(tools/delivery/sugang_probe.js): 맞든 틀리든 POST 는 200 이고
+ * 로그인 폼이 다시 나온다 — 리다이렉트도 폼 유무도 신호가 아니다. 갈리는 것은 쿠키다.
+ *   맞음  → Set-Cookie: ASP.NET_SessionId, **.ASPXAUTH** (ASP.NET 폼 인증 표)
+ *   틀림  → 쿠키 없음, alert "사용자 비밀번호가 일치하지 않습니다."
+ * 표가 비어 있으면(지우는 쿠키) 성공으로 보지 않는다.
  */
-function judge(status, location, html) {
-  if (status >= 300 && status < 400 && location && !/default\.aspx/i.test(location.split('?')[0])) return 'ok';
-  if (status === 200 && /name=["']?txtPassword/i.test(html)) return 'bad';
+function judge(status, setCookies, html) {
+  const auth = (setCookies || []).some((c) => /^\.ASPXAUTH=[^;\s]+/i.test(c));
+  if (status === 200 && auth) return 'ok';
+  if (status === 200 && !auth && /name=["']?txtPassword/i.test(html)) return 'bad';
   return 'unknown';
 }
 
@@ -139,7 +143,7 @@ async function sugangCheck(id, pw) {
     ...opt, method: 'POST', signal: AbortSignal.timeout(8000), body: form.toString(),
     headers: { ...opt.headers, 'Content-Type': 'application/x-www-form-urlencoded', ...(cookies.length ? { Cookie: cookies.join('; ') } : {}) },
   });
-  const verdict = judge(p.status, p.headers.get('location'), p.status === 200 ? await decode(p) : '');
+  const verdict = judge(p.status, p.headers.getSetCookie ? p.headers.getSetCookie() : [], p.status === 200 ? await decode(p) : '');
   // 사용자의 수강신청 세션과 겹치지 않게 바로 끊는다 (주소는 실측 후 .env 에)
   if (verdict === 'ok' && SUGANG_LOGOUT) {
     const all = [...cookies, ...jar(p)];

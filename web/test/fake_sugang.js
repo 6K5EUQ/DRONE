@@ -4,7 +4,7 @@
 //   SUGANG_URL=http://127.0.0.1:4499/Default.aspx 로 drone01 서버를 띄워 쓴다.
 //
 // 페이지는 진짜처럼 EUC-KR 이다 (node 는 EUC-KR 로 인코딩을 못 하므로 한글은 바이트 상수).
-// 🔶 성공 시 302 는 **가정**이다 — 실제 학교의 성공 신호는 tools/delivery/sugang_probe.js 로 잰다.
+// 성공·실패 모두 200 + 로그인 폼, 성공만 .ASPXAUTH 쿠키 — 2026-10-07 실계정 실측(sugang_probe.js)과 같은 꼴.
 //
 // 계정: adm / u01 / u02, 비밀번호는 모두 'pw'. 아이디 'boom' 이면 500.
 // GET /count → 지금까지 받은 로그인 POST 수.
@@ -53,7 +53,8 @@ http.createServer((req, res) => {
     }
     if (f.get('txtUserID') === 'boom') { res.writeHead(500); return res.end('error'); }
     if (USERS[f.get('txtUserID')] && USERS[f.get('txtUserID')] === f.get('txtPassword')) {
-      res.writeHead(302, { Location: '/Main/Main.aspx' }); return res.end();
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=euc-kr', 'Set-Cookie': [`ASP.NET_SessionId=${sid}; path=/; HttpOnly`, '.ASPXAUTH=8F3A0C1B2D; path=/; HttpOnly'] });
+      return res.end(page(sid));
     }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=euc-kr' });
     res.end(page(sid, Buffer.concat([Buffer.from('<script>alert("'), WRONG, Buffer.from('");</script>')])));
