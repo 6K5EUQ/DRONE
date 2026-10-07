@@ -1560,10 +1560,22 @@ function dlvPlace() {
     dlvRoute.computeLineDistances();
   }
 }
+/** 고른 지점 쪽으로 시선을 돌린다 — 그 지점이 기체 너머 정면(화면 위쪽 가운데)에 오게. 기울기·거리는 그대로.
+ *  카메라는 기체 뒤(+z)에서 -z 를 본다. 기체 묶음을 y 축으로 Δ 돌리면 방위각이 Δ 만큼 돈다 → Δ = π − 지금 방위각 */
+const fPos = new THREE.Vector3(), cPos = new THREE.Vector3();
+function dlvFace(id) {
+  const o = dlvPads.get(id);
+  if (!o || !o.g.visible) return;
+  o.g.getWorldPosition(fPos); craft.getWorldPosition(cPos);
+  const d = Math.PI - Math.atan2(fPos.x - cPos.x, fPos.z - cPos.z);
+  Object.assign(goal, { yaw: cam.yaw + Math.atan2(Math.sin(d), Math.cos(d)), tilt: cam.tilt, dist: cam.dist, on: true });
+  cam.vYaw = cam.vTilt = 0;
+}
 $('dlvPts').addEventListener('click', (e) => {
   const t = e.target.closest('[data-pt]'); if (!t) return;
   const id = t.dataset.pt;
   dlv.sel = dlv.sel === id ? null : id; dlv.err = '';
+  if (dlv.sel) dlvFace(dlv.sel);
   dlvDraw(true); renderDlv();
 });
 
@@ -1610,7 +1622,7 @@ $('dlvPane').addEventListener('click', (e) => {
   if (k === 'logout') return dlvLogout();
   if (k === 'call') return go('call', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
   if (k === 'send') return go('send', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
-  if (k === 'pick') { dlv.sel = dlv.sel === b.dataset.pt ? null : b.dataset.pt; dlv.err = ''; dlvDraw(true); return renderDlv(); }
+  if (k === 'pick') { dlv.sel = dlv.sel === b.dataset.pt ? null : b.dataset.pt; dlv.err = ''; if (dlv.sel) dlvFace(dlv.sel); dlvDraw(true); return renderDlv(); }
   return go(k);   // done · cancel
 });
 
