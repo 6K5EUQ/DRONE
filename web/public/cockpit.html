@@ -63,6 +63,13 @@ body.dlvmode #sc-mspread, body.dlvmode #sc-mavg, body.dlvmode .hud { display: no
 body.dlvmode .strip { flex: none; gap: 18px; }
 #dlvPane { flex: 1 1 auto; border-top: 1px solid var(--line); padding-top: 14px; }
 #dlvPane .ih b { font-size: 18px; }
+#dlvPane .ih { margin-bottom: 14px; }
+#dlvPane .chips { gap: 8px; margin: 0 0 16px; }
+#dlvPane .chip { padding: 7px 14px; }
+#dlvPane .pfgo { padding: 12px 0; }
+#dlvPane .pfgo + .pfgo { margin-top: 10px; }
+#dlvPane .row + .pfgo, #dlvPane .row + .chips { margin-top: 16px; }
+#dlvPane .pfgo + .chips, #dlvPane .chips:last-child { margin-top: 18px; margin-bottom: 0; }
 #dlvPane .ih .at { font-size: 14px; font-weight: 600; color: var(--ink2); }
 #dlvPane .ih .at.down { color: var(--bad); }
 #hudHz, #hudRoll { transform-origin: 0 0; transition: transform .25s linear; }

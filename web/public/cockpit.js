@@ -1337,7 +1337,7 @@ async function loadRec() {
 // 테스트 탭 — 같은 화면을 **이 브라우저 안의 시뮬레이터**로 돌린다. 기체가 기지에 연결된 것처럼
 // 놓이고, 지점을 부르면 상승·직선 순항·하강으로 날아간다. 서버에는 아무것도 쓰지 않는다
 // (배송 상태·기록, 다른 사람 화면, 앱 알림 모두 그대로). 지점 목록만 서버에서 읽는다.
-const dlv = { st: null, off: false, test: false, sel: null, err: '', timer: 0, drawn: '', card: '', cardSer: '' };
+const dlv = { st: null, off: false, test: false, sel: null, err: '', timer: 0, drawn: '', card: '', cardSer: '', choosing: false };
 // 3D — 지점 원판·진행 구간 선은 땅(world)에, 이름표는 화면(#dlvPts)에
 const dlvG = new THREE.Group(); dlvG.visible = false; world.add(dlvG);
 const dlvPads = new Map();          // 지점 id → { g, el }
@@ -1486,7 +1486,7 @@ async function dlvEnter(isTest) {
 function dlvLeave(stay) {
   clearTimeout(dlv.timer);
   testStop();
-  dlv.sel = null;
+  dlv.sel = null; dlv.choosing = false;
   if (stay) return;
   dlvG.visible = false; $('dlvPts').hidden = true;
   document.body.classList.remove('dlvmode'); $('dlvPane').hidden = true;
@@ -1587,6 +1587,10 @@ function renderDlv() {
     }
     if (dlv.err) h += `<div class="dlverr">${esc(dlv.err)}</div>`;
   }
+  // 지점을 고를 차례가 되면 바닥을 위성 지도로 — 들어설 때 한 번만 (직접 기체로 돌려도 다시 강제하지 않는다)
+  const choosing = !!(me && (can.has('call') || can.has('send')));
+  if (choosing && !dlv.choosing && !sat.on) setSat(true);
+  dlv.choosing = choosing;
   // 자주 다시 그리면 입력 중인 칸이 지워진다 — 바뀐 것이 있을 때만 다시 그린다
   if (h === dlv.card && box.innerHTML === dlv.cardSer) return;
   box.innerHTML = h; dlv.card = h; dlv.cardSer = box.innerHTML;
