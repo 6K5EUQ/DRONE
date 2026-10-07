@@ -16,23 +16,48 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-let C = null;          // init 이 넘긴 것 — dataDir, send, readBody, getLive, log
+let C = null;          // init 이 넘긴 것 — dataDir, send, readBody, log
 let FILE = '', LOGF = '';
 let S = null;          // 저장되는 상태
-let ADMINS = new Set(), KEY = '', SECRET = null, SUGANG_URL = '', SUGANG_LOGOUT = '', ORIGINS = new Set();
+let SERVICE = false, KEY = '', SECRET = null, SUGANG_URL = '', SUGANG_LOGOUT = '', ORIGINS = new Set();
 let PICKUP_WAIT = 300, DEST_WAIT = 600;
 
 const COOKIE = '__Host-dlv';
 const SESSION_S = 12 * 3600;
-const LIVE_FRESH_MS = 12000;      // server.js LIVE_STALE_MS 와 같다
 const JSON_TYPE = 'application/json; charset=utf-8';
 
+// ── 배송 지점 — 고정 목록 ───────────────────────────────────────────
+// 아무 데나 찍어 추가하지 않고, 관리자 화면·계정도 두지 않는다(2026-10-07 결정).
+// 지점·좌표·기지는 **이 소스에서만** 바뀐다 — 고치고 배포한다.
+// 좌표 — 사용자 제공 2026-10-07. 기체 GPS 실측이 아니다 — 자동비행(P3) 전에는 실측값으로 바꾼다.
+// 기지(충전·보관, 배송 출발·복귀) = 대운동장 (2026-10-07 사용자가 보여 준 출발 지점)
+const CATALOG = [
+  { id: 'main', name: '본관', lat: 35.180747, lon: 128.554772 },
+  { id: 'field', name: '대운동장', lat: 35.181070, lon: 128.553811, base: true },
+  { id: 'hwayoung', name: '화영운동장', lat: 35.183980, lon: 128.554076 },
+  { id: 'eng', name: '공학관', lat: 35.179436, lon: 128.554206 },
+  { id: 'hanma', name: '한마관', lat: 35.182636, lon: 128.552627 },
+  { id: 'lib', name: '도서관', lat: 35.181296, lon: 128.552923 },
+];
+/** 지점은 저장하지 않고 늘 소스의 목록에서 만든다. 옛 저장본의 지점(지도로 찍던 시절)은 버린다 */
+function syncCatalog() {
+  const gone = S.points.filter((p) => !CATALOG.some((c) => c.id === p.id));
+  S.points = CATALOG.map((c) => ({ id: c.id, name: c.name, lat: c.lat ?? null, lon: c.lon ?? null, alt: null, base: !!c.base }));
+  if (gone.length) {
+    C.log('배송 지점 고정 목록 밖이라 버림:', gone.map((p) => p.name).join(', '));
+    const j = S.job;
+    if (j && [j.pickup, j.dest, j.at].some((id) => id && !pt(id))) { C.log('그 지점을 쓰던 배송도 끝냄', j.id); S.job = null; }
+  }
+}
+const placed = (p) => p && p.lat != null && p.lon != null;
+
 // ── 저장 ────────────────────────────────────────────────────────────
-function blank() { return { v: 1, rev: 0, seq: 0, service: false, points: [], job: null, users: {} }; }   // users: 로그인했던 사람의 이름 (학번 → 이름)
+function blank() { return { v: 1, rev: 0, seq: 0, points: [], job: null, users: {} }; }   // users: 로그인했던 사람의 이름 (학번 → 이름)
 function load() {
   try { S = { ...blank(), ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }
   catch (e) { if (e.code !== 'ENOENT') C.log('배송 상태를 못 읽었다 — 새로 시작', e.message); S = blank(); }
   S.users = S.users || {};
+  syncCatalog();
 }
 function save() {
   const tmp = FILE + '.tmp';
@@ -79,11 +104,11 @@ function keyOk(given) {
   const a = Buffer.from(String(given || '')), b = Buffer.from(KEY);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
-/** 누가 부르나 — 기체(키), 로그인 사용자, 또는 null. 관리자 여부는 매번 .env 로 다시 본다. */
+/** 누가 부르나 — 기체(키), 로그인 사용자, 또는 null */
 function who(req) {
-  if (req.headers['x-delivery-key']) return keyOk(req.headers['x-delivery-key']) ? { id: 'drone', drone: true, admin: false } : null;
+  if (req.headers['x-delivery-key']) return keyOk(req.headers['x-delivery-key']) ? { id: 'drone', drone: true } : null;
   const v = verify(cookieOf(req, COOKIE));
-  return v ? { id: v.u, name: v.n, admin: ADMINS.has(v.u), drone: false } : null;
+  return v ? { id: v.u, name: v.n, drone: false } : null;
 }
 const setCookie = (v, age) => `${COOKIE}=${v}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${age}`;
 
@@ -190,8 +215,8 @@ async function login(req, res) {
   fails.delete(id);
   const name = r.name || nameOf(id);
   if (name !== ((S.users[id] || {}).name || null)) { S.users[id] = { name }; save(); }
-  C.log('배송 로그인', id, ADMINS.has(id) ? '(관리자)' : '', ip);
-  return json(req, res, 200, { id, name, admin: ADMINS.has(id) }, { 'Set-Cookie': setCookie(sign(id, name), SESSION_S) });
+  C.log('배송 로그인', id, ip);
+  return json(req, res, 200, { id, name }, { 'Set-Cookie': setCookie(sign(id, name), SESSION_S) });
 }
 
 // ── 배송 상태머신 ───────────────────────────────────────────────────
@@ -202,28 +227,25 @@ const base = () => S.points.find((p) => p.base) || null;
 const target = (j) => j.leg === 'pickup' ? j.pickup : j.leg === 'dest' ? j.dest : base() && base().id;
 const isReq = (a, j) => a && j && a.id === j.by;
 
-/** 지금 이 사람이 누를 수 있는 동작 — 화면은 이것만 그린다 */
+/** 지금 이 사람이 누를 수 있는 동작 — 화면은 이것만 그린다. 출발·착륙은 기체(키)만 */
 function can(a) {
   const j = S.job, out = [];
   if (!a || a.drone) return out;
-  if (!j && S.service) out.push('call');
+  if (!j && SERVICE) out.push('call');
   if (j) {
-    if (a.admin && j.phase === 'wait') out.push('depart');
-    if (a.admin && j.phase === 'fly') out.push('land');
-    if (j.leg === 'pickup' && j.phase === 'landed' && (isReq(a, j) || a.admin)) out.push('send');
-    if (j.leg === 'dest' && j.phase === 'landed' && (a.id === j.to || isReq(a, j) || a.admin)) out.push('done');
-    if (j.leg !== 'home' && (a.admin || (isReq(a, j) && j.leg === 'pickup'))) out.push('cancel');
+    if (j.leg === 'pickup' && j.phase === 'landed' && isReq(a, j)) out.push('send');
+    if (j.leg === 'dest' && j.phase === 'landed' && (a.id === j.to || isReq(a, j))) out.push('done');
+    if (j.leg === 'pickup' && isReq(a, j)) out.push('cancel');
   }
-  if (a.admin) out.push('service', 'pt_add', 'pt_set', 'pt_del', 'pt_measure');
   return out;
 }
 
 function view(a) {
   const j = S.job;
-  const mine = a && (a.admin || (j && (a.id === j.by || a.id === j.to)));
+  const mine = a && (a.drone || (j && (a.id === j.by || a.id === j.to)));
   return {
-    rev: S.rev, service: S.service,
-    me: a && !a.drone ? { id: a.id, name: a.name || nameOf(a.id), admin: a.admin } : null,
+    rev: S.rev, service: SERVICE,
+    me: a && !a.drone ? { id: a.id, name: a.name || nameOf(a.id) } : null,
     points: a ? S.points : [],
     job: !j ? null : a ? { ...j, by: mine ? j.by : '***', to: mine ? j.to : (j.to ? '***' : null),
                            by_name: mine ? nameOf(j.by) : null, to_name: mine && j.to ? nameOf(j.to) : null,
@@ -237,18 +259,17 @@ function finish(how, by) {
   S.job = null;
 }
 
-const NAME_RE = /^[^\x00-\x1f<>]{1,20}$/;
-const latOk = (v) => typeof v === 'number' && Number.isFinite(v) && v >= -90 && v <= 90;
-const lonOk = (v) => typeof v === 'number' && Number.isFinite(v) && v >= -180 && v <= 180;
 const ID_RE = /^[A-Za-z0-9]{3,20}$/;
 
+const ACTS = new Set(['call', 'depart', 'land', 'send', 'done', 'cancel']);
 /** 동작 하나. 검사→변경→저장이 await 없이 한 번에 돈다 — 동시에 눌러도 섞이지 않는다. 반환은 [status, error?] */
 function apply(a, b) {
   const act = b.act, j = S.job, now = Date.now();
+  if (!ACTS.has(act)) return [400, 'act'];
   if (!can(a).includes(act) && !(a.drone && ['depart', 'land'].includes(act))) {
-    if (act === 'call' && !S.service) return [503, 'off'];
+    if (act === 'call' && !SERVICE) return [503, 'off'];
     if (act === 'call' && j) return [409, 'busy'];
-    return [a.admin || a.drone ? 409 : 403, 'stage'];
+    return [a.drone ? 409 : 403, 'stage'];
   }
   if (a.drone && j == null) return [409, 'stage'];
   if (a.drone && act === 'depart' && j.phase !== 'wait') return [409, 'stage'];
@@ -259,8 +280,8 @@ function apply(a, b) {
     case 'call': {
       const p = pt(b.point);
       if (!p || p.base) return [400, 'point'];
-      if (!base()) return [409, 'nobase'];
-      if (!p.verified && !a.admin) return [403, 'unverified'];
+      if (!placed(p)) return [400, 'nocoord'];
+      if (!placed(base())) return [409, 'nobase'];
       S.job = { id: 'j' + (++S.seq), by: a.id, to: null, pickup: p.id, dest: null, at: base().id,
                 leg: 'pickup', phase: 'wait', since: now, deadline: null, flags: [] };
       break;
@@ -274,7 +295,7 @@ function apply(a, b) {
     case 'send': {
       const p = pt(b.point), to = String(b.to || '').trim();
       if (!p || p.base || p.id === j.pickup) return [400, 'point'];
-      if (!p.verified && !a.admin) return [403, 'unverified'];
+      if (!placed(p)) return [400, 'nocoord'];
       if (!ID_RE.test(to)) return [400, 'to'];
       Object.assign(j, { dest: p.id, to, leg: 'dest', phase: 'wait', since: now, deadline: null });
       break;
@@ -288,52 +309,10 @@ function apply(a, b) {
       j.flags.push('cancel:' + a.id);
       Object.assign(j, { leg: 'home', phase: j.phase === 'fly' ? 'fly' : 'wait', since: now, deadline: null });
       break;
-    case 'service':
-      S.service = !!b.on;
-      break;
-    case 'pt_add': {
-      const name = String(b.name || '').trim();
-      if (!NAME_RE.test(name) || !latOk(b.lat) || !lonOk(b.lon)) return [400, 'input'];
-      S.points.push({ id: 'p' + (++S.seq), name, lat: b.lat, lon: b.lon, alt: null, base: false, verified: false });
-      break;
-    }
-    case 'pt_set': {
-      const p = pt(b.point);
-      if (!p) return [400, 'point'];
-      if (b.name !== undefined) { const n = String(b.name).trim(); if (!NAME_RE.test(n)) return [400, 'input']; p.name = n; }
-      if (b.lat !== undefined || b.lon !== undefined) {
-        if (!latOk(b.lat) || !lonOk(b.lon)) return [400, 'input'];
-        if (j && [j.pickup, j.dest, j.at].includes(p.id)) return [409, 'inuse'];
-        Object.assign(p, { lat: b.lat, lon: b.lon, alt: null, verified: false, measured: null });   // 옮기면 실측이 무효
-      }
-      if (b.base === true) {
-        if (j) return [409, 'inuse'];
-        for (const q of S.points) q.base = q === p;
-      }
-      break;
-    }
-    case 'pt_del': {
-      const p = pt(b.point);
-      if (!p) return [400, 'point'];
-      if (j && ([j.pickup, j.dest, j.at].includes(p.id) || p.base)) return [409, 'inuse'];
-      S.points = S.points.filter((q) => q !== p);
-      break;
-    }
-    case 'pt_measure': {
-      // 기체를 그 자리에 두고 누른다 — 라이브 GPS 를 그대로 지점 좌표로 쓴다
-      const p = pt(b.point), L = C.getLive(), d = L && L.state && L.state.d;
-      if (!p) return [400, 'point'];
-      if (!d || now - L.at > LIVE_FRESH_MS || !(d.fix >= 3) || d.lat == null || d.lon == null) return [409, 'nofix'];
-      if (j && [j.pickup, j.dest, j.at].includes(p.id)) return [409, 'inuse'];
-      Object.assign(p, { lat: d.lat, lon: d.lon, alt: d.alt_msl ?? null, verified: true,
-                         measured: { at: new Date(now).toISOString(), sats: d.sats ?? null, eph: d.eph ?? null } });
-      break;
-    }
     default: return [400, 'act'];
   }
   S.rev++;
-  logLine({ rev: S.rev, act, by: a.id, from, to: S.job ? [S.job.leg, S.job.phase] : null, job: S.job ? S.job.id : null,
-            ...(act.startsWith('pt_') || act === 'service' ? { arg: { point: b.point, name: b.name, lat: b.lat, lon: b.lon, base: b.base, on: b.on } } : {}) });
+  logLine({ rev: S.rev, act, by: a.id, from, to: S.job ? [S.job.leg, S.job.phase] : null, job: S.job ? S.job.id : null });
   save();
   return [200];
 }
@@ -377,7 +356,7 @@ function init(ctx) {
   const env = ctx.env;
   FILE = path.join(ctx.dataDir, 'delivery.json');
   LOGF = path.join(ctx.dataDir, 'delivery-log.jsonl');
-  ADMINS = new Set(String(env.DELIVERY_ADMINS || '').split(',').map((x) => x.trim()).filter(Boolean));
+  SERVICE = env.DELIVERY_SERVICE === 'on';   // 실제 배송 접수 — 조종사·기체가 준비된 때만 켠다. 테스트 탭과는 무관
   KEY = env.DELIVERY_KEY || '';
   SUGANG_URL = env.SUGANG_URL || '';
   SUGANG_LOGOUT = env.SUGANG_LOGOUT || '';
@@ -387,13 +366,13 @@ function init(ctx) {
   if (env.DELIVERY_SECRET) SECRET = Buffer.from(env.DELIVERY_SECRET);
   else { SECRET = crypto.randomBytes(32); ctx.log('⚠️  DELIVERY_SECRET 미설정 — 재시작하면 배송 로그인이 모두 풀린다'); }
   if (!SUGANG_URL) ctx.log('⚠️  SUGANG_URL 미설정 — 배송 로그인이 막힌 채로 뜬다');
-  if (!ADMINS.size) ctx.log('⚠️  DELIVERY_ADMINS 미설정 — 배송 관리자가 없다');
+  if (!SERVICE) ctx.log('배송 운행 꺼짐 (DELIVERY_SERVICE=on 으로 켠다)');
   load();
   setInterval(tick, 5000).unref();
 }
 
 function health() {
-  return { login: SUGANG_URL ? 'enabled' : 'disabled', service: S.service, job: !!S.job, points: S.points.length };
+  return { login: SUGANG_URL ? 'enabled' : 'disabled', service: SERVICE, job: !!S.job, points: S.points.length };
 }
 
 /** 맞는 경로면 처리하고 promise, 아니면 false */

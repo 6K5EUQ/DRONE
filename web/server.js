@@ -999,7 +999,7 @@ async function main() {
   else if (!PREFLIGHT_PASSWORD) log('⚠️  PREFLIGHT_PASSWORD 미설정 — 비행 전 점검이 막힌 채로 뜬다');
   else log(`점검 에이전트 후보: ${PREFLIGHT_AGENTS.join(', ')}`);
   log(`지문 ${FINGERPRINT}, 로그 ${LOGS}`);
-  delivery.init({ dataDir: DATA, env: process.env, send, readBody, log, getLive: () => live });
+  delivery.init({ dataDir: DATA, env: process.env, send, readBody, log });
   await reconcile();
 
   http.createServer((req, res) => {

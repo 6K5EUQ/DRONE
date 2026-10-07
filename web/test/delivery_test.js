@@ -17,7 +17,7 @@ const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'dlv-'));
 const KEY = 'drone-key-for-test-0123456789', LIVE = 'live-key-for-test-0123456789';
 const ENV = {
   ...process.env, PORT: String(PORT), DATA_DIR: DATA, UPLOAD_PASSWORD: 'x', LIVE_PUSH_KEY: LIVE,
-  SUGANG_URL: `http://127.0.0.1:${FAKE_PORT}/Default.aspx`, DELIVERY_ADMINS: 'adm', DELIVERY_KEY: KEY,
+  SUGANG_URL: `http://127.0.0.1:${FAKE_PORT}/Default.aspx`, DELIVERY_KEY: KEY,
   DELIVERY_SECRET: 'secret-for-test', PICKUP_WAIT: '3', DEST_WAIT: '600',
 };
 const kids = [];
@@ -73,61 +73,47 @@ async function server() {
   ok((await fakeCount()) === before, '429 는 학교로 안 나간다');
   ok((await login('boom')).s === 502, '학교 500 → 502');
   ok((await login('u01', '비번')).s === 400, 'ASCII 아닌 비번 → 400');
-  ok((await login('adm')).s === 200 && !!cookies.adm, '관리자 로그인');
+  ok((await login('u01')).s === 200 && !!cookies.u01, 'u01 로그인');
   ok((await login('u02')).s === 200, 'u02 로그인');
-  let me = await state('adm');
-  ok(me.me && me.me.admin === true, '관리자 표시');
-  ok(me.me.name === '김관리', '학교 상단 인사에서 이름', JSON.stringify(me.me));
+  let me = await state('u01');
+  ok(me.me && me.me.name === '박보냄' && me.me.admin === undefined, '학교 상단 인사에서 이름, 관리자 없음', JSON.stringify(me.me));
   ok(parseInt(await (await fetch(`http://127.0.0.1:${FAKE_PORT}/logouts`)).text(), 10) >= 2, '확인 뒤 학교 세션 끊음');
   ok((await state()).points.length === 0 && (await state()).me === null, '비로그인은 지점 안 보임');
 
   console.log('— 요청 막이');
-  ok((await req('POST', '/api/delivery/act', { who: 'adm', headers: { Origin: 'https://evil.bewe.co.kr' }, body: { act: 'service', rev: me.rev, on: true } })).s === 403, '다른 Origin → 403');
-  ok((await req('POST', '/api/delivery/act', { who: 'adm', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ act: 'service', rev: me.rev }) })).s === 415, 'text/plain → 415');
+  ok((await req('POST', '/api/delivery/act', { who: 'u01', headers: { Origin: 'https://evil.bewe.co.kr' }, body: { act: 'call', rev: me.rev, point: 'main' } })).s === 403, '다른 Origin → 403');
+  ok((await req('POST', '/api/delivery/act', { who: 'u01', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ act: 'call', rev: me.rev }) })).s === 415, 'text/plain → 415');
   ok((await req('POST', '/api/delivery/act', { body: { act: 'call', rev: 0 } })).s === 401, '비로그인 act → 401');
-  ok((await req('POST', '/api/delivery/act', { who: 'adm', headers: { Origin: 'https://drone01.bewe.co.kr' }, body: { act: 'service', rev: -1, on: false } })).s === 409, '옛 rev → 409');
+  ok((await req('POST', '/api/delivery/act', { who: 'u01', body: { act: 'call', rev: -1, point: 'main' } })).s === 409, '옛 rev → 409');
 
-  console.log('— 지점');
-  ok((await act('u02', 'pt_add', { name: 'A', lat: 35.18, lon: 128.55 })).s === 403, '일반 사용자 지점 추가 → 403');
-  for (const [name, lat, lon] of [['기지', 35.1801, 128.5531], ['대운동장', 35.1811, 128.5538], ['옥상', 35.1820, 128.5550], ['도서관 앞', 35.1830, 128.5560]]) {
-    ok((await act('adm', 'pt_add', { name, lat, lon })).s === 200, `지점 추가 ${name}`);
-  }
-  let pts = (await state('adm')).points;
-  const [B, P1, P2, P3] = pts.map((p) => p.id);
-  ok((await act('adm', 'pt_set', { point: B, base: true })).s === 200, '기지 지정');
-  ok((await act('u01', 'call', { point: P1 })).s === 401, '로그인 안 한 u01 호출 → 401');
-  await login('u01');
-  ok((await act('u01', 'call', { point: P1 })).s === 503, '운행 꺼짐 → 503');
-  ok((await act('adm', 'service', { on: true })).s === 200, '운행 켬');
-  ok((await act('u01', 'call', { point: P1 })).s === 403, '미검증 지점 호출 → 403');
-  ok((await act('adm', 'pt_measure', { point: P1 })).s === 409, 'GPS 없으면 실측 409');
-  const push = (d) => fetch(H + '/api/live/push', { method: 'POST', headers: { 'X-Live-Key': LIVE, 'Content-Type': 'application/json' }, body: JSON.stringify({ live: true, d }) });
-  await push({ lat: 35.18112, lon: 128.55383, alt_msl: 61.2, fix: 3, sats: 14, eph: 0.9 });
-  ok((await act('adm', 'pt_measure', { point: P1 })).s === 200, '실측');
-  pts = (await state('adm')).points;
-  const p1 = pts.find((p) => p.id === P1);
-  ok(p1.verified && p1.lat === 35.18112 && p1.alt === 61.2, '실측 좌표·고도로 덮임');
-  for (const id of [P2, P3]) { await push({ lat: 35.182, lon: 128.555, alt_msl: 70, fix: 3 }); await act('adm', 'pt_measure', { point: id }); }
+  console.log('— 지점 (소스의 고정 목록)');
+  let pts = (await state('u01')).points;
+  ok(pts.map((p) => p.name).join(',') === '본관,대운동장,화영운동장,공학관,한마관,도서관', '고정 목록 6곳', pts.map((p) => p.name).join(','));
+  ok(pts.every((p) => p.lat != null) && pts.find((p) => p.base).id === 'field', '좌표 다 있음, 기지 = 대운동장');
+  for (const a of ['pt_add', 'pt_set', 'pt_measure', 'service']) ok((await act('u01', a, { point: 'main', lat: 35, lon: 128, on: true })).s === 400, `없는 동작 ${a} → 400`);
+  ok((await act('u01', 'call', { point: 'main' })).s === 503, '운행 꺼짐 → 503');
 
-  console.log('— 배송 한 바퀴');
-  ok((await act('u01', 'call', { point: P1 })).s === 200, 'u01 호출');
-  ok((await act('u02', 'call', { point: P2 })).s === 409, '동시 호출 → 409 busy');
+  console.log('— 운행 켜고 배송 한 바퀴');
+  srv.kill(); await sleep(500); ENV.DELIVERY_SERVICE = 'on'; srv = await server();
+  ok((await act('u01', 'call', { point: 'field' })).s === 400, '기지로 호출 → 400');
+  ok((await act('u01', 'call', { point: 'main' })).s === 200, 'u01 본관 호출');
+  ok((await act('u02', 'call', { point: 'eng' })).s === 409, '동시 호출 → 409 busy');
   ok((await act('u02', 'cancel')).s === 403, '남의 취소 → 403');
   let st = await state('u02');
-  ok(st.job.by === '***', '남의 학번 가림');
+  ok(st.job.by === '***' && st.job.by_name === null, '남의 학번·이름 가림');
   ok((await act('u01', 'depart')).s === 403, '사용자 출발 → 403');
   ok((await act('drone', 'depart')).s === 200, '기체 출발 (키)');
   ok((await act('drone', 'depart')).s === 409, '이미 비행 중 → 409');
   ok((await act('drone', 'land')).s === 200, '픽업 착륙');
-  ok((await act('u01', 'send', { point: P1, to: 'u02' })).s === 400, '같은 지점으로 보내기 → 400');
-  ok((await act('u01', 'send', { point: P2, to: 'u02' })).s === 200, '목적지 선택, 받는 사람 u02');
+  ok((await act('u01', 'send', { point: 'main', to: 'u02' })).s === 400, '같은 지점으로 보내기 → 400');
+  ok((await act('u01', 'send', { point: 'eng', to: 'u02' })).s === 200, '공학관으로, 받는 사람 u02');
   st = await state('u02');
   ok(st.job.by_name === '박보냄' && st.job.to_name === '이받음', '보낸 사람·받는 사람 이름', JSON.stringify([st.job.by_name, st.job.to_name]));
   ok((await req('GET', '/api/delivery/who?id=u02', { who: 'u01' })).j.name === '이받음', '학번 → 이름');
   ok((await req('GET', '/api/delivery/who?id=u02')).s === 401, '비로그인 이름 조회 → 401');
   const jb = await (await fetch(H + '/api/delivery/job', { headers: { 'X-Delivery-Key': KEY } })).json();
-  ok(jb.job && jb.job.from.id === P1 && jb.job.to.id === P2, '기체 일감 = P1 → P2');
-  ok((await act('adm', 'depart')).s === 200 && (await act('adm', 'land')).s === 200, '관리자가 출발·착륙 진행');
+  ok(jb.job && jb.job.from.id === 'main' && jb.job.to.id === 'eng', '기체 일감 = 본관 → 공학관');
+  ok((await act('drone', 'depart')).s === 200 && (await act('drone', 'land')).s === 200, '목적지 출발·착륙');
 
   console.log('— 재시작');
   srv.kill(); await sleep(500); srv = await server();
@@ -141,7 +127,7 @@ async function server() {
   ok(st.job === null && st.can.includes('call'), '배송 끝, 다시 호출 가능');
 
   console.log('— 대기 시간 초과');
-  await act('u01', 'call', { point: P3 }); await act('drone', 'depart'); await act('drone', 'land');
+  await act('u01', 'call', { point: 'lib' }); await act('drone', 'depart'); await act('drone', 'land');
   await sleep(4000);
   st = await state('u01');
   ok(st.job && st.job.leg === 'home' && st.job.flags.includes('timeout:pickup'), '픽업 대기 초과 → 복귀');

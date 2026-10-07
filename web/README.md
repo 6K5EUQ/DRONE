@@ -63,7 +63,8 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 
 콕핏의 `배송` 탭. 화면은 실시간 콕핏과 같은 3D 다 — `기체/지도` 스위치(격자 바닥 / 위성 바닥)
 그대로. 지점은 땅 위 원판과 화면 이름표(거리 포함, 화면 밖이면 그쪽 가장자리)로 뜨고, 이름표를 눌러 고른다.
-관리자는 3D 땅을 눌러 새 지점 자리를 찍는다(땅 좌표 → 위경도). 기체가 연결돼 있지 않으면 기지를 기준으로 땅을 깐다. 상태·권한은 서버(`delivery.js`)가 정하고 화면은 받은 `can` 의
+지점은 **고정 6곳**이고 소스(`delivery.js` 의 `CATALOG` — 이름·좌표·기지)에서만 바뀐다. 관리자 화면·계정은 없다.
+기체가 연결돼 있지 않으면 기지를 기준으로 땅을 깐다. 상태·권한은 서버(`delivery.js`)가 정하고 화면은 받은 `can` 의
 버튼만 그린다. 설계·상태표는 [설계 02](../docs/design/02-delivery-system.md).
 
 | 라우트 | 쓰임 |
@@ -71,7 +72,7 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 | `POST /api/auth/login {id,pw}` | 학교 계정 대리 로그인 → 쿠키 `__Host-dlv` (12시간). 비번은 저장 안 함 |
 | `POST /api/auth/logout` | 쿠키 삭제 |
 | `GET /api/delivery/state` | `{rev, service, me, points, job, can}` — 비로그인은 단계만 |
-| `POST /api/delivery/act {act, rev, …}` | 호출·보내기·수거완료·취소, 관리자: 출발·착륙·운행·지점 편집·실측 |
+| `POST /api/delivery/act {act, rev, …}` | 호출·보내기·수거완료·취소. 출발·착륙은 기체만(`X-Delivery-Key`) |
 | `GET /api/delivery/job` | 기체(Pi)용 일감, `X-Delivery-Key` |
 | `GET /api/delivery/who?id=` | 학번 → 이름 (로그인했던 사람만 이름을 안다), 로그인 필요 |
 
@@ -90,7 +91,7 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 |---|---|
 | `SUGANG_URL` | 학교 로그인 주소. **비우면 배송 로그인이 막힌다(503)** |
 | `SUGANG_LOGOUT` | 확인 직후 학교 세션을 끊을 주소 (실측 후) |
-| `DELIVERY_ADMINS` | 관리자 학번, 쉼표로 |
+| `DELIVERY_SERVICE` | `on` 이면 실제 배송 접수. 기본 꺼짐 (테스트 탭과는 무관) |
 | `DELIVERY_SECRET` | 쿠키 서명 키. 비우면 재시작 때마다 전원 재로그인 |
 | `DELIVERY_KEY` | 기체(Pi)가 act·job 을 부를 키 |
 | `DELIVERY_ORIGINS` | 허용 Origin (기본 `https://drone01.bewe.co.kr`) |

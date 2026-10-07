@@ -154,8 +154,6 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, brandGlint .45s 
 .dp.base small { color: #c9ccd3; }
 .dp { position: absolute; left: 0; top: 0; pointer-events: auto; transform: translate(-50%, -50%); white-space: nowrap; background: #fff; color: var(--ink2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; font: 600 13px/1.2 inherit; box-shadow: 0 1px 4px rgba(0,0,0,.25); cursor: pointer; }
 .dp.base { background: #171a20; color: #fff; border-color: #171a20; }
-.dp.unv { border-style: dashed; color: var(--dim); }
-.dp.base.unv { border-color: #fff; color: #fff; }
 .dp.on { border-color: #3e6ae1; box-shadow: 0 0 0 2px #3e6ae1; }
 #info .dlvin { width: 100%; font: inherit; font-size: 14px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; margin: 8px 0 2px; box-sizing: border-box; }
 #info .pfgo + .pfgo { margin-top: 6px; }
@@ -177,6 +175,7 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, brandGlint .45s 
 #info .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .chip { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 5px 12px; font-size: 13px; font-weight: 600; color: var(--ink2); cursor: pointer; }
 .chip:hover { background: #fff; }
+.chip.on { background: #fff; border-color: #3e6ae1; color: #3e6ae1; }
 .verdict { font-size: 26px; font-weight: 800; letter-spacing: .02em; padding: 6px 0 10px; }
 .verdict.ok { color: var(--ok); } .verdict.blk { color: var(--bad); }
 .pferr { color: var(--bad); font-size: 13px; padding: 4px 0 10px; }
