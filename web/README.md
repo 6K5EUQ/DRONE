@@ -1,18 +1,20 @@
 # web — drone01.shade-signals.com
 
-DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업로드만 공유 암호.**
+DRONE01 의 콕핏·비행로그 사이트. **조회는 공개, 업로드만 공유 암호.**
 
 ```
-목록      https://drone01.shade-signals.com/
-분석      https://drone01.shade-signals.com/log/<id>
-비교      https://drone01.shade-signals.com/compare?a=<id>&b=<id>
-실시간    https://drone01.shade-signals.com/live
-콕핏      https://drone01.shade-signals.com/cockpit
-점검      https://drone01.shade-signals.com/preflight
-배송      https://drone01.shade-signals.com/cockpit#dlv
+콕핏      https://drone01.shade-signals.com/                    첫 화면 — 3D 기체 + 실시간·기록·점검 (/cockpit 도 같은 페이지)
+배송      https://drone01.shade-signals.com/#dlv
+목록      https://drone01.shade-signals.com/analysis/log
+분석      https://drone01.shade-signals.com/analysis/log/<id>
+비교      https://drone01.shade-signals.com/analysis/compare?a=<id>&b=<id>
 소개      https://drone01.shade-signals.com/intro
 상태      https://drone01.shade-signals.com/api/health
 ```
+
+2026-10-07 개편: 콕핏을 첫 화면으로 올리고 목록·분석·비교를 `/analysis` 아래로 옮겼다.
+옛 `/log/<id>`·`/compare` 는 새 자리로 301 한다. 실시간 화면(`/live`)과 점검 화면(`/preflight`)은
+웹에서 뺐다 — 실시간은 콕핏이, 점검은 콕핏 점검 탭이 맡는다.
 
 ## 구조
 
@@ -22,8 +24,8 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 | `delivery.js` | 교내 배송 — 학교 계정 대리 로그인, 배송 상태머신, 지점 ([설계 02](../docs/design/02-delivery-system.md)) |
 | `test/` | 배송 시험 `delivery_test.js` 와 가짜 학교 로그인 서버 `fake_sugang.js` |
 | `extract.py` | ArduCopter `.BIN` → 목록 한 줄(`row`) / 요약+시계열(`full`). **유일한 파싱 경로** |
-| `public/` | 목록·분석·비교·콕핏·점검·소개 화면, `vendor/`(leaflet·three·inter) |
-| `live/public/` | 실시간 화면 (rim3 의 `drone-live` 와 같은 파일) |
+| `public/` | 콕핏·목록·분석·비교·소개 화면, `vendor/`(leaflet·three·inter) |
+| `live/public/` | 로컬 실시간 화면 (rim3 의 `drone-live` 가 쓴다. 웹에서는 2026-10-07 제거) |
 | `live/livepush.py` | rim3 → 웹 실시간 중계 (한 방향) |
 | `model/drone01.py` | 콕핏 3D 모델 정본(Blender 4.5). 결과물 `public/model/drone01.glb` |
 | `deploy/` | 랩서버 유닛·터널 설정·`deploy.sh` |
@@ -39,7 +41,7 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 - 판정 임계값: 전류 40/56 A(모터 연속 14 A × 4, docs/design/01), 진동 30/60 m/s².
   🔶 실비행으로 검증 전이다.
 
-## 콕핏 `/cockpit`
+## 콕핏 `/`
 
 기체 상태 화면 한 장(`public/cockpit.html`·`cockpit.js`). 값은 `/api/live/state`(실시간)와
 `/api/logs`·`/api/playback/*`(기록·재생)에서만 읽는다.
@@ -99,7 +101,7 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 | `DELIVERY_SIM` | `on` 이면 서버가 기체를 시뮬레이션 (실제 링크 전). `SIM_ALT`·`SIM_SPEED`·`SIM_CLIMB`·`SIM_DESC`·`SIM_WAIT` 로 값 조정 |
 | `DELIVERY_SECRET` | 쿠키 서명 키. 비우면 재시작 때마다 전원 재로그인 |
 | `DELIVERY_KEY` | 기체(Pi)가 act·job 을 부를 키 |
-| `DELIVERY_ORIGINS` | 허용 Origin (기본 `https://drone01.shade-signals.com,https://drone01.shade-signals.com`) |
+| `DELIVERY_ORIGINS` | 허용 Origin (기본 `https://drone01.shade-signals.com,https://drone01.bewe.co.kr`) |
 | `PICKUP_WAIT`·`DEST_WAIT` | 착륙 후 대기 초과 시 복귀, 초 (기본 300·600, 운영값) |
 
 ## 포트
@@ -152,8 +154,8 @@ sed "s/REPLACE_WITH_TUNNEL_UUID/<UUID>/g" ~/DRONE/web/deploy/config-drone01.yml 
 sudo systemctl enable --now lab-tunnel-drone01
 ```
 
-점검(`/preflight`)은 `.env` 에 `PREFLIGHT_KEY`·`PREFLIGHT_PASSWORD`·`PREFLIGHT_AGENTS` 가
-있어야 켜진다. 에이전트는 아직 없다 — 화면은 뜨고 점검만 막힌다.
+점검(콕핏 점검 탭)은 `.env` 에 `PREFLIGHT_KEY`·`PREFLIGHT_PASSWORD`·`PREFLIGHT_AGENTS` 가
+있어야 켜진다. 에이전트는 아직 없다 — 탭은 뜨고 점검만 막힌다.
 
 ## 배포 (이후)
 

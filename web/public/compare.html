@@ -50,11 +50,9 @@
   <h1><a href="/">DRONE01</a></h1>
   <span class="sub">두 비행 비교</span>
   <span class="grow"></span>
-  <a class="btn" href="/">비행 기록</a>
+  <a class="btn" href="/analysis/log">비행 기록</a>
   <a class="btn" href="/intro">소개</a>
-  <a class="btn" href="/preflight">점검</a>
-  <a class="btn" href="/cockpit">콕핏</a>
-  <a class="btn" href="/live">실시간</a>
+  <a class="btn" href="/">콕핏</a>
 </header>
 
 <main>
@@ -76,9 +74,9 @@ new ResizeObserver(() => document.documentElement.style.setProperty('--hdr',
 
 // 목록에서 열었으면 목록 링크는 뒤로 가기다 — 목록이 보던 필터·정렬·스크롤로 돌아간다.
 document.addEventListener('click', (e) => {
-  const a = e.target.closest('a[href="/"]');
+  const a = e.target.closest('a[href="/analysis/log"]');
   if (!a || e.button || e.ctrlKey || e.metaKey || e.shiftKey || history.length < 2) return;
-  try { const r = new URL(document.referrer); if (r.origin !== location.origin || r.pathname !== '/') return; }
+  try { const r = new URL(document.referrer); if (r.origin !== location.origin || r.pathname !== '/analysis/log') return; }
   catch { return; }
   e.preventDefault();
   history.back();
@@ -134,7 +132,7 @@ async function get(id) {
     const m = meta(x.id);
     return `<div class="head ${cls}">
       <div class="n"><b style="color:var(${cls === 'a' ? '--c-alt' : '--c-spd'})">${cls.toUpperCase()}</b>
-        <a href="/log/${x.id}">${m.name || x.id}</a></div>
+        <a href="/analysis/log/${x.id}">${m.name || x.id}</a></div>
       <div class="m">${[(m.utc || '').slice(0, 16).replace('T', ' '), BADGE[m.badge] || m.badge]
         .filter(Boolean).join(' · ')}</div></div>`;
   }).join('');

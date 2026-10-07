@@ -49,7 +49,7 @@ DRONE01 을 교내 근거리 배송 드론으로 쓰는 설계. 사람이 웹·�
 ## 1. 체계
 
 ```
- 사람 (웹 drone01.shade-signals.com/cockpit 배송 탭, 앱은 같은 화면을 WebView 로)
+ 사람 (웹 drone01.shade-signals.com 콕핏 배송 탭, 앱은 같은 화면을 WebView 로)
    │ HTTPS
    ▼
  drone01 서버 (web/server.js + web/delivery.js)
@@ -157,7 +157,7 @@ seq 3  LAND      목적지
 
 - 2 kg 초과 시 신고·자격 요건
 - 사람·건물 위 비행, 비가시권 비행, 자동비행 승인
-- 교내 위치의 관제권·비행금지구역 (`/live` 의 공역 지도 `kr_airspace.geojson` 으로 1차 확인)
+- 교내 위치의 관제권·비행금지구역 (로컬 트래커의 공역 지도 `kr_airspace.geojson` 으로 1차 확인)
 - 학교 측 비행 허가
 
 ## 8. 단계

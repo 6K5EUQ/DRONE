@@ -5,7 +5,7 @@
 // rotor_LF/RF/LB/RB, gps, bay_*.
 //
 // 🔴 판정은 여기서 하지 않는다. 점검은 /api/preflight/stream 이 준 level·verdict
-//    를 그대로 그린다 (preflight.js 와 같은 규칙, 임계값은 preflight.py 한 곳).
+//    를 그대로 그린다 (임계값은 preflight.py 한 곳).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
@@ -937,7 +937,7 @@ function setSat(on) {
 $('modes').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setSat(b.dataset.m === 'map'); });
 
 // ── 비행 전 점검 ─────────────────────────────────────────────────────
-// preflight.js 와 같은 스트림·암호(sessionStorage pf_pw)를 쓴다.
+// 점검 스트림(/api/preflight/stream)과 암호(sessionStorage pf_pw).
 const pf = { state: 'idle', groups: [], res: {}, prog: {}, verdict: null, error: null, at: null, open: null, bayLevel: {} };
 let pfPw = '';
 try { pfPw = sessionStorage.getItem('pf_pw') || ''; } catch { /* 사설 모드 */ }
@@ -1010,7 +1010,7 @@ function pfLine(d) {
   else if (d.t === 'group') pf.res[d.group.name] = d.group;
   else if (d.t === 'done') {
     for (const g of d.groups || []) pf.res[g.name] = g;
-    if (d.error) pf.error = '점검 실패'; else pf.verdict = d.verdict;
+    if (d.error) pf.error = String(d.error); else pf.verdict = d.verdict;
     pf.state = 'done';
   }
   pfBayLevels();
@@ -1030,7 +1030,9 @@ async function pfRun() {
     }
     try { sessionStorage.setItem('pf_pw', pfPw); } catch { /* 사설 모드 */ }
     if (!(res.headers.get('content-type') || '').includes('ndjson')) {
-      pf.error = res.status === 409 ? '다른 점검 중' : res.status === 429 ? '잠시 후 재시도' : '점검 실패';
+      let msg = null;
+      try { msg = (await res.json()).error; } catch { /* 본문 없음 */ }
+      pf.error = res.status === 409 ? '다른 점검 중' : res.status === 429 ? '잠시 후 재시도' : String(msg || '점검 실패');
       pf.state = 'done'; renderPf(); return;
     }
     const reader = res.body.getReader(), dec = new TextDecoder();
@@ -1049,14 +1051,15 @@ async function pfRun() {
   } catch (e) {
     pf.error = '연결 실패';
   }
-  if (pf.state === 'run') pf.state = 'done';
+  // 판정 줄(done) 없이 스트림이 끝나면 중간에 끊긴 것이다.
+  if (pf.state === 'run') { pf.state = 'done'; if (!pf.verdict && !pf.error) pf.error = '점검 중단'; }
   if (tab === 'pf' && !sel) renderPf();
 }
 
 // ── 로그 재생 ────────────────────────────────────────────────────────
 // 서버 재생 엔진(/api/playback/*, drone_live.py)을 그대로 쓴다. 상태가 실시간과
 // 같은 모양이라 화면의 모든 칸이 그대로 채워진다 — 여기서는 시각만 넘긴다.
-// ⚠️ 재생 세션은 서버에 하나뿐이다 — /live 에서 누가 재생 중이면 그쪽이 바뀐다.
+// ⚠️ 재생 세션은 서버에 하나뿐이다 — 다른 화면에서 누가 재생 중이면 그쪽이 바뀐다.
 const RATES = [1, 2, 4, 8];
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 // 목록의 `utc` 는 이름과 달리 이미 **한국시간**이다(extract.py 가 +9 해 둔다) — 다시 더하지 않는다.

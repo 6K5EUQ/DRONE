@@ -24,7 +24,6 @@ const REPO = path.dirname(__dirname);
 const PUBLIC = path.join(__dirname, 'public');
 // 라이브 화면은 로컬 트래커와 **같은 파일**을 쓴다 (web/live/public/).
 // 사본을 두면 한쪽만 고쳐져 두 화면이 갈라진다 — 그래서 여기서 그대로 낸다.
-const LIVE_PUBLIC = path.join(__dirname, 'live', 'public');
 
 const PORT = parseInt(process.env.PORT || '4310', 10);
 const BIND = process.env.BIND_ADDR || '127.0.0.1';
@@ -248,78 +247,6 @@ function send(req, res, status, body, type, extra = {}) {
 const sendJson = (req, res, status, obj) =>
   send(req, res, status, JSON.stringify(obj), TYPES['.json'], { 'Cache-Control': 'no-store' });
 
-// ── ADS-B: 주변 유인기 ───────────────────────────────────────────────
-// 🔴 **프록시가 필요한 이유는 CORS 다.** adsb.lol·adsb.fi·OpenSky 셋 다
-//    `Access-Control-Allow-Origin` 을 안 준다 (2026-09-17 실측). 브라우저가
-//    직접 부르면 막히므로 여기서 대신 받아 넘긴다.
-//
-// ⚠️ **반경을 10km 로 좁히지 마라.** 창원 상공은 순항 트래픽 위주라
-//    5.4nm(10km) 안은 실측 3회 전부 **0기**였다. 30nm 면 4~5기가 꾸준히 잡힌다
-//    (김해공항이 동쪽 25km). 좁히면 "고장났다" 고 오판하게 된다.
-//    홈 10km 원은 프론트가 따로 그린다 — 데이터 반경과 별개다.
-const ADSB_LAT = parseFloat(process.env.ADSB_LAT || '35.1811');
-const ADSB_LON = parseFloat(process.env.ADSB_LON || '128.5538');
-const ADSB_NM = parseInt(process.env.ADSB_NM || '30', 10);
-const ADSB_TTL = 15000;                       // upstream 을 15초에 한 번만 친다
-let adsbCache = { at: 0, rows: [], src: null, error: null };
-let adsbInflight = null;
-
-/** adsb.lol → 실패 시 adsb.fi. 응답 키가 `ac`/`aircraft` 로 갈려 둘 다 본다. */
-async function adsbFetchOnce() {
-  const urls = [
-    ['adsb.lol', `https://api.adsb.lol/v2/lat/${ADSB_LAT}/lon/${ADSB_LON}/dist/${ADSB_NM}`],
-    ['adsb.fi', `https://opendata.adsb.fi/api/v2/lat/${ADSB_LAT}/lon/${ADSB_LON}/dist/${ADSB_NM}`],
-  ];
-  let lastErr = null;
-  for (const [src, u] of urls) {
-    try {
-      const ctl = AbortSignal.timeout(8000);
-      const r = await fetch(u, { signal: ctl, headers: { 'Accept': 'application/json' } });
-      if (!r.ok) { lastErr = `${src} HTTP ${r.status}`; continue; }
-      const j = await r.json();
-      const raw = Array.isArray(j.ac) ? j.ac : (Array.isArray(j.aircraft) ? j.aircraft : []);
-      // 프론트가 쓰는 것만 남긴다 — 응답 하나가 3KB 를 넘고 대부분이 안 쓰는 필드다.
-      const rows = raw
-        .filter(a => Number.isFinite(a.lat) && Number.isFinite(a.lon))
-        .map(a => ({
-          hex: a.hex,
-          // `flight` 는 뒤에 공백이 붙어 온다 ("ESR963  ").
-          call: String(a.flight || '').trim() || null,
-          reg: a.r || null,
-          type: a.t || null,
-          lat: a.lat, lon: a.lon,
-          // 지상기는 alt_baro 가 문자열 "ground" 로 온다.
-          alt: typeof a.alt_baro === 'number' ? a.alt_baro : null,
-          ground: a.alt_baro === 'ground',
-          gs: typeof a.gs === 'number' ? a.gs : null,
-          trk: typeof a.track === 'number' ? a.track : null,
-          vs: typeof a.baro_rate === 'number' ? a.baro_rate : null,
-          dst: typeof a.dst === 'number' ? a.dst : null,
-        }));
-      return { rows, src };
-    } catch (e) { lastErr = `${src}: ${e.message}`; }
-  }
-  throw new Error(lastErr || 'adsb 실패');
-}
-
-/** 동시에 여러 브라우저가 물어도 upstream 요청은 15초당 하나다. */
-async function adsbGet() {
-  if (Date.now() - adsbCache.at < ADSB_TTL) return adsbCache;
-  if (adsbInflight) return adsbInflight;
-  adsbInflight = (async () => {
-    try {
-      const { rows, src } = await adsbFetchOnce();
-      adsbCache = { at: Date.now(), rows, src, error: null };
-    } catch (e) {
-      // 🔴 실패해도 **마지막 좋은 값을 버리지 않는다.** 한 번 끊겼다고 화면에서
-      //    항공기가 사라지면 "주변이 비었다" 로 잘못 읽힌다. stale 로 표시만 한다.
-      adsbCache = { ...adsbCache, at: Date.now(), error: e.message };
-    } finally { adsbInflight = null; }
-    return adsbCache;
-  })();
-  return adsbInflight;
-}
-
 /** 캐시 파일은 내용 해시로 주소가 정해지므로 영구 캐시해도 안전하다. */
 async function sendCached(req, res, file) {
   let gz;
@@ -444,22 +371,6 @@ async function handleUpload(req, res) {
 }
 
 // ── 정적 파일 ────────────────────────────────────────────────────────
-/** 라이브 화면의 정적 파일. web/live/public/ 안의 **허용 목록**만 낸다.
- *
- * 🔴 serveStatic 처럼 임의 경로를 받지 않는다. 그 폴더에는 화면과 상관없는
- *    것(_selftest.html 등)도 있고, 무엇보다 루트를 하나 더 여는 것 자체가
- *    경로 탈출 표면을 늘린다. 필요한 네 개만 이름으로 건다.
- */
-const LIVE_FILES = new Map([
-  ['/live/index.html', 'index.html'],
-  ['/live.css', 'live.css'],
-  ['/live.js', 'live.js'],
-  // 공역 폴리곤(비행금지·제한·관제권). VWorld 에서 받아 **정적 파일로 굳혀** 둔다 —
-  // api.vworld.kr 이 CORS 를 안 주고, 공역은 분기에 한 번 바뀔까 말까다.
-  // 갱신은 tools/fetch_airspace.py 를 다시 돌린다.
-  ['/data/kr_airspace.geojson', 'data/kr_airspace.geojson'],
-]);
-
 /** 🔴 CDN 이 ETag 를 떼어 간다 — 그래서 URL 자체에 지문을 박는다.
  *
  *  원본은 `Cache-Control: no-cache` 와 ETag 를 정확히 내는데, Cloudflare 를
@@ -477,38 +388,6 @@ const LIVE_FILES = new Map([
 const assetTag = (buf) =>
   crypto.createHash('sha1').update(buf).digest('base64url').slice(0, 10);
 
-async function serveLiveAsset(req, res, urlPath) {
-  const name = LIVE_FILES.get(urlPath);
-  if (!name) return send(req, res, 404, '없다', 'text/plain; charset=utf-8');
-  let buf;
-  try { buf = await fsp.readFile(path.join(LIVE_PUBLIC, name)); }
-  catch { return send(req, res, 404, '없다', 'text/plain; charset=utf-8'); }
-
-  if (name === 'index.html') {
-    // 같이 딸려 나가는 것들의 지문을 읽어 URL 에 박는다. 하나라도 못 읽으면
-    // 그 파일만 원래대로 둔다 — 화면이 안 뜨는 것보다 캐시가 낡는 편이 낫다.
-    let html = buf.toString('utf8');
-    for (const asset of ['live.js', 'live.css']) {
-      try {
-        const v = assetTag(await fsp.readFile(path.join(LIVE_PUBLIC, asset)));
-        html = html.split(`"/${asset}"`).join(`"/${asset}?v=${v}"`);
-      } catch { /* 그 파일은 그대로 둔다 */ }
-    }
-    buf = Buffer.from(html, 'utf8');
-  }
-
-  const type = TYPES[path.extname(name).toLowerCase()] || 'application/octet-stream';
-  // 🔴 HTML 은 `no-store` 다. `no-cache` 는 "쓰기 전에 물어봐라" 인데 CDN 이
-  //    ETag 를 떼어 가면 물어볼 지문이 없어 옛 사본이 그대로 쓰인다. HTML 이
-  //    낡으면 그 안의 ?v= 지문까지 옛것이라 자산 버전까지 통째로 굳는다 —
-  //    화면이 안 바뀌는 것처럼 보이는 마지막 고리다. HTML 은 8KB 라 매번
-  //    받아도 싸다. 자산(js/css)은 ?v= 가 지키므로 캐시해도 안전하다.
-  const cache = name.endsWith('.html')
-    ? 'no-store, no-cache, must-revalidate'
-    : 'public, max-age=31536000, immutable';
-  send(req, res, 200, buf, type, { 'Cache-Control': cache });
-}
-
 const NOT_FOUND_HTML = `<!doctype html>
 <meta charset="utf-8">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -519,10 +398,14 @@ const NOT_FOUND_HTML = `<!doctype html>
 <header>
   <h1><a href="/">DRONE01</a></h1>
   <span class="grow"></span>
-  <a class="btn" href="/">비행 기록</a>
+  <a class="btn" href="/analysis/log">비행 기록</a>
 </header>
 <main style="padding:30px 20px"><p class="muted">없는 페이지</p></main>
 `;
+
+function redirect(req, res, to) {
+  res.writeHead(301, { Location: to, 'Cache-Control': 'no-store' }).end();
+}
 
 async function serveStatic(req, res, urlPath) {
   const rel = urlPath === '/' ? 'index.html' : decodeURIComponent(urlPath).slice(1);
@@ -542,7 +425,7 @@ async function serveStatic(req, res, urlPath) {
   }
   const isHtml = file.endsWith('.html');
   if (isHtml) {
-    // serveLiveAsset 와 같은 이유 — CDN 이 ETag 를 떼고 js 를 4시간 쥐고 있어
+    // CDN 이 ETag 를 떼고 js 를 4시간 쥐고 있어
     // 새 HTML 이 옛 js 와 붙는다. 자산 URL 에 지문을 박는다.
     let html = buf.toString('utf8');
     for (const ref of new Set(html.match(/"\/[\w-]+\.(?:js|css)"/g) || [])) {
@@ -907,16 +790,6 @@ async function route(req, res) {
     return sendCached(req, res, cachePath(id, kind));
   }
 
-  // 주변 유인기 (ADS-B). 브라우저는 CORS 때문에 직접 못 부른다 — 위 adsbGet 참조.
-  if (p === '/api/adsb' && req.method === 'GET') {
-    const c = await adsbGet();
-    return sendJson(req, res, 200, {
-      center: [ADSB_LAT, ADSB_LON], nm: ADSB_NM,
-      age: Math.round((Date.now() - c.at) / 1000),
-      src: c.src, error: c.error, ac: c.rows,
-    });
-  }
-
   if (p === '/api/upload' && req.method === 'POST') return handleUpload(req, res);
 
   // 비행 전 점검 — 버튼 하나가 FC 를 읽고 GO/NO-GO 를 낸다.
@@ -932,21 +805,22 @@ async function route(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     return send(req, res, 405, '허용하지 않는 메서드', 'text/plain; charset=utf-8');
   }
-  // /log/<id> 는 분석 페이지. 실제 파일은 log.html 이다.
-  if (/^\/log\/[0-9a-f]{16}$/.test(p)) return serveStatic(req, res, '/log.html');
-  // /live 는 실시간 화면. 로컬 트래커(:4410)와 **같은 파일**을 쓴다.
-  if (p === '/live' || p === '/live/') return serveLiveAsset(req, res, '/live/index.html');
-  if (LIVE_FILES.has(p)) return serveLiveAsset(req, res, p);
+  // 콕핏이 첫 화면이다. /cockpit 은 앱(WebView)이 여는 주소라 같은 페이지로 남긴다.
+  if (p === '/' || p === '/cockpit' || p === '/cockpit/') return serveStatic(req, res, '/cockpit.html');
+  // 비행 기록 — 목록·분석·비교를 /analysis 아래에 둔다.
+  if (p === '/analysis' || p === '/analysis/') return redirect(req, res, '/analysis/log');
+  if (p === '/analysis/log' || p === '/analysis/log/') return serveStatic(req, res, '/index.html');
+  if (/^\/analysis\/log\/[0-9a-f]{16}$/.test(p)) return serveStatic(req, res, '/log.html');
+  if (p === '/analysis/compare') return serveStatic(req, res, '/compare.html');
+  // 옛 주소로 공유된 링크는 새 자리로 보낸다.
+  const old = /^\/log\/([0-9a-f]{16})$/.exec(p);
+  if (old) return redirect(req, res, '/analysis/log/' + old[1] + url.search);
+  if (p === '/compare') return redirect(req, res, '/analysis/compare' + url.search);
   // 재생은 drone_live.py 가 한다 (.BIN 을 열어 HUD·차트로 되돌린다).
   // 여기서 다시 짜지 않고 그대로 넘긴다. 랩서버는 데이터 폴더의 logs 를 그 자리에서 읽는다.
   if (p.startsWith('/api/playback/')) return proxyLive(req, res);
-  if (/^\/compare\b/.test(p)) return serveStatic(req, res, '/compare.html');
   // /intro 는 체계 소개 페이지. 실제 파일은 intro.html 이다.
   if (p === '/intro' || p === '/intro/') return serveStatic(req, res, '/intro.html');
-  // /preflight 는 비행 전 점검 페이지.
-  if (p === '/preflight' || p === '/preflight/') return serveStatic(req, res, '/preflight.html');
-  // /cockpit 은 차량 센터 디스플레이 형식의 기체 상태 화면 (3D 기체 + 실시간·기록).
-  if (p === '/cockpit' || p === '/cockpit/') return serveStatic(req, res, '/cockpit.html');
   return serveStatic(req, res, p);
 }
 

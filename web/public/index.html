@@ -27,15 +27,8 @@
     </optgroup>
   </select>
   <button id="cmpBtn" disabled>비교</button>
-  <!-- 실시간. 현장 노트북(rim3)이 밀어 올리는 동안에만 초록 점이 켜진다 —
-       기체가 안 떠 있으면 눌러도 「끊김」 화면이라, 눌러 볼 값어치가 있는지를
-       버튼 자체가 말해 준다. -->
   <a class="btn" href="/intro">소개</a>
-  <!-- 비행 전 점검. FC 가 꽂힌 PC 의 에이전트를 통해 읽기 전용으로 조회한다. -->
-  <a class="btn" href="/preflight">점검</a>
-  <a class="btn" href="/cockpit">콕핏</a>
-  <a class="btn" id="liveBtn" href="/live" title="실시간">
-    <span class="livedot" id="liveDot"></span>실시간</a>
+  <a class="btn" href="/">콕핏</a>
   <button id="upBtn">업로드</button>
 </header>
 
@@ -144,7 +137,7 @@ function render() {
     return `<tr data-id="${r.id}">
       <td style="padding:0"><label style="display:block;padding:7px 10px;cursor:pointer"><input type="checkbox" class="pick" data-id="${r.id}"
            ${selected.has(r.id) ? 'checked' : ''}></label></td>
-      <td><a href="/log/${r.id}">${r.name}</a>
+      <td><a href="/analysis/log/${r.id}">${r.name}</a>
           ${r.corrupt ? '<span class="flag" title="깨진 구간 · 샘플 누락">⚠손상</span>' : ''}</td>
       <td class="mono">${fmtTime(r.utc)}</td>
       <td><span class="badge ${b}">${label}</span>${(r.auto || []).map((a) => ` <span class="badge ${a}">${AUTO[a] || a}</span>`).join('')}</td>
@@ -223,7 +216,7 @@ $('#q').oninput = render;
 $('#filter').onchange = render;
 $('#cmpBtn').onclick = () => {
   const [a, b] = [...selected];
-  location.href = `/compare?a=${a}&b=${b}`;
+  location.href = `/analysis/compare?a=${a}&b=${b}`;
 };
 
 // ── 업로드 ──────────────────────────────────────────────────────────
@@ -259,38 +252,4 @@ $('#upForm').onsubmit = async (e) => {
 };
 
 load();
-
-// ── 실시간 버튼의 상태 점 ────────────────────────────────────────────
-// 🔴 **현장 노트북은 rim3 다.** 비행 나갈 때 들고 나가는 PC 가 rim3 이고, FC 는
-//    거기에 USB 로 붙는다. rim3 가 꺼져 있거나 인터넷이 없으면
-//    점은 회색이다 — 서버 잘못이 아니라 올려 주는 PC 가 없는 것이다.
-//
-// 목록 화면에서는 느리게 본다(10초). 이 점은 "지금 눌러 볼 값어치가 있나" 만
-// 답하면 되고, 실제 계기는 /live 가 5Hz 로 긁는다.
-const LIVE_PING_MS = 10000;
-
-async function liveTick() {
-  const dot = $('#liveDot');
-  const btn = $('#liveBtn');
-  if (!dot || !btn) return;
-  try {
-    const r = await fetch('/api/live/state?track=0', { cache: 'no-store' });
-    const s = await r.json();
-    const on = !!s.live;
-    dot.classList.toggle('on', on);
-    if (on) {
-      const mode = s.d && s.d.mode ? ` · ${s.d.mode}` : '';
-      btn.title = '수신 중' + mode;
-    } else if (s.relay && s.relay.age != null) {
-      btn.title = `끊김 · ${Math.round(s.relay.age)}초 전`;
-    } else {
-      btn.title = '수신 없음';
-    }
-  } catch {
-    dot.classList.remove('on');
-    btn.title = '상태 모름';
-  }
-}
-liveTick();
-setInterval(liveTick, LIVE_PING_MS);
 </script>
