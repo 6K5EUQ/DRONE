@@ -59,19 +59,24 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
 /* 자세계 */
 .hud { flex: none; aspect-ratio: 300 / 116; max-height: 150px; position: relative; }
 .hud .att { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-body.dlvmode #sc-mspread, body.dlvmode #sc-mavg, body.dlvmode .hud { display: none; }
-body.dlvmode .strip { flex: none; gap: 18px; }
-#dlvPane { flex: 1 1 auto; border-top: 1px solid var(--line); padding-top: 14px; }
-#dlvPane .ih b { font-size: 18px; }
-#dlvPane .ih { margin-bottom: 14px; }
-#dlvPane .chips { gap: 8px; margin: 0 0 16px; }
-#dlvPane .chip { padding: 7px 14px; }
-#dlvPane .pfgo { padding: 12px 0; }
-#dlvPane .pfgo + .pfgo { margin-top: 10px; }
-#dlvPane .row + .pfgo, #dlvPane .row + .chips { margin-top: 16px; }
-#dlvPane .pfgo + .chips, #dlvPane .chips:last-child { margin-top: 18px; margin-bottom: 0; }
-#dlvPane .ih .at { font-size: 14px; font-weight: 600; color: var(--ink2); }
-#dlvPane .ih .at.down { color: var(--bad); }
+/* 배송·테스트 — 계기 4줄은 그대로 두고 이름만 바꾼다(고도·배터리·남은 거리·예상 시간), 자세계 자리에 배송 상자 */
+body.dlvmode .hud { display: none; }
+#dlvPane { flex: none; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+#dlvPane .ih { margin: 0; align-items: baseline; }
+#dlvPane .ih b { font-size: 15px; }
+#dlvPane .ih .at { font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }   /* .spd .arm b 와 같은 꼴 */
+#dlvPane .ih .at.ready { color: var(--ok); } #dlvPane .ih .at.busy { color: var(--acc); } #dlvPane .ih .at.down { color: var(--bad); }
+#dlvPane .row { border: 0; padding: 0; }
+#dlvPane .pts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+#dlvPane .pts button { height: 38px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; font-weight: 600; color: var(--ink2); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
+#dlvPane .pts button:hover { background: #fff; }
+#dlvPane .pts button.on { background: #fff; border-color: var(--acc); color: var(--acc); }
+#dlvPane .pts button:disabled { color: var(--muted); background: var(--bg); cursor: default; }
+#dlvPane .pfgo { height: 44px; padding: 0; }
+#dlvPane .pfgo + .pfgo { margin-top: -4px; }
+#dlvPane .lo { align-self: flex-end; border: 0; background: none; padding: 0; font-size: 12px; color: var(--dim); cursor: pointer; }
+#dlvPane .lo:hover { color: var(--ink2); }
+#dlvPane .dlverr { margin: 0; }
 #hudHz, #hudRoll { transform-origin: 0 0; transition: transform .25s linear; }
 
 /* 계기판 — 3칸. 모터 그림이 두 칸, 편차·평균이 셋째 칸 */
@@ -352,8 +357,8 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
     <div class="strip">
       <div class="sc" id="sc-alt"><b class="num" id="st-alt">—</b><span>고도</span></div>
       <div class="sc" id="sc-cur"><b class="num" id="st-cur">—</b><span id="st-cur-l">전류</span></div>
-      <div class="sc" id="sc-mspread"><b class="num" id="st-mspread">—</b><span>모터 편차</span></div>
-      <div class="sc" id="sc-mavg"><b class="num" id="st-mavg">—</b><span>모터 평균</span></div>
+      <div class="sc" id="sc-mspread"><b class="num" id="st-mspread">—</b><span id="st-mspread-l">모터 편차</span></div>
+      <div class="sc" id="sc-mavg"><b class="num" id="st-mavg">—</b><span id="st-mavg-l">모터 평균</span></div>
     </div>
     <div class="fcwarn" id="fcWarn" hidden></div>
     <div id="dlvPane" hidden></div>

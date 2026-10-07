@@ -1229,13 +1229,19 @@ function renderStrip(d) {
     html('st-cur', u(d.cur, 1, 'A'));
     sc('sc-cur', d.cur > 56 ? 'bad' : d.cur > 40 ? 'warn' : '');
   }
-  const mt = d.motors || {}, vs = ['LF', 'RF', 'LB', 'RB'].map((k) => mt[k]).filter((v) => v != null);
-  const spread = vs.length ? Math.max(...vs) - Math.min(...vs) : null;
-  const avg = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
-  html('st-mspread', u(spread, 1, '%p'));
-  sc('sc-mspread', spread == null ? '' : spread > SPREAD_BAD ? 'bad' : spread > SPREAD_WARN ? 'warn' : '');
-  html('st-mavg', u(avg, 0, '%'));
-  sc('sc-mavg', avg == null ? '' : avg > MAVG_BAD ? 'bad' : avg > MAVG_WARN ? 'warn' : '');
+  if (dlvTab()) {   // 배송·테스트 — 모터 대신 남은 거리·예상 시간 (비행 중일 때만 값)
+    const f = (view() || {}).fly;
+    txt('st-mspread-l', '남은 거리'); html('st-mspread', u(f && f.remain, 0, 'm')); sc('sc-mspread', '');
+    txt('st-mavg-l', '예상 시간'); html('st-mavg', f ? mmss(f.eta) : '—'); sc('sc-mavg', '');
+  } else {
+    const mt = d.motors || {}, vs = ['LF', 'RF', 'LB', 'RB'].map((k) => mt[k]).filter((v) => v != null);
+    const spread = vs.length ? Math.max(...vs) - Math.min(...vs) : null;
+    const avg = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
+    txt('st-mspread-l', '모터 편차'); html('st-mspread', u(spread, 1, '%p'));
+    sc('sc-mspread', spread == null ? '' : spread > SPREAD_BAD ? 'bad' : spread > SPREAD_WARN ? 'warn' : '');
+    txt('st-mavg-l', '모터 평균'); html('st-mavg', u(avg, 0, '%'));
+    sc('sc-mavg', avg == null ? '' : avg > MAVG_BAD ? 'bad' : avg > MAVG_WARN ? 'warn' : '');
+  }
   html('st-alt', u(d.alt, 1, 'm'));
   const w = fcWarn(), we = $('fcWarn');
   we.hidden = !w;
@@ -1569,23 +1575,22 @@ function renderDlv() {
   let h = `<div class="ih"><b>${dlv.test ? '테스트' : '배송'}</b><span class="at ${stt}">${DLV_STATUS[stt]}</span></div>`;
   if (st && !dlv.off) {
     // 사용자 — 지금 기체를 쓰는(호출한) 사람, 「이름 (학번)」. 누구에게나 보인다
-    const row = (k, v) => `<div class="row"><span>${k}</span><b>${esc(v)}</b></div>`;
-    if (j && j.by) h += row('사용자', j.by_name ? `${j.by_name} (${j.by})` : j.by);
-    if (st.fly) h += row('남은 거리', `${st.fly.remain} m`) + row('예상 시간', mmss(st.fly.eta));   // 고도는 바로 위 계기에 있다
-    const sp = dpt(dlv.sel);
-    // 지점 — 소스에 정해 둔 고정 목록 (web/delivery.js CATALOG). 기지는 고를 수 없다
+    if (j && j.by) h += `<div class="row"><span>사용자</span><b>${esc(j.by_name ? `${j.by_name} (${j.by})` : j.by)}</b></div>`;
+    const sp = dpt(dlv.sel), pick = sp && !sp.base;
+    // 지점 — 소스에 정해 둔 고정 목록 (web/delivery.js CATALOG). 기지는 고를 수 없다. 고를 차례에만 보인다
     const list = (st.points || []).filter((p) => placed(p) && !p.base);
-    if (me && list.length && (can.has('call') || can.has('send'))) h += `<div class="chips">${list.map((p) => `<button class="chip${p.id === dlv.sel ? ' on' : ''}" data-dlv="pick" data-pt="${esc(p.id)}">${esc(p.name)}</button>`).join('')}</div>`;
-    if (!me) h += `<button class="pfgo" data-dlv="login">로그인</button>`;
+    if (me && list.length && (can.has('call') || can.has('send'))) {
+      h += `<div class="pts">${list.map((p) => `<button class="${p.id === dlv.sel ? 'on' : ''}" data-dlv="pick" data-pt="${esc(p.id)}"${j && p.id === j.pickup ? ' disabled' : ''}>${esc(p.name)}</button>`).join('')}</div>`;
+    }
+    if (!me) h += '<button class="pfgo" data-dlv="login">로그인</button>';
     else {
-      const pick = sp && !sp.base;
       if (can.has('call')) h += `<button class="pfgo" data-dlv="call"${pick ? '' : ' disabled'}>호출</button>`;
       if (can.has('send')) h += `<button class="pfgo" data-dlv="send"${pick && sp.id !== j.pickup ? '' : ' disabled'}>보내기</button>`;
       if (can.has('done')) h += '<button class="pfgo" data-dlv="done">수거완료</button>';
       if (can.has('cancel')) h += '<button class="pfgo" data-dlv="cancel">취소</button>';
-      h += '<div class="chips"><button class="chip" data-dlv="logout">로그아웃</button></div>';
     }
     if (dlv.err) h += `<div class="dlverr">${esc(dlv.err)}</div>`;
+    if (me) h += '<button class="lo" data-dlv="logout">로그아웃</button>';
   }
   // 지점을 고를 차례가 되면 바닥을 위성 지도로 — 들어설 때 한 번만 (직접 기체로 돌려도 다시 강제하지 않는다)
   const choosing = !!(me && (can.has('call') || can.has('send')));
