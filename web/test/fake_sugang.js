@@ -17,6 +17,11 @@ const PORT = parseInt(process.argv[2] || '4499', 10);
 const TITLE = Buffer.from('b0e6b3b2b4ebc7d0b1b3202d20c7d0bbfdc1a4bab8bdc3bdbac5db', 'hex');   // 경남대학교 - 학생정보시스템
 const WRONG = Buffer.from('bec6c0ccb5f020b6c7b4c220baf1b9d0b9f8c8a3b0a120b8c2c1f620becabdc0b4cfb4d92e', 'hex');   // 아이디 또는 비밀번호가 맞지 않습니다.
 const USERS = { adm: 'pw', u01: 'pw', u02: 'pw' };
+// 상단 틀 Top.aspx 의 인사 — 「AI·SW융합대학 컴퓨터공학부 컴퓨터보안 <이름> 님 반갑습니다.」 (실측 꼴, EUC-KR)
+const DEPT = Buffer.from('4149a1a45357c0b6c7d5b4ebc7d020c4c4c7bbc5cdb0f8c7d0bace20c4c4c7bbc5cdbab8bec820', 'hex');
+const HELLO = Buffer.from('20b4d420b9ddb0a9bdc0b4cfb4d92e', 'hex');
+const NAMES = { adm: 'b1e8b0fcb8ae', u01: 'b9dabab8b3bf', u02: 'c0ccb9dec0bd' };   // 김관리 박보냄 이받음
+let logouts = 0;
 const issued = new Map();   // 세션 쿠키 → 발급한 __VIEWSTATE
 let posts = 0;
 
@@ -38,6 +43,14 @@ const sidOf = (req) => (/ASP\.NET_SessionId=([^;]+)/.exec(req.headers.cookie || 
 
 http.createServer((req, res) => {
   if (req.url === '/count') return res.end(String(posts));
+  if (req.url === '/logouts') return res.end(String(logouts));
+  if (req.url === '/Logout.aspx') { logouts++; res.writeHead(302, { Location: '/Default.aspx' }); return res.end(); }
+  if (req.url === '/Top.aspx') {
+    const who = (/\.ASPXAUTH=tok-([A-Za-z0-9]+)/.exec(req.headers.cookie || '') || [])[1];
+    if (!who || !NAMES[who]) { res.writeHead(302, { Location: '/Default.aspx' }); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=euc-kr' });
+    return res.end(Buffer.concat([Buffer.from('<html><body><td><span>'), DEPT, Buffer.from('<b>'), Buffer.from(NAMES[who], 'hex'), Buffer.from('</b>'), HELLO, Buffer.from('</span></td></body></html>')]));
+  }
   if (req.method === 'GET') {
     const sid = crypto.randomBytes(8).toString('hex');
     res.writeHead(200, { 'Content-Type': 'text/html; charset=euc-kr', 'Set-Cookie': `ASP.NET_SessionId=${sid}; path=/; HttpOnly` });
@@ -53,7 +66,7 @@ http.createServer((req, res) => {
     }
     if (f.get('txtUserID') === 'boom') { res.writeHead(500); return res.end('error'); }
     if (USERS[f.get('txtUserID')] && USERS[f.get('txtUserID')] === f.get('txtPassword')) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=euc-kr', 'Set-Cookie': [`ASP.NET_SessionId=${sid}; path=/; HttpOnly`, '.ASPXAUTH=8F3A0C1B2D; path=/; HttpOnly'] });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=euc-kr', 'Set-Cookie': [`ASP.NET_SessionId=${sid}; path=/; HttpOnly`, `.ASPXAUTH=tok-${f.get('txtUserID')}; path=/; HttpOnly`] });
       return res.end(page(sid));
     }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=euc-kr' });

@@ -77,6 +77,8 @@ async function server() {
   ok((await login('u02')).s === 200, 'u02 로그인');
   let me = await state('adm');
   ok(me.me && me.me.admin === true, '관리자 표시');
+  ok(me.me.name === '김관리', '학교 상단 인사에서 이름', JSON.stringify(me.me));
+  ok(parseInt(await (await fetch(`http://127.0.0.1:${FAKE_PORT}/logouts`)).text(), 10) >= 2, '확인 뒤 학교 세션 끊음');
   ok((await state()).points.length === 0 && (await state()).me === null, '비로그인은 지점 안 보임');
 
   console.log('— 요청 막이');
@@ -119,6 +121,10 @@ async function server() {
   ok((await act('drone', 'land')).s === 200, '픽업 착륙');
   ok((await act('u01', 'send', { point: P1, to: 'u02' })).s === 400, '같은 지점으로 보내기 → 400');
   ok((await act('u01', 'send', { point: P2, to: 'u02' })).s === 200, '목적지 선택, 받는 사람 u02');
+  st = await state('u02');
+  ok(st.job.by_name === '박보냄' && st.job.to_name === '이받음', '보낸 사람·받는 사람 이름', JSON.stringify([st.job.by_name, st.job.to_name]));
+  ok((await req('GET', '/api/delivery/who?id=u02', { who: 'u01' })).j.name === '이받음', '학번 → 이름');
+  ok((await req('GET', '/api/delivery/who?id=u02')).s === 401, '비로그인 이름 조회 → 401');
   const jb = await (await fetch(H + '/api/delivery/job', { headers: { 'X-Delivery-Key': KEY } })).json();
   ok(jb.job && jb.job.from.id === P1 && jb.job.to.id === P2, '기체 일감 = P1 → P2');
   ok((await act('adm', 'depart')).s === 200 && (await act('adm', 'land')).s === 200, '관리자가 출발·착륙 진행');

@@ -145,12 +145,25 @@ async function sugangCheck(id, pw) {
     headers: { ...opt.headers, 'Content-Type': 'application/x-www-form-urlencoded', ...(cookies.length ? { Cookie: cookies.join('; ') } : {}) },
   });
   const verdict = judge(p.status, p.headers.getSetCookie ? p.headers.getSetCookie() : [], p.status === 200 ? await decode(p) : '');
-  // 사용자의 수강신청 세션과 겹치지 않게 바로 끊는다 (주소는 실측 후 .env 에)
-  if (verdict === 'ok' && SUGANG_LOGOUT) {
-    const all = [...cookies, ...jar(p)];
-    fetch(SUGANG_LOGOUT, { ...opt, signal: AbortSignal.timeout(5000), headers: { ...opt.headers, Cookie: all.join('; ') } }).catch(() => {});
+  let name = null;
+  if (verdict === 'ok') {
+    const auth = { ...opt.headers, Cookie: [...cookies, ...jar(p)].join('; ') };
+    // 이름 — 로그인 뒤 상단 틀(Top.aspx)의 인사 「… 박준서 님 반갑습니다.」 에서 이름만 (2026-10-07 실측).
+    // 🔴 신상 페이지(SLW001S: 생년월일 등)는 열지 않는다 — 필요한 것은 이름뿐이다.
+    try {
+      const t = await fetch(new URL('Top.aspx', SUGANG_URL), { ...opt, signal: AbortSignal.timeout(5000), headers: auth });
+      if (t.status === 200) name = nameFrom(await decode(t));
+    } catch { /* 이름 없이도 로그인은 된다 */ }
+    // 사용자의 수강신청 세션과 겹치지 않게 바로 끊는다 (Logout.aspx 실측)
+    fetch(SUGANG_LOGOUT || new URL('Logout.aspx', SUGANG_URL), { ...opt, signal: AbortSignal.timeout(5000), headers: auth }).catch(() => {});
   }
-  return { v: verdict, name: null };   // 🔶 이름은 로그인 뒤 학교 페이지에서 읽는다 — 어느 페이지인지 실측 후 (sugang_probe.js)
+  return { v: verdict, name };
+}
+/** 「AI·SW융합대학 컴퓨터공학부 컴퓨터보안 박준서 님 반갑습니다.」 → 박준서 */
+function nameFrom(html) {
+  const t = html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
+  const m = /([가-힣]{2,10})\s*님\s*반갑습니다/.exec(t);
+  return m ? m[1] : null;
 }
 
 async function login(req, res) {
@@ -404,4 +417,4 @@ function handle(req, res, url) {
   return false;
 }
 
-module.exports = { init, handle, health, judge, hidden };
+module.exports = { init, handle, health, judge, hidden, nameFrom };
