@@ -229,6 +229,25 @@ FC 의 상태를 바꾸는 모든 작업을 남긴다.
 
 ---
 
+### 2026-10-07 18:28 — USB 직결, 실기 파라미터 재조회 (변경 없음, 읽기만)
+
+- 작업 PC: rim3
+- 경로: USB 직결 `/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00` (`tools/fcport.py` 로 하트비트 확인)
+- 대상: 읽기 전용 조회. **FC 에 아무것도 쓰지 않았다** (파라미터 목록·스트림 요청만)
+- 부수 작업: 조회 전 `drone-live off`, 조회 후 `drone-live on` — 정상 복구
+- 계기: 사용자 보고 "조종기로 조종할 때 좌우는 맞고 앞뒤가 반전된다"
+- 확인:
+  - 파라미터 838개 → `params/params_20261007-1828_live-usb.param`
+  - RC 관련: `RCMAP_ROLL=1`, `RCMAP_PITCH=2`, `RC1~4_REVERSED=0`, `RC2` 982/1495/2005 — 반전 설정 없음
+  - `AHRS_ORIENTATION=0`, `FRAME_CLASS=1`/`FRAME_TYPE=1`, `SERVO1~4_FUNCTION=33~36`, `SERVO1~4_REVERSED=0` — 09-21 과 동일
+  - `RC_CHANNELS`: chancount 16, CH1~8 = 0, rssi 0 — 조회 시점에 수신 신호 없음 (송신기 꺼짐 추정)
+  - 자세 roll 0.1° / pitch −0.2° (정지)
+- 09-21 대비 바뀐 값 (전부 **발견**, 이번에 쓴 것 아님):
+  - `MOT_THST_HOVER`: 0.4814 → **0.6711** — 🔶 `MOT_HOVER_LEARN=2` 가 09-21 이후 비행에서 학습한 값으로 추정, 미검증
+  - `STAT_BOOTCNT` 1→3, `STAT_RUNTIME` 0→8109 s, `GND_ABS_PRESS`, `INS_GYROFFS_*` — 운용·환경 변화
+
+---
+
 ## 🔶 아직 기록되지 않은 것 — 이 보드의 과거
 
 이 FC 는 이전 기체에서 쓰던 것이고, 그 이력은 남아 있지 않다.

@@ -166,6 +166,17 @@ FC 가 각 출력에 신호를 내보내는지 확인:
 
 ---
 
+## 🔶 앞뒤 조종 반전 — 조종기 쪽에서 반전 (2026-10-07)
+
+증상: 좌우는 맞고 앞뒤만 반대. FC 는 `RCMAP 1/2/3/4`, `RC1~4_REVERSED=0` 기본값 — 2026-10-07 실측.
+원인: TX16S(EdgeTX 2.9.4, 모델 `model17.yml` "T1 Doran")는 엘리베이터 앞 = CH2 high, ArduPilot 은 CH2 high = 기수 들기.
+
+- 조치: **조종기** 모델 Outputs CH2 반전(`limitData` 1: `revert: 1`) — SD 직접 편집. 원본 → `params/tx16s_model17_20261007-before-ch2-rev.yml`
+- 🔴 FC `RC2_REVERSED` 는 **0 유지**. 둘 다 바꾸면 다시 반대다
+- 🔶 미검증: 조종기 화면 반영, FC 가 받는 CH2(스틱 앞 → 982 쪽) — 프롭 분리 상태로 확인할 것
+
+---
+
 ## 🔴 미해결 — 다음에 이어서 할 것
 
 ### 1. 🔴 MAIN4 모터가 "QGC All" 에서만 안 돈다
