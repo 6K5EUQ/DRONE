@@ -574,7 +574,7 @@ function groundStep(dt, ease) {
   if (d.armed && !geo.armed && d.lat != null) geo.armHome = [d.lat, d.lon];
   geo.armed = !!d.armed;
   const hs = Array.isArray(S.home) ? S.home : S.home && S.home.lat != null ? [S.home.lat, S.home.lon] : geo.armHome;
-  const on = linked() && hs && d.lat != null;
+  const on = linked() && hs && d.lat != null && !intro;   // 첫 화면은 땅도 제자리(고도·기수 0)
   let rn = 0, re = 0;
   if (on) {
     rn = (d.lat - hs[0]) * 111320;
@@ -733,8 +733,9 @@ function frame() {
   camera.up.set(0, Math.cos(cam.tilt), -Math.sin(cam.tilt));   // 궤도 접선 — 90° 에서도 안 뒤집힌다
   camera.lookAt(look);
 
-  // 실시간 자세 — 기체가 붙어 있을 때만, 없으면 수평으로 돌아온다
-  const d = D();
+  // 실시간 자세 — 기체가 붙어 있을 때만, 없으면 수평으로 돌아온다.
+  // 첫 화면은 연결돼 있어도 똑바로 선 기체 — 자세·로터·조종면을 반영하지 않는다
+  const d = intro ? {} : D();
   const tr = d.roll != null ? THREE.MathUtils.degToRad(d.roll) : 0;
   const tp = d.pitch != null ? THREE.MathUtils.degToRad(d.pitch) : 0;
   attitude.rotation.order = 'YXZ';
