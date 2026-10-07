@@ -147,11 +147,12 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, brandGlint .45s 
 .main.mapmode #view, .main.mapmode .tabs, .main.mapmode #calls, .main.mapmode .tiles { display: none; }
 .main.mapmode .bar { background: linear-gradient(rgba(244,244,246,.92), rgba(244,244,246,0)); }
 #map .leaflet-tile-pane { filter: saturate(.75) brightness(1.04); }
-/* 배송 — 지도로 바뀌어도 탭바는 남는다 */
-.main.mapmode.dlv .tabs { display: flex; }
-.main.mapmode.dlv .tabs button:not(.on) { color: #fff; text-shadow: 0 0 4px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.85); }
-.dpw { background: none; border: 0; }
-.dp { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; background: #fff; color: var(--ink2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; font: 600 13px/1.2 inherit; box-shadow: 0 1px 4px rgba(0,0,0,.25); cursor: pointer; }
+/* 배송 — 3D 땅 위 지점 이름표 */
+#dlvPts { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+#dlvPts[hidden], body.intro #dlvPts { display: none; }
+.dp small { margin-left: 6px; font-weight: 500; color: var(--dim); }
+.dp.base small { color: #c9ccd3; }
+.dp { position: absolute; left: 0; top: 0; pointer-events: auto; transform: translate(-50%, -50%); white-space: nowrap; background: #fff; color: var(--ink2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; font: 600 13px/1.2 inherit; box-shadow: 0 1px 4px rgba(0,0,0,.25); cursor: pointer; }
 .dp.base { background: #171a20; color: #fff; border-color: #171a20; }
 .dp.unv { border-style: dashed; color: var(--dim); }
 .dp.base.unv { border-color: #fff; color: #fff; }
@@ -396,6 +397,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
     <div id="map"></div>
     <div id="calls"></div>
     <div id="htag" hidden><i>H</i><b class="num"></b></div>
+    <div id="dlvPts" hidden></div>
     <div class="tiles" id="tiles"></div>
     <div id="pbSheet" hidden></div>
     <div id="pbBar" hidden>
