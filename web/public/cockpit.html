@@ -59,8 +59,9 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
 /* 자세계 */
 .hud { flex: none; aspect-ratio: 300 / 116; max-height: 150px; position: relative; }
 .hud .att { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-/* 배송·테스트 — 계기 4줄은 그대로 두고 이름만 바꾼다(고도·배터리·남은 거리·예상 시간), 자세계 자리에 배송 상자 */
-body.dlvmode .hud { display: none; }
+/* 배송·테스트 — 계기는 고도·남은 거리·예상 시간 (전류 줄은 빼고 모터 두 줄의 이름을 바꾼다), 자세계 자리에 배송 상자.
+   배터리는 위쪽 표시가 있어 줄을 따로 두지 않는다 */
+body.dlvmode .hud, body.dlvmode #sc-cur { display: none; }
 #dlvPane { flex: none; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 #dlvPane .ih { margin: 0; align-items: baseline; }
 #dlvPane .ih b { font-size: 15px; }
@@ -356,7 +357,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
     <!-- 계기판 — /live 와 같은 값·같은 판정 (live.js). 모터는 기수가 위인 X 그림 위에 -->
     <div class="strip">
       <div class="sc" id="sc-alt"><b class="num" id="st-alt">—</b><span>고도</span></div>
-      <div class="sc" id="sc-cur"><b class="num" id="st-cur">—</b><span id="st-cur-l">전류</span></div>
+      <div class="sc" id="sc-cur"><b class="num" id="st-cur">—</b><span>전류</span></div>
       <div class="sc" id="sc-mspread"><b class="num" id="st-mspread">—</b><span id="st-mspread-l">모터 편차</span></div>
       <div class="sc" id="sc-mavg"><b class="num" id="st-mavg">—</b><span id="st-mavg-l">모터 평균</span></div>
     </div>

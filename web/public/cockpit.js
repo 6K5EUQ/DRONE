@@ -1220,15 +1220,8 @@ const SPREAD_WARN = 10, SPREAD_BAD = 20, MAVG_WARN = 65, MAVG_BAD = 75;
 function renderStrip(d) {
   const sc = (id, c) => { $(id).className = 'sc' + (c ? ' ' + c : ''); };
   const u = (v, n, unit) => v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(n)}<small>${unit}</small>`;
-  if (dlvTab()) {   // 배송·테스트 — 드론을 모르는 사람이 쓴다. 전류 대신 배터리
-    txt('st-cur-l', '배터리');
-    html('st-cur', u(d.batt_pct, 0, '%'));
-    sc('sc-cur', lvl(d.batt_pct, 35, 20));
-  } else {
-    txt('st-cur-l', '전류');
-    html('st-cur', u(d.cur, 1, 'A'));
-    sc('sc-cur', d.cur > 56 ? 'bad' : d.cur > 40 ? 'warn' : '');
-  }
+  html('st-cur', u(d.cur, 1, 'A'));
+  sc('sc-cur', d.cur > 56 ? 'bad' : d.cur > 40 ? 'warn' : '');
   if (dlvTab()) {   // 배송·테스트 — 모터 대신 남은 거리·예상 시간 (비행 중일 때만 값)
     const f = (view() || {}).fly;
     txt('st-mspread-l', '남은 거리'); html('st-mspread', u(f && f.remain, 0, 'm')); sc('sc-mspread', '');
@@ -1391,9 +1384,10 @@ function tpos(now) {
   const D = gdist(A, B), hdg = D > 1 ? gbear(A, B) : (test.hdg || 0), top = Math.max(a0, SIMV.alt);
   const tc = (top - a0) / SIMV.climb, tr = D / SIMV.speed, td = top / SIMV.desc, t = (now - j.since) / 1000, T = tc + tr + td;
   const at = (f) => ({ lat: A.lat + (B.lat - A.lat) * f, lon: A.lon + (B.lon - A.lon) * f });
-  if (t < tc) return { ...at(0), alt: a0 + SIMV.climb * t, spd: 0, climb: SIMV.climb, hdg, stage: 'climb', armed: true, remain: D, eta: T - t };
-  if (t < tc + tr) { const f = (t - tc) / tr; return { ...at(f), alt: top, spd: SIMV.speed, climb: 0, hdg, stage: 'cruise', armed: true, remain: D * (1 - f), eta: T - t }; }
-  if (t < T) return { ...at(1), alt: Math.max(0, top - SIMV.desc * (t - tc - tr)), spd: 0, climb: -SIMV.desc, hdg, stage: 'land', armed: true, remain: 0, eta: T - t };
+  // remain — 앞으로 날 경로 전체: 남은 상승 + 남은 수평 + 내려갈 고도 (하강 중에도 0 이 아니다)
+  if (t < tc) { const alt = a0 + SIMV.climb * t; return { ...at(0), alt, spd: 0, climb: SIMV.climb, hdg, stage: 'climb', armed: true, remain: (top - alt) + D + top, eta: T - t }; }
+  if (t < tc + tr) { const f = (t - tc) / tr; return { ...at(f), alt: top, spd: SIMV.speed, climb: 0, hdg, stage: 'cruise', armed: true, remain: D * (1 - f) + top, eta: T - t }; }
+  if (t < T) { const alt = Math.max(0, top - SIMV.desc * (t - tc - tr)); return { ...at(1), alt, spd: 0, climb: -SIMV.desc, hdg, stage: 'land', armed: true, remain: alt, eta: T - t }; }
   return { ...at(1), alt: 0, spd: 0, climb: 0, hdg, stage: 'done', armed: true, remain: 0, eta: 0 };
 }
 // 상태 — 서버 delivery.js status() 와 같은 규칙: 배송 중이면 사용 중, 링크·GPS 3D·전압 14.0 V 이상이면 대기 중
