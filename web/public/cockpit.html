@@ -62,22 +62,20 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
 /* 배송·테스트 — 계기는 고도·남은 거리·예상 시간 (전류 줄은 빼고 모터 두 줄의 이름을 바꾼다), 자세계 자리에 배송 상자.
    배터리는 위쪽 표시가 있어 줄을 따로 두지 않는다 */
 body.dlvmode .hud, body.dlvmode #sc-cur { display: none; }
-#dlvPane { flex: none; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-#dlvPane .ih { margin: 0; align-items: baseline; }
-#dlvPane .ih b { font-size: 15px; }
-#dlvPane .ih .at { font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }   /* .spd .arm b 와 같은 꼴 */
-#dlvPane .ih .at.ready { color: var(--ok); } #dlvPane .ih .at.busy { color: var(--acc); } #dlvPane .ih .at.down { color: var(--bad); }
-#dlvPane .row { border: 0; padding: 0; }
-#dlvPane .pts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-#dlvPane .pts button { height: 38px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; font-weight: 600; color: var(--ink2); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
+#dlvPane { flex: none; height: 236px; box-sizing: border-box; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+#dlvPane .dst { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-height: 20px; }
+#dlvPane .dst b { flex: none; font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }   /* .spd .arm b 와 같은 꼴 */
+#dlvPane .dst b.ready { color: var(--ok); } #dlvPane .dst b.busy { color: var(--acc); } #dlvPane .dst b.down { color: var(--bad); }
+#dlvPane .dst span { font-size: 14px; font-weight: 600; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#dlvPane .dst em { font-style: normal; font-size: 13px; font-weight: 600; color: var(--bad); }
+#dlvPane .pts { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 38px; gap: 6px; min-height: 82px; }
+#dlvPane .pts button { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; font-weight: 600; color: var(--ink2); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
 #dlvPane .pts button:hover { background: #fff; }
 #dlvPane .pts button.on { background: #fff; border-color: var(--acc); color: var(--acc); }
 #dlvPane .pts button:disabled { color: var(--muted); background: var(--bg); cursor: default; }
-#dlvPane .pfgo { height: 44px; padding: 0; }
-#dlvPane .pfgo + .pfgo { margin-top: -4px; }
-#dlvPane .lo { align-self: flex-end; border: 0; background: none; padding: 0; font-size: 12px; color: var(--dim); cursor: pointer; }
+#dlvPane .pfgo { flex: none; height: 44px; padding: 0; }
+#dlvPane .lo { margin-top: auto; align-self: flex-end; border: 0; background: none; padding: 0; font-size: 12px; color: var(--dim); cursor: pointer; }
 #dlvPane .lo:hover { color: var(--ink2); }
-#dlvPane .dlverr { margin: 0; }
 #hudHz, #hudRoll { transform-origin: 0 0; transition: transform .25s linear; }
 
 /* 계기판 — 3칸. 모터 그림이 두 칸, 편차·평균이 셋째 칸 */
@@ -174,9 +172,7 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, brandGlint .45s 
 .dp { position: absolute; left: 0; top: 0; pointer-events: auto; transform: translate(-50%, -50%); white-space: nowrap; background: #fff; color: var(--ink2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; font: 600 13px/1.2 inherit; box-shadow: 0 1px 4px rgba(0,0,0,.25); cursor: pointer; }
 .dp.base { background: #171a20; color: #fff; border-color: #171a20; }
 .dp.on { border-color: #3e6ae1; box-shadow: 0 0 0 2px #3e6ae1; }
-:is(#info, #dlvPane) .dlvin { width: 100%; font: inherit; font-size: 14px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; margin: 8px 0 2px; box-sizing: border-box; }
 :is(#info, #dlvPane) .pfgo + .pfgo { margin-top: 6px; }
-:is(#info, #dlvPane) .dlverr { color: var(--bad); font-size: 13px; margin-top: 8px; }
 .ac svg { transition: transform .4s; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
 
 /* 정보 카드 — 탭 요약·칸 부품·점검 */

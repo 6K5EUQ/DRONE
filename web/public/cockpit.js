@@ -1575,31 +1575,26 @@ $('dlvPts').addEventListener('click', (e) => {
 
 const DLV_STATUS = { busy: '사용 중', ready: '대기 중', down: '사용 불가' };
 function renderDlv() {
+  // 상자는 늘 같은 꼴·같은 크기다 — 상태 줄, 지점 격자, 버튼 한 칸, 로그아웃. 할 수 없으면 비활성으로만 바뀐다
   const box = $('dlvPane'); box.hidden = false;
   const st = view(), me = st && st.me, can = new Set(st ? st.can : []), j = st && st.job;
   const stt = dlv.off ? 'down' : (st && st.status) || 'down';
-  let h = `<div class="ih"><b>${dlv.test ? '테스트' : '배송'}</b><span class="at ${stt}">${DLV_STATUS[stt]}</span></div>`;
-  if (st && !dlv.off) {
-    // 사용자 — 지금 기체를 쓰는(호출한) 사람, 「이름 (학번)」. 누구에게나 보인다
-    if (j && j.by) h += `<div class="row"><span>사용자</span><b>${esc(j.by_name ? `${j.by_name} (${j.by})` : j.by)}</b></div>`;
-    const sp = dpt(dlv.sel), pick = sp && !sp.base;
-    // 지점 — 소스에 정해 둔 고정 목록 (web/delivery.js CATALOG). 기지는 고를 수 없다. 고를 차례에만 보인다
-    const list = (st.points || []).filter((p) => placed(p) && !p.base);
-    if (me && list.length && (can.has('call') || can.has('send'))) {
-      h += `<div class="pts">${list.map((p) => `<button class="${p.id === dlv.sel ? 'on' : ''}" data-dlv="pick" data-pt="${esc(p.id)}"${j && p.id === j.pickup ? ' disabled' : ''}>${esc(p.name)}</button>`).join('')}</div>`;
-    }
-    if (!me) h += '<button class="pfgo" data-dlv="login">로그인</button>';
-    else {
-      if (can.has('call')) h += `<button class="pfgo" data-dlv="call"${pick ? '' : ' disabled'}>호출</button>`;
-      if (can.has('send')) h += `<button class="pfgo" data-dlv="send"${pick && sp.id !== j.pickup ? '' : ' disabled'}>보내기</button>`;
-      if (can.has('done')) h += '<button class="pfgo" data-dlv="done">수거완료</button>';
-      if (can.has('cancel')) h += '<button class="pfgo" data-dlv="cancel">취소</button>';
-    }
-    if (dlv.err) h += `<div class="dlverr">${esc(dlv.err)}</div>`;
-    if (me) h += '<button class="lo" data-dlv="logout">로그아웃</button>';
+  // 상태 줄 — 왼쪽 상태, 오른쪽 지금 쓰는 사람 「이름 (학번)」(누구에게나 보인다). 오류는 같은 자리에 빨갛게
+  const who = j && j.by ? (j.by_name ? `${j.by_name} (${j.by})` : j.by) : '';
+  let h = `<div class="dst"><b class="${stt}">${DLV_STATUS[stt]}</b>${dlv.err ? `<em>${esc(dlv.err)}</em>` : `<span>${esc(who)}</span>`}</div>`;
+  const sp = dpt(dlv.sel), pick = sp && !sp.base;
+  const sending = can.has('send'), choosing = !!me && (can.has('call') || sending);
+  if (!me) h += '<button class="pfgo" data-dlv="login">로그인</button>';
+  else {
+    // 지점 — 소스에 정해 둔 고정 목록 (web/delivery.js CATALOG). 기지는 고를 수 없다
+    const list = ((st && st.points) || []).filter((p) => placed(p) && !p.base);
+    h += `<div class="pts">${list.map((p) => `<button class="${p.id === dlv.sel ? 'on' : ''}" data-dlv="pick" data-pt="${esc(p.id)}"${!choosing || (sending && p.id === j.pickup) ? ' disabled' : ''}>${esc(p.name)}</button>`).join('')}</div>`;
+    // 버튼 한 칸 — 목적지에 내렸으면 수거완료, 아니면 호출(첫 호출·짐 실은 뒤 보내기 둘 다)
+    if (can.has('done')) h += '<button class="pfgo" data-dlv="done">수거완료</button>';
+    else h += `<button class="pfgo" data-dlv="${sending ? 'send' : 'call'}"${choosing && pick && !(sending && sp.id === j.pickup) ? '' : ' disabled'}>호출</button>`;
+    h += '<button class="lo" data-dlv="logout">로그아웃</button>';
   }
   // 지점을 고를 차례가 되면 바닥을 위성 지도로 — 들어설 때 한 번만 (직접 기체로 돌려도 다시 강제하지 않는다)
-  const choosing = !!(me && (can.has('call') || can.has('send')));
   if (choosing && !dlv.choosing && !sat.on) setSat(true);
   dlv.choosing = choosing;
   // 자주 다시 그리면 입력 중인 칸이 지워진다 — 바뀐 것이 있을 때만 다시 그린다
