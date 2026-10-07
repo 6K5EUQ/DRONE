@@ -1467,7 +1467,8 @@ $('dlvPts').addEventListener('click', (e) => {
 const DLV_STATUS = { busy: '사용 중', ready: '대기 중', down: '사용 불가' };
 function renderDlv() {
   // 상자는 늘 같은 꼴·같은 크기다 — 상태 줄, 지점 격자, 버튼 한 칸, 로그아웃. 할 수 없으면 비활성으로만 바뀐다
-  const box = $('dlvPane'); box.hidden = false;
+  const box = $('dlvPane'); box.hidden = tab !== 'dlv';   // 배송 탭에서만 — 탭을 떠난 뒤 도착한 응답이 다시 띄우지 않게
+  if (box.hidden) return;
   const st = view(), me = st && st.me, can = new Set(st ? st.can : []), j = st && st.job;
   const stt = dlv.off ? 'down' : st ? st.status || 'down' : null;   // 첫 응답 전에는 모른다 — 비워 둔다
   // 상태 줄 — 왼쪽 상태, 오른쪽 지금 쓰는 사람 「이름 (학번)」(누구에게나 보인다). 오류는 같은 자리에 빨갛게
