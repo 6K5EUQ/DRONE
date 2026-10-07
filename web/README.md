@@ -54,7 +54,7 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
   높이 떠 있으면 땅에 옅은 그림자와 끝점 선. 0.8 m/s 미만이면 끈다.
 - **지도** — 기체/지도 스위치의 지도는 3D 바닥에 위성사진(Esri World Imagery)을 땅 축척으로
   깔고 격자를 걷는다. 진하기·줌은 `cockpit.js` 의 `SAT` (0.70 · 줌 18).
-- 워드마크는 `i-brand` 심볼(shade-signals.com 의 wordmark.js 자형) — 첫 화면 아래, 도크 왼쪽.
+- 워드마크는 `i-brand` 심볼(shade-signals.com 의 wordmark.js 자형) — 첫 화면 아래. 하단 도크(다른 페이지 링크)는 없다.
 
 ## 포트
 
