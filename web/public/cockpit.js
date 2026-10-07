@@ -1339,7 +1339,7 @@ async function loadRec() {
 // 테스트 탭 — 같은 화면을 **이 브라우저 안의 시뮬레이터**로 돌린다. 기체가 기지에 연결된 것처럼
 // 놓이고, 지점을 부르면 상승·직선 순항·하강으로 날아간다. 서버에는 아무것도 쓰지 않는다
 // (배송 상태·기록, 다른 사람 화면, 앱 알림 모두 그대로). 지점 목록만 서버에서 읽는다.
-const dlv = { st: null, off: false, sel: null, err: '', timer: 0, drawn: '', card: '', cardSer: '', satPrev: false };
+const dlv = { st: null, off: false, sel: null, err: '', timer: 0, drawn: '', card: '', cardSer: '', satPrev: false, menu: false };
 // 3D — 지점 원판·진행 구간 선은 땅(world)에, 이름표는 화면(#dlvPts)에
 const dlvG = new THREE.Group(); dlvG.visible = false; world.add(dlvG);
 const dlvPads = new Map();          // 지점 id → { g, el }
@@ -1466,14 +1466,20 @@ $('dlvPts').addEventListener('click', (e) => {
 
 const DLV_STATUS = { busy: '사용 중', ready: '대기 중', down: '사용 불가' };
 function renderDlv() {
-  // 상자는 늘 같은 꼴·같은 크기다 — 상태 줄, 지점 격자, 버튼 한 칸, 로그아웃. 할 수 없으면 비활성으로만 바뀐다
+  // 상자는 늘 같은 꼴·같은 크기다 — 상태 줄, 지점 격자, 버튼 한 칸. 할 수 없으면 비활성으로만 바뀐다
   const box = $('dlvPane'); box.hidden = tab !== 'dlv';   // 배송 탭에서만 — 탭을 떠난 뒤 도착한 응답이 다시 띄우지 않게
   if (box.hidden) return;
   const st = view(), me = st && st.me, can = new Set(st ? st.can : []), j = st && st.job;
   const stt = dlv.off ? 'down' : st ? st.status || 'down' : null;   // 첫 응답 전에는 모른다 — 비워 둔다
-  // 상태 줄 — 왼쪽 상태, 오른쪽 지금 쓰는 사람 「이름 (학번)」(누구에게나 보인다). 오류는 같은 자리에 빨갛게
-  const who = j && j.by ? (j.by_name ? `${j.by_name} (${j.by})` : j.by) : '';
-  let h = `<div class="dst"><b class="${stt || ''}">${stt ? DLV_STATUS[stt] : ''}</b>${dlv.err ? `<em>${esc(dlv.err)}</em>` : `<span>${esc(who)}</span>`}</div>`;
+  // 상태 줄 — 왼쪽 상태, 오른쪽 지금 쓰는 사람 「이름 (학번)」(누구에게나 보인다), 없으면 로그인한 나. 오류는 같은 자리에 빨갛게
+  // 로그인했으면 이름을 눌러 메뉴(로그아웃)를 연다
+  const nm = (id, name) => name ? `${name} (${id})` : id;
+  const mine = me ? nm(me.id, me.name) : '';
+  const who = j && j.by ? nm(j.by, j.by_name) : mine;
+  if (!me) dlv.menu = false;
+  const menu = dlv.menu ? `<div class="mn">${who !== mine ? `<span>${esc(mine)}</span>` : ''}<button data-dlv="logout">로그아웃</button></div>` : '';
+  let h = `<div class="dst"><b class="${stt || ''}">${stt ? DLV_STATUS[stt] : ''}</b>${dlv.err ? `<em>${esc(dlv.err)}</em>`
+    : me ? `<button class="who" data-dlv="menu">${esc(who)}</button>` : `<span>${esc(who)}</span>`}</div>${menu}`;
   const sending = can.has('send'), choosing = !!me && (can.has('call') || sending);
   const sp = dpt(dlv.sel), pick = sp && (sending || !sp.base);   // 기지는 짐을 실은 뒤(보내기)에만 고를 수 있다
   if (!me) h += '<button class="pfgo" data-dlv="login">로그인</button>';
@@ -1485,7 +1491,6 @@ function renderDlv() {
     // 버튼 한 칸 — 목적지에 내렸으면 수거완료, 아니면 호출(첫 호출·짐 실은 뒤 보내기 둘 다)
     if (can.has('done')) h += '<button class="pfgo" data-dlv="done">수거완료</button>';
     else h += `<button class="pfgo" data-dlv="${sending ? 'send' : 'call'}"${choosing && pick && !(sending && sp.id === j.pickup) ? '' : ' disabled'}>호출</button>`;
-    h += '<button class="lo" data-dlv="logout">로그아웃</button>';
   }
   // 자주 다시 그리면 입력 중인 칸이 지워진다 — 바뀐 것이 있을 때만 다시 그린다
   if (h === dlv.card && box.innerHTML === dlv.cardSer) return;
@@ -1497,11 +1502,17 @@ $('dlvPane').addEventListener('click', (e) => {
   if (!b || tab !== 'dlv' || b.disabled) return;
   const k = b.dataset.dlv, sp = dlv.sel;
   if (k === 'login') return dlvLoginAsk();
-  if (k === 'logout') return dlvLogout();
+  if (k === 'menu') { dlv.menu = !dlv.menu; return renderDlv(); }
+  if (k === 'logout') { dlv.menu = false; return dlvLogout(); }
   if (k === 'call') return dlvAct('call', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
   if (k === 'send') return dlvAct('send', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
   if (k === 'pick') { dlv.sel = dlv.sel === b.dataset.pt ? null : b.dataset.pt; dlv.err = ''; if (dlv.sel) dlvFace(dlv.sel); dlvDraw(true); return renderDlv(); }
   return dlvAct(k);   // done
+});
+
+// 메뉴는 밖을 누르면 닫힌다
+document.addEventListener('pointerdown', (e) => {
+  if (dlv.menu && !e.target.closest('#dlvPane .mn, #dlvPane .who')) { dlv.menu = false; renderDlv(); }
 });
 
 function dlvSet(st) {

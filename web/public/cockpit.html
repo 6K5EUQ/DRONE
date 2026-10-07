@@ -74,8 +74,13 @@ body.dlvmode .hud, body.dlvmode #sc-cur { display: none; }
 #dlvPane .pts button.on { background: #fff; border-color: var(--acc); color: var(--acc); }
 #dlvPane .pts button:disabled { color: var(--muted); background: var(--bg); cursor: default; }
 #dlvPane .pfgo { flex: none; height: 44px; padding: 0; }
-#dlvPane .lo { margin-top: auto; align-self: flex-end; border: 0; background: none; padding: 0; font-size: 12px; color: var(--dim); cursor: pointer; }
-#dlvPane .lo:hover { color: var(--ink2); }
+#dlvPane { position: relative; }
+#dlvPane .dst .who { min-width: 0; border: 0; background: none; padding: 0; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink2); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#dlvPane .dst .who:hover { color: var(--acc); }
+#dlvPane .mn { position: absolute; top: 42px; right: 14px; z-index: 5; min-width: 140px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.12); padding: 4px; display: flex; flex-direction: column; }
+#dlvPane .mn span { padding: 8px 10px 4px; font-size: 12px; color: var(--dim); white-space: nowrap; }
+#dlvPane .mn button { border: 0; background: none; text-align: left; padding: 9px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--ink2); cursor: pointer; }
+#dlvPane .mn button:hover { background: var(--bg); }
 #hudHz, #hudRoll { transform-origin: 0 0; transition: transform .25s linear; }
 
 /* 계기판 — 3칸. 모터 그림이 두 칸, 편차·평균이 셋째 칸 */
