@@ -49,12 +49,6 @@ const TAB_INFO = {
   sum: { name: '제원', bays: ['motor', 'battery', 'power', 'fc', 'gps'], rows: [
     ['형식', '쿼드 X · S500 계열'], ['프롭', '12 × 4.5'], ['목표 중량', '2 kg 이하'] ] },
   fly: null,
-  pwr: { name: '동력', bays: ['power'], rows: [
-    ['모터', 'GT DRONE 3508-380KV × 4'], ['ESC', 'GT DRONE EC-X3 30 A × 4'], ['프롭', '12 × 4.5 2엽'] ] },
-  nav: { name: '항법', bays: ['fc', 'gps'], rows: [
-    ['비행제어기', 'Pixhawk 2.4.8 · STM32F427'], ['펌웨어', 'ArduCopter 3.6.12'], ['GPS', 'M8N (u-blox)'] ] },
-  bat: { name: '전원', bays: ['battery', 'power'], rows: [
-    ['배터리', '4S 2,900 mAh 20C'], ['ESC', 'EC-X3 30 A × 4'] ] },
   rec: null,
   pf: null,
 };
@@ -234,8 +228,6 @@ const VIEWS = {
   sum: { yaw: 4.0, tilt: 0.55, dist: 1.75 },
   fly: { yaw: 4.0, tilt: 0.55, dist: 1.75 },
   pwr: { yaw: -2.75, tilt: 0.78, dist: 1.8 },
-  nav: { yaw: 0.65, tilt: 0.45, dist: 1.5 },
-  bat: { yaw: -1.9, tilt: 0.2, dist: 1.5 },
   rec: { yaw: 4.0, tilt: 0.55, dist: 1.75 },
   pf: { yaw: -2.1, tilt: 0.75, dist: 1.5 },
   bay: { yaw: -1.25, tilt: 0.62, dist: 0.95 },
@@ -343,17 +335,14 @@ function bayLook(k) {
 // ── 부위 표시 ────────────────────────────────────────────────────────
 const ROT_DIR = { LF: 'CW', RF: 'CCW', LB: 'CCW', RB: 'CW' };
 const CALLS = {
-  sum: () => [],
   // 비행 — 모터마다 부하만. 한쪽으로 쏠리면 바로 보이게 색은 thr 그대로.
   fly: (d) => { const m = d.motors || {}; const f = (k) => m[k] != null ? `${Math.round(m[k])}%` : '—';
     return [['LF', '', f('LF'), thr(m.LF)], ['RF', '', f('RF'), thr(m.RF)], ['LB', '', f('LB'), thr(m.LB)], ['RB', '', f('RB'), thr(m.RB)]]; },
-  // 회전 방향은 tools/live/drone_live.py MOTOR_PINS (2026-09-16 실측) 기준
-  pwr: (d) => { const m = d.motors || {}; const f = (k) => m[k] != null ? `${Math.round(m[k])}% · ${ROT_DIR[k]}` : ROT_DIR[k];
+  // 부품 — 모터 부하와 회전 방향, GPS, 배터리. 회전 방향은 tools/live/drone_live.py MOTOR_PINS (2026-09-16 실측) 기준
+  sum: (d) => { const m = d.motors || {}; const f = (k) => m[k] != null ? `${Math.round(m[k])}% · ${ROT_DIR[k]}` : ROT_DIR[k];
     return [['LF', '', f('LF'), thr(m.LF)], ['RF', '', f('RF'), thr(m.RF)], ['LB', '', f('LB'), thr(m.LB)], ['RB', '', f('RB'), thr(m.RB)],
-            ]; },
-  nav: (d) => [['gps', 'GPS', d.sats != null ? `${d.sats}기 · ${num(d.eph, 1)}m` : '—', lvl(d.sats, 8, 5)],
-               ],
-  bat: (d) => [['bat', '배터리', d.volt != null ? `${d.volt.toFixed(1)}V · ${num(d.cur, 1)}A` : '—', lvl(d.batt_pct, 35, 20)]],
+            ['gps', 'GPS', d.sats != null ? `${d.sats}기 · ${num(d.eph, 1)}m` : '—', lvl(d.sats, 8, 5)],
+            ['bat', '배터리', d.volt != null ? `${d.volt.toFixed(1)}V · ${num(d.cur, 1)}A` : '—', lvl(d.batt_pct, 35, 20)]]; },
   rec: () => [],
   pf: () => [],
 };
@@ -367,7 +356,7 @@ const MOTOR_OUT = new Set(['LF', 'RF', 'LB', 'RB']), CALL_OUT = 26;   // 원판 
 const ROTOR_R = 0.1524, tmpW = new THREE.Vector3(), tmpC = new THREE.Vector3(), tmpS = new THREE.Vector3();
 function renderCalls() {
   let want = sel || mode !== '3d' || !tab ? [] : CALLS[tab](D());
-  if (!sel && mode === '3d' && tab !== 'pwr' && tab !== 'fly') {
+  if (!sel && mode === '3d' && tab !== 'sum' && tab !== 'fly') {
     const m = D().motors || {};
     for (const k of ['LF', 'RF', 'LB', 'RB']) if (thr(m[k])) want.push([k, '', `${Math.round(m[k])}%`, thr(m[k])]);
   }
@@ -822,11 +811,15 @@ function travelled(d) {
 }
 const dist = (m) => m == null ? ['—', ''] : m >= 1000 ? [(m / 1000).toFixed(2), 'km'] : [m.toFixed(0), 'm'];
 const TILES = {
+  // 부품 — 위성·위치 오차·헤딩, 배터리 잔량·전압·전류·온도
   sum: (d) => [
-    ['alt', '고도', num(d.alt, 1), 'm'],
-    ['spd', '대지속도', num(d.groundspeed, 1), 'm/s'],
-    ['climb', '상승률', num(d.climb, 1), 'm/s'],
+    ['sat', '위성', num(d.sats), '기', lvl(d.sats, 8, 5)],
+    ['pin', '위치 오차', num(d.eph, 1), 'm', lvl(d.eph, 3, 6, false)],
     ['hdg', '헤딩', num(d.hdg), '°'],
+    ['bat', '잔량', num(d.batt_pct), '%', lvl(d.batt_pct, 35, 20)],
+    ['volt', '전압', num(d.volt, 2), 'V'],
+    ['cur', '전류', num(d.cur, 1), 'A'],
+    ['temp', '온도', num(d.batt_temp, 1), '°C'],
   ],
   // 비행 중에 볼 것만 — 높이·속도·오르내림·홈까지·남은 배터리
   fly: (d) => [
@@ -837,18 +830,6 @@ const TILES = {
     ['trip', '이동 거리', ...dist(trav.now)],
     ['volt', '전압', num(d.volt, 1), 'V'],
     ['bat', '배터리', num(d.batt_pct), '%', lvl(d.batt_pct, 35, 20)],
-  ],
-  pwr: () => [],
-  nav: (d) => [
-    ['sat', '위성', num(d.sats), '기', lvl(d.sats, 8, 5)],
-    ['pin', '위치 오차', num(d.eph, 1), 'm', lvl(d.eph, 3, 6, false)],
-    ['hdg', '헤딩', num(d.hdg), '°'],
-  ],
-  bat: (d) => [
-    ['bat', '잔량', num(d.batt_pct), '%', lvl(d.batt_pct, 35, 20)],
-    ['volt', '전압', num(d.volt, 2), 'V'],
-    ['cur', '전류', num(d.cur, 1), 'A'],
-    ['temp', '온도', num(d.batt_temp, 1), '°C'],
   ],
   rec: () => [
     ['count', '비행 횟수', R ? String(R.n) : '—', '회'],
