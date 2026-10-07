@@ -64,6 +64,7 @@ SD 카드 조사(2026-09-14) 결과, **이 보드는 새것이 아니다.**
 | [docs/procedures/00-progress.md](docs/procedures/00-progress.md) | **지금 어디까지 왔나** — 완료·미해결·함정·작업수칙 | 🔴 **가장 먼저** |
 | [FC_CHANGELOG.md](FC_CHANGELOG.md) | FC 상태를 바꾼 모든 작업 | 🔴 **FC 건드리기 전 필독** |
 | [docs/design/01-thrust-weight.md](docs/design/01-thrust-weight.md) | 추력·중량·비행시간 계산 | 🔴 설계 근거 |
+| [docs/design/02-delivery-system.md](docs/design/02-delivery-system.md) | 교내 배송 체계 | 🔶 P1 준비 |
 | [docs/procedures/01-assembly.md](docs/procedures/01-assembly.md) | 조립 절차 | |
 | [docs/procedures/02-fc-setup.md](docs/procedures/02-fc-setup.md) | FC 셋업·캘리브레이션 | |
 | [docs/procedures/03-ground-test.md](docs/procedures/03-ground-test.md) | 지상 시험 · GO/NO-GO | |
