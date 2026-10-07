@@ -80,7 +80,7 @@ DRONE01 을 교내 근거리 배송 드론으로 쓰는 설계. 사람이 웹·�
 | 없음 | 호출(지점) | pickup/wait | 로그인 사용자 — 운행 켜짐 |
 | \*/wait | 출발 | \*/fly | 기체 (`X-Delivery-Key`) |
 | \*/fly | 착륙 | \*/landed | 기체 |
-| pickup/landed | 보내기(지점) | dest/wait | 요청자 |
+| pickup/landed | 보내기(지점 — 기지도 된다: 복귀) | dest/wait | 요청자 |
 | dest/landed | 수거완료 | home/wait | 로그인한 누구나 (받는 사람은 정하지 않는다 — 학번 인증이 곧 자격) |
 | home/landed | (자동) | 끝 | — |
 | pickup/wait | 취소 | 끝 | 요청자 |
@@ -176,7 +176,7 @@ seq 3  LAND      목적지
 |---|---|
 | `web/delivery.js` | 대리 로그인, 상태머신, 지점, API (`/api/auth/*`, `/api/delivery/*`) |
 | `web/public/cockpit.*` | 배송 탭 — 3D 화면의 지점 이름표, 카드의 사람·단계·버튼, 로그인 |
-| `web/public/cockpit.js` 테스트 탭 | 브라우저 안 시뮬레이터로 배송 한 바퀴 시연 — 서버 상태 안 바뀜. 고도·속도는 시연값 (`SIMV`) |
+| `web/delivery.js` 기체 시뮬레이션 | 실제 링크 전까지 서버가 기체 몫(자동 출발·착륙, 위치)을 한다 — 모두에게 같은 기체. 고도·속도는 시연값 (`SIMV`), `DELIVERY_SIM=on` |
 | `web/test/delivery_test.js` | 가짜 학교 서버로 배송 한 바퀴 시험 (50 항목) |
 | `web/test/fake_sugang.js` | 가짜 학교 로그인 서버 |
 | `tools/delivery/sugang_probe.js` | 학교 로그인 성공 신호 실측 |

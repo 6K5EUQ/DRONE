@@ -649,6 +649,8 @@ async function handleLivePush(req, res) {
  *  같은 live.js 가 로컬에서도 여기서도 돌기 때문이다. */
 function handleLiveState(req, res, url) {
   const stale = !live.state || (Date.now() - live.at) > LIVE_STALE_MS;
+  // 진짜 기체가 조용하면 배송 시뮬레이션 기체를 낸다 (DELIVERY_SIM=on 일 때만, live:false·sim:true)
+  if (stale) { const sim = delivery.simSnapshot(url); if (sim) return sendJson(req, res, 200, sim); }
   if (!live.state) {
     return sendJson(req, res, 200, {
       live: false, seq: 0, age: null, packets: 0, bytes: 0,

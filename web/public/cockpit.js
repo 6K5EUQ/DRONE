@@ -24,7 +24,9 @@ let sel = null;                    // 고른 탑재칸
 let mode = '3d';                   // 3d | map
 // 로그 재생 상태 — 첫 frame() 이 모듈 평가 중에 돌므로 여기서 먼저 만든다
 const pb = { on: false, t: 0, dur: 0, rate: 1, playing: false, last: 0, name: '', timer: 0, seeking: false, when: '', fl: null };
-const D = () => (S.live ? (S.d || {}) : {});
+// 배송 시뮬레이션 기체(server delivery.js, sim:true)도 연결된 기체처럼 그린다 — 진짜 링크는 live 로만 판단한다(앱 알림 등)
+const linked = () => !!(S.live || S.sim);
+const D = () => (linked() ? (S.d || {}) : {});
 
 // ── 부품 — components/*/README.md 에서 옮긴 요약 ─────────────────────
 const BAYS = {
@@ -52,7 +54,6 @@ const TAB_INFO = {
   rec: null,
   pf: null,
   dlv: null,
-  tst: null,
 };
 
 // 점검 묶음 → 기체 부위. 소프트웨어 설정(failsafe·미션 등)은 부위가 없다.
@@ -234,7 +235,7 @@ const VIEWS = {
   pf: { yaw: -2.1, tilt: 0.75, dist: 1.5 },
   bay: { yaw: -1.25, tilt: 0.62, dist: 0.95 },
 };
-VIEWS.dlv = VIEWS.tst = VIEWS.fly;   // 배송 탭은 지도라 3D 시점은 비행과 같게 둔다
+VIEWS.dlv = VIEWS.fly;   // 배송 탭의 3D 시점은 비행과 같게 둔다
 let intro = document.body.classList.contains('intro');
 if (intro && !renderer) { intro = false; document.body.classList.remove('intro'); }
 const cam = { ...VIEWS[intro ? 'intro' : 'sum'], vYaw: 0, vTilt: 0 };
@@ -348,7 +349,6 @@ const CALLS = {
   rec: () => [],
   pf: () => [],
   dlv: () => [],
-  tst: () => [],
 };
 // 모터 부하 판정 — 좌측 계기판(모터 그림)과 3D 기체 위(라벨·로터 원판)가 **같은 함수**를 쓴다.
 // 기준은 /live 와 같다: 한 모터가 70% 넘으면 노랑, 80% 넘으면 빨강.
@@ -574,7 +574,7 @@ function groundStep(dt, ease) {
   if (d.armed && !geo.armed && d.lat != null) geo.armHome = [d.lat, d.lon];
   geo.armed = !!d.armed;
   const hs = Array.isArray(S.home) ? S.home : S.home && S.home.lat != null ? [S.home.lat, S.home.lon] : geo.armHome;
-  const on = !!S.live && hs && d.lat != null;
+  const on = linked() && hs && d.lat != null;
   let rn = 0, re = 0;
   if (on) {
     rn = (d.lat - hs[0]) * 111320;
@@ -777,7 +777,7 @@ function rowsHtml(rows) {
 }
 function renderInfo() {
   const box = $('info');
-  if (tab === 'dlv' || tab === 'tst') { box.hidden = true; renderDlv(); return; }   // 배송 칸은 왼쪽 패널에 있다
+  if (tab === 'dlv') { box.hidden = true; renderDlv(); return; }   // 배송 칸은 왼쪽 패널에 있다
   if (mode !== '3d') { box.hidden = true; return; }
   if (sel) {
     const b = BAYS[sel];
@@ -857,7 +857,6 @@ const TILES = {
   ],
   pf: () => [],
   dlv: () => [],
-  tst: () => [],
 };
 function renderTiles() {
   html('tiles', mode !== '3d' || !tab ? '' : TILES[tab](D()).map(([ic, l, v, u, c, on]) =>
@@ -870,9 +869,8 @@ $('tabs').addEventListener('click', (e) => {
   tab = tab === b.dataset.t ? null : b.dataset.t; sel = null;   // 고른 탭을 다시 누르면 풀린다
   for (const x of $('tabs').children) x.classList.toggle('on', x.dataset.t === tab);
   setView(); renderTiles(); renderInfo();
-  const dl = (t) => t === 'dlv' || t === 'tst';
-  if (dl(prev) && prev !== tab) dlvLeave(dl(tab));
-  if (dl(tab) && prev !== tab) dlvEnter(tab === 'tst');
+  if (prev === 'dlv' && tab !== 'dlv') dlvLeave();
+  if (tab === 'dlv' && prev !== 'dlv') dlvEnter();
 });
 
 // ── 기체 / 지도 ──────────────────────────────────────────────────────
@@ -1265,7 +1263,7 @@ let modeW = 0;   // 모드 칸 폭 — 속도 자릿수가 늘면 좁아진다. 
 new ResizeObserver(([e]) => { const w = Math.round(e.contentRect.width); if (w !== modeW) { modeW = w; fitMode(); } }).observe(document.querySelector('.spd .arm'));
 // ── 상태 반영 ────────────────────────────────────────────────────────
 function render() {
-  const on = !!S.live, d = D();
+  const on = linked(), d = D();
   trav.now = travelled(d);
   updatePred();
   renderHud(d);
@@ -1300,7 +1298,7 @@ function render() {
 let pollTimer = 0;
 async function pollLive(now) {
   clearTimeout(pollTimer);
-  if (pb.on || test.on) return; // 재생 중·테스트 중 — 화면은 로그·시뮬레이션이 채운다
+  if (pb.on) return;            // 재생 중 — 화면은 로그가 채운다
   try {
     // 지도일 때만 항적을 받는다 — 증분(since)으로, 서버가 앞을 버렸으면 새로 받는다
     const q = mode === 'map' ? `since=${trkHave}` : 'track=0';
@@ -1315,7 +1313,7 @@ async function pollLive(now) {
   } catch { S = { live: false, d: {} }; }
   render();
   // 연결 중에는 응답이 오는 대로 바로 다시 묻는다(최소 0.2초) — 1초 간격이면 그만큼 늦게 보였다
-  pollTimer = setTimeout(pollLive, S.live ? 200 : 4000);
+  pollTimer = setTimeout(pollLive, linked() ? 200 : 4000);
 }
 async function loadRec() {
   try {
@@ -1344,7 +1342,7 @@ const dlvRing = (r0, r1, color, op = 1) => { const m = new THREE.Mesh(new THREE.
 const dlvRoute = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
   new THREE.LineDashedMaterial({ color: 0x3e6ae1, dashSize: 0.12, gapSize: 0.1, transparent: true, depthWrite: false }));
 dlvRoute.visible = false; dlvRoute.frustumCulled = false; dlvG.add(dlvRoute);
-function dlvTab() { return tab === 'dlv' || tab === 'tst'; }   // 함수 선언 — 첫 frame() 이 모듈 평가 중에 돈다
+function dlvTab() { return tab === 'dlv'; }   // 함수 선언 — 첫 frame() 이 모듈 평가 중에 돈다
 /** 지점을 놓을 기준 — 연결된 기체의 홈, 없으면 기지 */
 function dlvRef() { if (geo.hs) return geo.hs; const b = dbase(); return b ? [b.lat, b.lon] : null; }
 /** 위경도 → 땅(world) 좌표. 땅은 기체 위치만큼 옮겨져 있다 (groundStep 과 같은 식) */
@@ -1360,134 +1358,18 @@ const dpt = (id) => ((dlv.st && dlv.st.points) || []).find((p) => p.id === id) |
 const dbase = () => ((dlv.st && dlv.st.points) || []).find((p) => p.base && placed(p)) || null;
 const placed = (p) => !!p && p.lat != null && p.lon != null;
 
-// ── 테스트 시뮬레이터 — 시연용 값이지 운용 고도·속도가 아니다 (설계 02 §4) ──
-const SIMV = { alt: 30, speed: 8, climb: 2.5, desc: 1.5, wait: 3 };
-const test = { on: false, job: null, rev: 0, timer: 0, track: [], trackAt: 0, batt: 100, seq: 0, t0: 0 };
-const RADS = Math.PI / 180;
-function gdist(a, b) {
-  const x = Math.sin((b.lat - a.lat) * RADS / 2) ** 2 + Math.cos(a.lat * RADS) * Math.cos(b.lat * RADS) * Math.sin((b.lon - a.lon) * RADS / 2) ** 2;
-  return 2 * 6371000 * Math.asin(Math.sqrt(x));
-}
-function gbear(a, b) {
-  const y = Math.sin((b.lon - a.lon) * RADS) * Math.cos(b.lat * RADS);
-  const x = Math.cos(a.lat * RADS) * Math.sin(b.lat * RADS) - Math.sin(a.lat * RADS) * Math.cos(b.lat * RADS) * Math.cos((b.lon - a.lon) * RADS);
-  return (Math.atan2(y, x) / RADS + 360) % 360;
-}
-const ttarget = (j) => j.leg === 'pickup' ? j.pickup : j.leg === 'dest' ? j.dest : (dbase() || {}).id;
-/** 시뮬레이션 기체 — 시간만으로 정해진다: 출발 지점 수직 상승 → 순항고도 직선 → 도착 지점 수직 하강 */
-function tpos(now) {
-  const j = test.job, b = dbase();
-  if (!b) return null;
-  const ground = (p) => ({ lat: p.lat, lon: p.lon, alt: 0, spd: 0, climb: 0, hdg: test.hdg || 0, stage: 'ground', armed: false, remain: 0, eta: 0 });
-  if (!j || j.phase !== 'fly') return ground((j && dpt(j.at)) || b);
-  const A = j.from || dpt(j.at) || b, B = dpt(ttarget(j)) || b, a0 = A.alt0 || 0;
-  const D = gdist(A, B), hdg = D > 1 ? gbear(A, B) : (test.hdg || 0), top = Math.max(a0, SIMV.alt);
-  const tc = (top - a0) / SIMV.climb, tr = D / SIMV.speed, td = top / SIMV.desc, t = (now - j.since) / 1000, T = tc + tr + td;
-  const at = (f) => ({ lat: A.lat + (B.lat - A.lat) * f, lon: A.lon + (B.lon - A.lon) * f });
-  // remain — 앞으로 날 경로 전체: 남은 상승 + 남은 수평 + 내려갈 고도 (하강 중에도 0 이 아니다)
-  if (t < tc) { const alt = a0 + SIMV.climb * t; return { ...at(0), alt, spd: 0, climb: SIMV.climb, hdg, stage: 'climb', armed: true, remain: (top - alt) + D + top, eta: T - t }; }
-  if (t < tc + tr) { const f = (t - tc) / tr; return { ...at(f), alt: top, spd: SIMV.speed, climb: 0, hdg, stage: 'cruise', armed: true, remain: D * (1 - f) + top, eta: T - t }; }
-  if (t < T) { const alt = Math.max(0, top - SIMV.desc * (t - tc - tr)); return { ...at(1), alt, spd: 0, climb: -SIMV.desc, hdg, stage: 'land', armed: true, remain: alt, eta: T - t }; }
-  return { ...at(1), alt: 0, spd: 0, climb: 0, hdg, stage: 'done', armed: true, remain: 0, eta: 0 };
-}
-// 상태 — 서버 delivery.js status() 와 같은 규칙: 배송 중이면 사용 중, 링크·GPS 3D·전압 14.0 V 이상이면 대기 중
-function tstatus() {
-  if (test.job) return 'busy';
-  const d = S.d || {};
-  return S.live && d.fix >= 3 && d.volt >= 14.0 ? 'ready' : 'down';
-}
-function tcan() {
-  const j = test.job, me = dlv.st && dlv.st.me, out = [];
-  if (!me) return out;
-  if (tstatus() === 'ready') out.push('call');
-  if (j) {
-    if (j.leg === 'pickup' && j.phase === 'landed' && j.by === me.id) out.push('send');
-    if (j.leg === 'dest' && j.phase === 'landed') out.push('done');
-    if (j.leg === 'pickup' && j.by === me.id) out.push('cancel');
-  }
-  return out;
-}
-function tview() {
-  const st = dlv.st || {}, j = test.job, p = j && j.phase === 'fly' ? tpos(Date.now()) : null;
-  return { rev: test.rev, service: true, status: tstatus(), me: st.me || null, points: st.points || [], job: j, can: tcan(),
-    fly: p && { alt: Math.round(p.alt), remain: Math.round(p.remain), eta: Math.ceil(p.eta) } };
-}
-const view = () => dlv.test ? tview() : dlv.st;
-/** 테스트 동작 — 서버 상태머신과 같은 전이를 브라우저 안에서 */
-function tact(k, a = {}) {
-  const j = test.job, now = Date.now(), me = dlv.st && dlv.st.me;
-  dlv.err = '';
-  if (k === 'call') {
-    const p = dpt(a.point);
-    if (!dbase()) dlv.err = DLV_ERR.nobase;
-    else if (!p || p.base) dlv.err = DLV_ERR.point;
-    else if (!placed(p)) dlv.err = DLV_ERR.nocoord;
-    else { test.track = []; test.job = { id: 't' + (++test.seq), by: me.id, by_name: me.name || null, pickup: p.id, dest: null, at: dbase().id, leg: 'pickup', phase: 'wait', since: now, flags: [] }; }
-  } else if (k === 'send' && j) {
-    const p = dpt(a.point);
-    if (!p || p.base || p.id === j.pickup) dlv.err = DLV_ERR.point;
-    else if (!placed(p)) dlv.err = DLV_ERR.nocoord;
-    else Object.assign(j, { dest: p.id, leg: 'dest', phase: 'wait', since: now });
-  } else if (k === 'done' && j) Object.assign(j, { leg: 'home', phase: 'wait', since: now });
-  else if (k === 'cancel' && j) {
-    if (j.leg === 'pickup' && j.phase === 'wait') test.job = null;
-    else {
-      if (j.phase === 'fly') { const q = tpos(now); j.from = { lat: q.lat, lon: q.lon, alt0: q.alt }; }   // 지금 자리에서 기지로 꺾는다
-      Object.assign(j, { leg: 'home', phase: j.phase === 'fly' ? 'fly' : 'wait', since: now });
-    }
-  }
-  test.rev++; dlvDraw(true); renderDlv();
-  return !dlv.err;
-}
-/** 0.2초마다 — 자동 출발·착륙, 그리고 화면에 연결된 기체처럼 상태를 넣는다 */
-function tstep() {
-  if (!test.on) return;
-  const now = Date.now(), j = test.job;
-  if (j && j.phase === 'wait' && now - j.since >= SIMV.wait * 1000) { Object.assign(j, { phase: 'fly', since: now }); test.rev++; }
-  let p = tpos(now);
-  if (j && j.phase === 'fly' && p && p.stage === 'done') {
-    j.at = ttarget(j); delete j.from; test.hdg = p.hdg;
-    if (j.leg === 'home') test.job = null; else Object.assign(j, { phase: 'landed', since: now });
-    test.rev++; p = tpos(now);
-  }
-  if (p) {
-    if (p.armed) test.batt = Math.max(0, test.batt - 0.03);   // 시연용 소모
-    if (p.armed && now - test.trackAt >= 1000) { test.track.push([p.lat, p.lon, p.alt]); test.trackAt = now; }
-    const b = dbase(), v = p.spd, air = p.armed && p.alt > 0.2;
-    S = { live: true, sim: true, age: 0, home: [b.lat, b.lon, b.alt || 0], track: [], track_n: test.track.length,
-      d: { lat: p.lat, lon: p.lon, alt: p.alt, groundspeed: v, climb: p.climb, hdg: p.hdg, yaw: p.hdg, roll: 0, pitch: p.stage === 'cruise' ? -6 : 0,
-        vx: v * Math.cos(p.hdg * RADS), vy: v * Math.sin(p.hdg * RADS), vz: -p.climb,
-        armed: p.armed, landed: air ? 2 : 1, system_status: p.armed ? 4 : 3, mav_type: 2,
-        mode: p.stage === 'land' ? 'LAND' : p.armed ? 'AUTO' : 'LOITER',
-        sats: 14, fix: 3, eph: 0.8, batt_pct: Math.round(test.batt), volt: +(13.2 + 3.6 * test.batt / 100).toFixed(2),
-        motors: p.armed ? { LF: 52, RF: 50, LB: 51, RB: 49 } : null } };
-  } else S = { live: false, d: {} };
-  render(); dlvDraw(); renderDlv();
-}
-function testStart() {
-  Object.assign(test, { on: true, job: null, rev: test.rev + 1, track: [], trackAt: 0, batt: 100, hdg: 0 });
-  clearInterval(test.timer); test.timer = setInterval(tstep, 200); tstep();
-}
-function testStop() {
-  if (!test.on) return;
-  clearInterval(test.timer); Object.assign(test, { on: false, job: null, track: [] });
-  S = { live: false, d: {} };
-  render(); pollLive(true);
-}
+const view = () => dlv.st;
 
-async function dlvEnter(isTest) {
-  dlv.test = isTest; dlv.err = ''; dlv.card = '';
+async function dlvEnter() {
+  dlv.err = ''; dlv.card = '';
   dlvG.visible = true; $('dlvPts').hidden = false;
   document.body.classList.add('dlvmode'); $('dlvPane').hidden = false;
   dlvDraw(true);
   await dlvPoll();
-  if (isTest && tab === 'tst') testStart();
 }
-function dlvLeave(stay) {
+function dlvLeave() {
   clearTimeout(dlv.timer);
-  testStop();
   dlv.sel = null; dlv.choosing = false;
-  if (stay) return;
   dlvG.visible = false; $('dlvPts').hidden = true;
   document.body.classList.remove('dlvmode'); $('dlvPane').hidden = true;
   render();
@@ -1497,7 +1379,7 @@ function dlvLeave(stay) {
 function dlvDraw(force) {
   const st = view();
   if (!st) return;
-  const key = JSON.stringify([dlv.test, st.rev, dlv.sel, st.me && st.me.id, st.points.map((p) => [p.id, p.name, p.lat, p.lon, p.base])]);
+  const key = JSON.stringify([st.rev, dlv.sel, st.me && st.me.id, st.points.map((p) => [p.id, p.name, p.lat, p.lon, p.base])]);
   if (!force && key === dlv.drawn) return;
   dlv.drawn = key;
   const box = $('dlvPts'), keep = new Set(st.points.filter(placed).map((p) => p.id));
@@ -1578,17 +1460,18 @@ function renderDlv() {
   // 상자는 늘 같은 꼴·같은 크기다 — 상태 줄, 지점 격자, 버튼 한 칸, 로그아웃. 할 수 없으면 비활성으로만 바뀐다
   const box = $('dlvPane'); box.hidden = false;
   const st = view(), me = st && st.me, can = new Set(st ? st.can : []), j = st && st.job;
-  const stt = dlv.off ? 'down' : (st && st.status) || 'down';
+  const stt = dlv.off ? 'down' : st ? st.status || 'down' : null;   // 첫 응답 전에는 모른다 — 비워 둔다
   // 상태 줄 — 왼쪽 상태, 오른쪽 지금 쓰는 사람 「이름 (학번)」(누구에게나 보인다). 오류는 같은 자리에 빨갛게
   const who = j && j.by ? (j.by_name ? `${j.by_name} (${j.by})` : j.by) : '';
-  let h = `<div class="dst"><b class="${stt}">${DLV_STATUS[stt]}</b>${dlv.err ? `<em>${esc(dlv.err)}</em>` : `<span>${esc(who)}</span>`}</div>`;
-  const sp = dpt(dlv.sel), pick = sp && !sp.base;
+  let h = `<div class="dst"><b class="${stt || ''}">${stt ? DLV_STATUS[stt] : ''}</b>${dlv.err ? `<em>${esc(dlv.err)}</em>` : `<span>${esc(who)}</span>`}</div>`;
   const sending = can.has('send'), choosing = !!me && (can.has('call') || sending);
+  const sp = dpt(dlv.sel), pick = sp && (sending || !sp.base);   // 기지는 짐을 실은 뒤(보내기)에만 고를 수 있다
   if (!me) h += '<button class="pfgo" data-dlv="login">로그인</button>';
   else {
-    // 지점 — 소스에 정해 둔 고정 목록 (web/delivery.js CATALOG). 기지는 고를 수 없다
-    const list = ((st && st.points) || []).filter((p) => placed(p) && !p.base);
-    h += `<div class="pts">${list.map((p) => `<button class="${p.id === dlv.sel ? 'on' : ''}" data-dlv="pick" data-pt="${esc(p.id)}"${!choosing || (sending && p.id === j.pickup) ? ' disabled' : ''}>${esc(p.name)}</button>`).join('')}</div>`;
+    // 지점 — 소스에 정해 둔 고정 목록 (web/delivery.js CATALOG)
+    const list = ((st && st.points) || []).filter(placed);
+    const off = (p) => !choosing || (sending ? p.id === j.pickup : p.base);
+    h += `<div class="pts">${list.map((p) => `<button class="${p.id === dlv.sel ? 'on' : ''}" data-dlv="pick" data-pt="${esc(p.id)}"${off(p) ? ' disabled' : ''}>${esc(p.name)}</button>`).join('')}</div>`;
     // 버튼 한 칸 — 목적지에 내렸으면 수거완료, 아니면 호출(첫 호출·짐 실은 뒤 보내기 둘 다)
     if (can.has('done')) h += '<button class="pfgo" data-dlv="done">수거완료</button>';
     else h += `<button class="pfgo" data-dlv="${sending ? 'send' : 'call'}"${choosing && pick && !(sending && sp.id === j.pickup) ? '' : ' disabled'}>호출</button>`;
@@ -1602,17 +1485,16 @@ function renderDlv() {
   box.innerHTML = h; dlv.card = h; dlv.cardSer = box.innerHTML;
 }
 // 사람이 누르는 배송 동작 — 테스트면 브라우저 안의 시뮬레이터로, 아니면 서버로
-const go = (k, a = {}) => Promise.resolve(dlv.test ? tact(k, a) : dlvAct(k, a));
 $('dlvPane').addEventListener('click', (e) => {
   const b = e.target.closest('[data-dlv]');
-  if (!b || (tab !== 'dlv' && tab !== 'tst') || b.disabled) return;
+  if (!b || tab !== 'dlv' || b.disabled) return;
   const k = b.dataset.dlv, sp = dlv.sel;
   if (k === 'login') return dlvLoginAsk();
   if (k === 'logout') return dlvLogout();
-  if (k === 'call') return go('call', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
-  if (k === 'send') return go('send', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
+  if (k === 'call') return dlvAct('call', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
+  if (k === 'send') return dlvAct('send', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
   if (k === 'pick') { dlv.sel = dlv.sel === b.dataset.pt ? null : b.dataset.pt; dlv.err = ''; if (dlv.sel) dlvFace(dlv.sel); dlvDraw(true); return renderDlv(); }
-  return go(k);   // done · cancel
+  return dlvAct(k);   // done
 });
 
 function dlvSet(st) {
@@ -1637,15 +1519,15 @@ async function dlvAct(act, args = {}) {
 }
 async function dlvPoll() {
   clearTimeout(dlv.timer);
-  if ((tab !== 'dlv' && tab !== 'tst') || document.hidden) return;
+  if (tab !== 'dlv' || document.hidden) return;
   try {
     const r = await fetch('/api/delivery/state', { cache: 'no-store' });
     if (r.status === 404 || r.status === 405) { dlv.off = true; renderDlv(); return; }
     if (r.ok) { dlv.off = false; dlvSet(await r.json()); }
   } catch { /* 다음 차례에 다시 */ }
-  dlv.timer = setTimeout(dlvPoll, dlv.test ? 5000 : 2000);
+  dlv.timer = setTimeout(dlvPoll, 1000);   // 남이 부른 배송도 곧바로 보이게
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && (tab === 'dlv' || tab === 'tst')) dlvPoll(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && tab === 'dlv') dlvPoll(); });
 
 // 학교 계정 로그인 — 점검 암호와 같은 모달에 폼만 바꿔 띄운다
 function dlvLoginAsk(err) {
@@ -1664,7 +1546,7 @@ $('dlvForm').addEventListener('submit', async (e) => {
   try {
     const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, pw }) });
     $('dlvPw').value = '';
-    if (r.ok) { $('modal').hidden = true; dlv.err = ''; await dlvPoll(); if (tab === 'tst' && !test.on) testStart(); }
+    if (r.ok) { $('modal').hidden = true; dlv.err = ''; await dlvPoll(); }
     else dlvLoginAsk(LOGIN_ERR[r.status] || '로그인 실패');
   } catch { dlvLoginAsk('연결 없음'); }
   finally { btn.disabled = false; }
@@ -1672,7 +1554,6 @@ $('dlvForm').addEventListener('submit', async (e) => {
 async function dlvLogout() {
   try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); } catch { /* 쿠키는 만료로 끝난다 */ }
   dlv.sel = null;
-  if (test.on) test.job = null;
   dlvPoll();
 }
 

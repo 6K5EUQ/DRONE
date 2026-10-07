@@ -223,6 +223,7 @@ const pt = (id) => S.points.find((p) => p.id === id) || null;
 const base = () => S.points.find((p) => p.base) || null;
 const target = (j) => j.leg === 'pickup' ? j.pickup : j.leg === 'dest' ? j.dest : base() && base().id;
 const isReq = (a, j) => a && j && a.id === j.by;
+const atBase = (j) => j.phase === 'landed' && base() && j.at === base().id;
 
 /**
  * 기체가 부를 수 있는 상태인가 — 링크가 살아 있고(12초 안, server.js LIVE_STALE_MS 와 같다), GPS 3D fix,
@@ -230,9 +231,10 @@ const isReq = (a, j) => a && j && a.id === j.by;
  * 배터리 % 는 쓰지 않는다 — ArduCopter 3.6.12 는 배터리를 떼도 99 % 를 보낸다(2026-09-21 실측).
  */
 const READY_VOLT = 14.0, LIVE_FRESH_MS = 12000;
+const liveFresh = () => { const L = C.getLive(); return !!(L && L.state && Date.now() - L.at <= LIVE_FRESH_MS); };
 function ready() {
-  const L = C.getLive(), d = L && L.state && L.state.d;
-  return !!(d && Date.now() - L.at <= LIVE_FRESH_MS && d.fix >= 3 && d.volt >= READY_VOLT);
+  if (liveFresh()) { const d = C.getLive().state.d || {}; return d.fix >= 3 && d.volt >= READY_VOLT; }   // 진짜 기체가 먼저다
+  return SIM && simVolt() >= READY_VOLT;                                                              // 없으면 시뮬레이션 기체
 }
 /** 화면 오른쪽 위 상태 — 사용 중 / 대기 중 / 사용 불가 */
 const status = () => S.job ? 'busy' : SERVICE && ready() ? 'ready' : 'down';
@@ -257,15 +259,16 @@ function view(a) {
   return {
     rev: S.rev, service: SERVICE, status: status(),
     me: a && !a.drone ? { id: a.id, name: a.name } : null,
-    points: a ? S.points : [],
-    job: !j ? null : a ? j : { leg: j.leg, phase: j.phase },
+    // 지점·진행 구간은 공개(남도 배송이 날아가는 것을 본다). 사람(이름·학번)은 로그인한 사람에게만
+    points: S.points, fly: simFly(),
+    job: !j ? null : a ? j : { leg: j.leg, phase: j.phase, at: j.at, pickup: j.pickup, dest: j.dest },
     can: can(a),
   };
 }
 
 function finish(how, by) {
   logLine({ rev: S.rev, act: 'end', by, how, job: S.job.id, flags: S.job.flags });
-  S.job = null;
+  S.job = null; simTrack = []; simBatt = 100;   // 기지에서 충전·교체
 }
 
 
@@ -297,24 +300,26 @@ function apply(a, b) {
     }
     case 'depart': j.phase = 'fly'; j.since = now; j.deadline = null; break;
     case 'land':
-      j.phase = 'landed'; j.since = now; j.at = target(j);
+      j.phase = 'landed'; j.since = now; j.at = target(j); delete j.simFrom;
       if (j.leg === 'home') { S.rev++; logLine({ rev: S.rev, act, by: a.id, from, to: ['home', 'landed'], job: j.id }); finish('home', a.id); save(); return [200]; }
       j.deadline = now + (j.leg === 'pickup' ? PICKUP_WAIT : DEST_WAIT) * 1000;
       break;
     case 'send': {
       const p = pt(b.point);
-      if (!p || p.base || p.id === j.pickup) return [400, 'point'];
+      if (!p || p.id === j.pickup) return [400, 'point'];   // 기지도 된다 — 짐을 싣고 기지로 돌아오기
       if (!placed(p)) return [400, 'nocoord'];
       Object.assign(j, { dest: p.id, leg: 'dest', phase: 'wait', since: now, deadline: null });
       break;
     }
     case 'done':
       j.flags.push('delivered:' + a.id);
+      if (atBase(j)) { S.rev++; logLine({ rev: S.rev, act, by: a.id, from, to: null, job: j.id }); finish('done', a.id); save(); return [200]; }   // 기지에서 받았다 — 돌아갈 곳이 없다
       Object.assign(j, { leg: 'home', phase: 'wait', since: now, deadline: null });
       break;
     case 'cancel':
       if (j.leg === 'pickup' && j.phase === 'wait') { S.rev++; logLine({ rev: S.rev, act, by: a.id, from, to: null, job: j.id }); finish('cancel', a.id); save(); return [200]; }
       j.flags.push('cancel:' + a.id);
+      if (SIM && j.phase === 'fly') { const q = simPos(now); if (q) j.simFrom = { lat: q.lat, lon: q.lon, alt0: q.alt }; }   // 지금 자리에서 기지로 꺾는다
       Object.assign(j, { leg: 'home', phase: j.phase === 'fly' ? 'fly' : 'wait', since: now, deadline: null });
       break;
     default: return [400, 'act'];
@@ -325,14 +330,94 @@ function apply(a, b) {
   return [200];
 }
 
+// ── 시뮬레이션 기체 ──────────────────────────────────────────────────
+// 실제 기체 링크가 붙기 전까지(DELIVERY_SIM=on) 서버가 기체 몫을 한다 — 호출 3초 뒤 이륙, 출발 지점에서 수직 상승,
+// 순항고도 직선, 도착 지점에서 수직 하강, 착륙. 위치는 시간만으로 정해지고 /api/live/state 로 모두에게 같은 기체가 보인다.
+// 값은 시연용이지 운용 고도·속도가 아니다 (설계 02 §4: 실제 고도는 수동 비행 데이터로 정한다).
+// 진짜 기체 신호가 오면 그쪽이 먼저다 (server.js handleLiveState, ready()).
+let SIM = false;
+const SIMV = { alt: 30, speed: 8, climb: 2.5, desc: 1.5, wait: 3 };
+const SIM_ACTOR = { id: 'sim', drone: true };
+let simTrack = [], simBatt = 100, simLast = Date.now();
+const simVolt = () => +(13.2 + 3.6 * simBatt / 100).toFixed(2);   // 4S 13.2~16.8 V (MOT_BAT_VOLT_MIN/MAX, params 09-21) 사이로
+const RAD = Math.PI / 180;
+function distM(a, b) {
+  const x = Math.sin((b.lat - a.lat) * RAD / 2) ** 2 + Math.cos(a.lat * RAD) * Math.cos(b.lat * RAD) * Math.sin((b.lon - a.lon) * RAD / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(x));
+}
+function bearing(a, b) {
+  const y = Math.sin((b.lon - a.lon) * RAD) * Math.cos(b.lat * RAD);
+  const x = Math.cos(a.lat * RAD) * Math.sin(b.lat * RAD) - Math.sin(a.lat * RAD) * Math.cos(b.lat * RAD) * Math.cos((b.lon - a.lon) * RAD);
+  return (Math.atan2(y, x) / RAD + 360) % 360;
+}
+let simHdg = 0;
+/** 지금 시뮬레이션 기체 — 위치·고도·속도·남은 경로(상승+수평+하강)·남은 시간. 기지가 없으면 null */
+function simPos(now) {
+  const j = S.job, b = base();
+  if (!placed(b)) return null;
+  const ground = (p) => ({ lat: p.lat, lon: p.lon, alt: 0, spd: 0, climb: 0, hdg: simHdg, stage: 'ground', armed: false, remain: 0, eta: 0 });
+  if (!j || j.phase !== 'fly') return ground((j && pt(j.at)) || b);
+  const A = j.simFrom || pt(j.at) || b, B = pt(target(j)) || b, a0 = A.alt0 || 0;
+  const D = distM(A, B), hdg = D > 1 ? bearing(A, B) : simHdg, top = Math.max(a0, SIMV.alt);
+  const tc = (top - a0) / SIMV.climb, tr = D / SIMV.speed, td = top / SIMV.desc, t = (now - j.since) / 1000, T = tc + tr + td;
+  const at = (f) => ({ lat: A.lat + (B.lat - A.lat) * f, lon: A.lon + (B.lon - A.lon) * f });
+  if (t < tc) { const alt = a0 + SIMV.climb * t; return { ...at(0), alt, spd: 0, climb: SIMV.climb, hdg, stage: 'climb', armed: true, remain: (top - alt) + D + top, eta: T - t }; }
+  if (t < tc + tr) { const f = (t - tc) / tr; return { ...at(f), alt: top, spd: SIMV.speed, climb: 0, hdg, stage: 'cruise', armed: true, remain: D * (1 - f) + top, eta: T - t }; }
+  if (t < T) { const alt = Math.max(0, top - SIMV.desc * (t - tc - tr)); return { ...at(1), alt, spd: 0, climb: -SIMV.desc, hdg, stage: 'land', armed: true, remain: alt, eta: T - t }; }
+  return { ...at(1), alt: 0, spd: 0, climb: 0, hdg, stage: 'done', armed: true, remain: 0, eta: 0 };
+}
+/** 화면 계기 — 남은 거리·예상 시간 (시뮬레이션이 날고 있을 때만) */
+function simFly() {
+  if (!SIM || liveFresh() || !S.job || S.job.phase !== 'fly') return null;
+  const p = simPos(Date.now());
+  return p && { alt: Math.round(p.alt), remain: Math.round(p.remain), eta: Math.ceil(p.eta) };
+}
+function simTick() {
+  const now = Date.now(), dt = (now - simLast) / 1000; simLast = now;
+  if (!SIM || !S || liveFresh()) return;   // 진짜 기체가 붙어 있으면 손대지 않는다
+  const j = S.job;
+  if (!j) return;
+  if (j.phase === 'wait' && now - j.since >= SIMV.wait * 1000) { apply(SIM_ACTOR, { act: 'depart', rev: S.rev }); return; }
+  if (j.phase !== 'fly') return;
+  const p = simPos(now);
+  if (!p) return;
+  simBatt = Math.max(0, simBatt - 0.03 * dt);   // 시연용 소모
+  simHdg = p.hdg;
+  simTrack.push([+p.lat.toFixed(7), +p.lon.toFixed(7), +p.alt.toFixed(1)]);
+  if (simTrack.length > 12000) simTrack.splice(0, simTrack.length - 12000);
+  if (p.stage === 'done') apply(SIM_ACTOR, { act: 'land', rev: S.rev });
+}
+/** /api/live/state 와 같은 모양 — live:false(진짜 링크가 아니다, 앱 링크 알림이 오인하지 않게), sim:true */
+function simSnapshot(url) {
+  if (!SIM || !S) return null;
+  const p = simPos(Date.now()), b = base();
+  if (!p) return null;
+  let since = parseInt(url.searchParams.get('since') || '0', 10);
+  if (!Number.isFinite(since) || since < 0 || since > simTrack.length) since = 0;
+  const v = p.spd, air = p.armed && p.alt > 0.2;
+  return {
+    live: false, sim: true, seq: 0, age: 0, packets: 0, bytes: 0, src: 'sim', link: null, links: {}, sysid: null, uptime: 0,
+    d: { lat: p.lat, lon: p.lon, alt: p.alt, groundspeed: v, climb: p.climb, hdg: p.hdg, yaw: p.hdg, roll: 0, pitch: p.stage === 'cruise' ? -6 : 0,
+         vx: v * Math.cos(p.hdg * RAD), vy: v * Math.sin(p.hdg * RAD), vz: -p.climb,
+         armed: p.armed, landed: air ? 2 : 1, system_status: p.armed ? 4 : 3, mav_type: 2,
+         mode: p.stage === 'land' ? 'LAND' : p.armed ? 'AUTO' : 'LOITER',
+         sats: 14, fix: 3, eph: 0.8, batt_pct: Math.round(simBatt), volt: simVolt(),
+         motors: p.armed ? { LF: 52, RF: 50, LB: 51, RB: 49 } : null },
+    home: [b.lat, b.lon, 0], mission: [],
+    track_n: simTrack.length, track_from: since, track: url.searchParams.get('track') === '0' ? [] : simTrack.slice(since), messages: [],
+    relay: { pusher: 'sim', age: 0, note: null },
+  };
+}
+
 /** 착륙 뒤 아무도 안 오면 기지로 돌려보낸다 */
 function tick() {
   const j = S && S.job;
   if (!j || j.phase !== 'landed' || !j.deadline || Date.now() < j.deadline) return;
   const from = [j.leg, j.phase];
   j.flags.push('timeout:' + j.leg);
-  Object.assign(j, { leg: 'home', phase: 'wait', since: Date.now(), deadline: null });
   S.rev++;
+  if (atBase(j)) { logLine({ rev: S.rev, act: 'timeout', by: 'server', from, to: null, job: j.id }); finish('timeout', 'server'); save(); return; }
+  Object.assign(j, { leg: 'home', phase: 'wait', since: Date.now(), deadline: null });
   logLine({ rev: S.rev, act: 'timeout', by: 'server', from, to: ['home', 'wait'], job: j.id });
   save();
 }
@@ -366,6 +451,8 @@ function init(ctx) {
   LOGF = path.join(ctx.dataDir, 'delivery-log.jsonl');
   SERVICE = env.DELIVERY_SERVICE === 'on';   // 실제 배송 접수 — 조종사·기체가 준비된 때만 켠다. 테스트 탭과는 무관
   KEY = env.DELIVERY_KEY || '';
+  SIM = env.DELIVERY_SIM === 'on';
+  for (const [k, e] of [['alt', 'SIM_ALT'], ['speed', 'SIM_SPEED'], ['climb', 'SIM_CLIMB'], ['desc', 'SIM_DESC'], ['wait', 'SIM_WAIT']]) if (env[e]) SIMV[k] = parseFloat(env[e]);
   SUGANG_URL = env.SUGANG_URL || '';
   SUGANG_LOGOUT = env.SUGANG_LOGOUT || '';
   ORIGINS = new Set(String(env.DELIVERY_ORIGINS || 'https://drone01.shade-signals.com,https://drone01.bewe.co.kr').split(',').map((x) => x.trim()).filter(Boolean));
@@ -377,10 +464,12 @@ function init(ctx) {
   if (!SERVICE) ctx.log('배송 운행 꺼짐 (DELIVERY_SERVICE=on 으로 켠다)');
   load();
   setInterval(tick, 5000).unref();
+  setInterval(simTick, 250).unref();
+  if (SIM) ctx.log('배송 기체 시뮬레이션 켜짐 (DELIVERY_SIM=on) — 진짜 기체 신호가 오면 그쪽이 먼저');
 }
 
 function health() {
-  return { login: SUGANG_URL ? 'enabled' : 'disabled', service: SERVICE, status: status(), job: !!S.job, points: S.points.length };
+  return { login: SUGANG_URL ? 'enabled' : 'disabled', service: SERVICE, sim: SIM, status: status(), job: !!S.job, points: S.points.length };
 }
 
 /** 맞는 경로면 처리하고 promise, 아니면 false */
@@ -399,4 +488,4 @@ function handle(req, res, url) {
   return false;
 }
 
-module.exports = { init, handle, health, judge, hidden, nameFrom };
+module.exports = { init, handle, health, judge, hidden, nameFrom, simSnapshot };

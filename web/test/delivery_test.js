@@ -81,7 +81,7 @@ async function server() {
   let me = await state('u01');
   ok(me.me && me.me.id === 'u01' && me.me.name === '박보냄' && me.me.admin === undefined, '학교 상단 인사에서 이름, 관리자 없음', JSON.stringify(me.me));
   ok(parseInt(await (await fetch(`http://127.0.0.1:${FAKE_PORT}/logouts`)).text(), 10) >= 2, '확인 뒤 학교 세션 끊음');
-  ok((await state()).points.length === 0 && (await state()).me === null, '비로그인은 지점 안 보임');
+  ok((await state()).points.length === 6 && (await state()).me === null && (await state()).can.length === 0, '비로그인: 지점은 보이고 동작은 없음');
 
   console.log('— 요청 막이');
   ok((await req('POST', '/api/delivery/act', { who: 'u01', headers: { Origin: 'https://evil.bewe.co.kr' }, body: { act: 'call', rev: me.rev, point: 'main' } })).s === 403, '다른 Origin → 403');
@@ -143,8 +143,31 @@ async function server() {
   await act('drone', 'depart'); await act('drone', 'land');
   ok((await state('u01')).job === null, '복귀 후 끝');
 
+  console.log('— 서버 시뮬레이션 기체 (DELIVERY_SIM=on)');
+  srv.kill(); await sleep(500);
+  Object.assign(ENV, { DELIVERY_SIM: 'on', SIM_ALT: '4', SIM_SPEED: '200', SIM_CLIMB: '20', SIM_DESC: '20', SIM_WAIT: '0.3' });
+  await sleep(13000);   // 앞에서 올린 진짜 링크가 식을 때까지 — 진짜가 먼저다
+  srv = await server();
+  st = await state('u01');
+  ok(st.status === 'ready', '시뮬레이션 기체 → 대기 중', st.status);
+  let ls = await (await fetch(H + '/api/live/state?track=0')).json();
+  ok(ls.sim === true && ls.live === false && Math.abs(ls.d.lat - 35.181070) < 1e-6, '실시간 상태 = 기지의 시뮬레이션 기체 (live:false)');
+  ok((await act('u01', 'call', { point: 'main' })).s === 200, '본관 호출');
+  const until = async (f, ms = 15000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const x = await state('u01'); if (f(x)) return x; await sleep(250); } return null; };
+  ok(!!(await until((x) => x.job && x.job.phase === 'fly')), '스스로 이륙');
+  ls = await (await fetch(H + '/api/live/state?track=0')).json();
+  ok(ls.d.armed === true && ls.d.alt > 0, '날고 있는 기체가 실시간 상태에 보인다');
+  ok(!!(await until((x) => x.job && x.job.leg === 'pickup' && x.job.phase === 'landed')), '본관 도착·착륙');
+  const anon = await state();
+  ok(anon.points.length === 6 && anon.job && anon.job.by === undefined && anon.job.pickup === 'main', '비로그인: 지점·구간은 보이고 사람은 안 보인다');
+  ok((await act('u01', 'send', { point: 'field' })).s === 200, '기지(대운동장)로 보내기');
+  ok(!!(await until((x) => x.job && x.job.leg === 'dest' && x.job.phase === 'landed')), '기지 도착');
+  ok((await act('u02', 'done')).s === 200, '기지에서 수거완료');
+  st = await state('u01');
+  ok(st.job === null && st.status === 'ready', '기지에서 받으면 바로 끝 → 대기 중');
+
   const lines = fs.readFileSync(path.join(DATA, 'delivery-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  ok(lines.filter((l) => l.act === 'end').length === 2, '기록: 끝난 배송 2건');
+  ok(lines.filter((l) => l.act === 'end').length === 3, '기록: 끝난 배송 3건');
   ok(!fs.readFileSync(path.join(DATA, 'delivery-log.jsonl'), 'utf8').includes('"pw"'), '기록에 비밀번호 없음');
 
   console.log(`\n${pass} 통과, ${fail} 실패`);
