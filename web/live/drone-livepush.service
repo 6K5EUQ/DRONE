@@ -1,8 +1,8 @@
 # rim3 user 유닛 — ~/.config/systemd/user/drone-livepush.service
-# drone-live 의 /api/state 를 drone01.bewe.co.kr 로 1초마다 올린다 (한 방향).
+# drone-live 의 /api/state 를 drone01.shade-signals.com 로 1초마다 올린다 (한 방향).
 # 키: ~/.config/drone-live.env 에 LIVE_PUSH_KEY=<서버 .env 와 같은 값>
 [Unit]
-Description=DRONE01 live push -> drone01.bewe.co.kr
+Description=DRONE01 live push -> drone01.shade-signals.com
 After=drone-live.service
 
 [Service]

@@ -1,4 +1,4 @@
-// drone01.bewe.co.kr — 비행로그 뷰어
+// drone01.shade-signals.com — 비행로그 뷰어
 //
 // 외부 의존 0. node:http 만 쓴다 (이 호스트의 다른 서비스와 같은 방식).
 // Cloudflare 터널 뒤에 있으므로 루프백에만 바인딩한다 — TLS 는 엣지에서 끝난다.

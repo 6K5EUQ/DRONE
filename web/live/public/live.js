@@ -23,7 +23,7 @@
 
 // 🔴 같은 파일이 **두 곳에서** 돈다:
 //      로컬 트래커 (rim3 :4410)      → /api/state
-//      drone01.bewe.co.kr  /live     → /api/live/state   (rim3 가 밀어 올린 것)
+//      drone01.shade-signals.com  /live     → /api/live/state   (rim3 가 밀어 올린 것)
 //    화면·계기·차트는 완전히 같아야 하므로 파일을 나누지 않고, **어느 API 를
 //    두드릴지만** 갈라 놓는다.
 const ON_WEB = location.pathname.startsWith('/live');
@@ -1032,7 +1032,7 @@ function acIcon(hdg) {
 }
 
 // ── ADS-B: 주변 유인기 ───────────────────────────────────────────────
-// 🔴 **웹(drone01.bewe.co.kr) 전용이다.** 로컬 트래커(:4410)는 인터넷이 없는
+// 🔴 **웹(drone01.shade-signals.com) 전용이다.** 로컬 트래커(:4410)는 인터넷이 없는
 //    현장에서 쓰는 화면이라 외부 API 를 부르지 않는다. `/api/adsb` 가 404 면
 //    조용히 꺼진다 — 콘솔을 더럽히거나 재시도를 반복하지 않는다.
 //

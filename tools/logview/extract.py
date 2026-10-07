@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ArduPilot .BIN 로그 하나를 읽어 웹 뷰어가 쓸 JSON 을 만든다.
 
-오프라인 단독 뷰어(viewer.html)용. 웹(drone01.bewe.co.kr)은 web/extract.py 를 쓴다.
+오프라인 단독 뷰어(viewer.html)용. 웹(drone01.shade-signals.com)은 web/extract.py 를 쓴다.
 
 사용법:
     extract.py <path.BIN> [...]   ->  같은 이름 .json 을 옆에 만든다

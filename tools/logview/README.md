@@ -1,7 +1,7 @@
 # DRONE 로그 뷰어 — 로컬 전용
 
 ArduCopter `.BIN` 로그를 인터넷 없이 브라우저로 본다. 평소에는 웹
-(drone01.bewe.co.kr, `web/`)을 쓰고, 이것은 현장 오프라인용이다.
+(drone01.shade-signals.com, `web/`)을 쓰고, 이것은 현장 오프라인용이다.
 
 ```bash
 # 1. .BIN → .json 추출 (pymavlink 필요)

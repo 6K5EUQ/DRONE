@@ -588,7 +588,7 @@ body.playback { padding-bottom: 38px; }
 #pbList .sz { color: var(--muted); font-size: 11px; min-width: 7ch; text-align: right; }
 #pbList .msg { padding: 10px 12px; color: var(--muted); font-size: 12px; }
 
-/* ── 웹(drone01.bewe.co.kr/live)에서만 ─────────────────────────────
+/* ── 웹(drone01.shade-signals.com/live)에서만 ─────────────────────────────
    같은 화면을 웹에서도 쓴다. 로컬 전용 조작은 JS 가 숨기고, 여기서는
    목록으로 돌아가는 링크만 자리를 잡는다. */
 .weblink {

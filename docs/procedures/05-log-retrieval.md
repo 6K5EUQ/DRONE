@@ -12,9 +12,9 @@
 
 ## 🔴 먼저 알 것 — 세 가지
 
-### 1. 웹은 drone01.bewe.co.kr 이다
+### 1. 웹은 drone01.shade-signals.com 이다
 
-받은 `.BIN` 은 [drone01.bewe.co.kr](https://drone01.bewe.co.kr) 에 올린다 (공용 비밀번호 필요).
+받은 `.BIN` 은 [drone01.shade-signals.com](https://drone01.shade-signals.com) 에 올린다 (공용 비밀번호 필요).
 인터넷 없는 현장에서는 [`tools/logview/`](../../tools/logview/README.md) 로 본다.
 
 ### 2. FC 에 시계(RTC)가 없다

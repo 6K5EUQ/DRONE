@@ -49,7 +49,7 @@ DRONE01 을 교내 근거리 배송 드론으로 쓰는 설계. 사람이 웹·�
 ## 1. 체계
 
 ```
- 사람 (웹 drone01.bewe.co.kr/cockpit 배송 탭, 앱은 같은 화면을 WebView 로)
+ 사람 (웹 drone01.shade-signals.com/cockpit 배송 탭, 앱은 같은 화면을 WebView 로)
    │ HTTPS
    ▼
  drone01 서버 (web/server.js + web/delivery.js)

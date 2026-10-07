@@ -10,7 +10,7 @@ FC 로 파라미터·명령을 보내지 않는다 (데이터 스트림 요청�
 ```
 
 `drone-live`·`drone-livepush` 는 rim3 의 systemd user 유닛이다. 설치는 [web/README.md](../../web/README.md#rim3).
-웹의 실시간(`drone01.bewe.co.kr/live`)은 `drone-livepush` 가 이 화면의 `/api/state` 를
+웹의 실시간(`drone01.shade-signals.com/live`)은 `drone-livepush` 가 이 화면의 `/api/state` 를
 1초마다 밀어 올린 것이다.
 
 ## 구성

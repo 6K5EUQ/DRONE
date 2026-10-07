@@ -20,10 +20,10 @@ systemctl --user is-active drone-playback
 # 곧바로 물으면 502 가 난다 — 캐시를 다시 굽는 동안은 listen 전이다.
 echo -n "healthcheck "
 for i in $(seq 1 20); do
-  code=$(curl -s -o /dev/null -w '%{http_code}' "https://drone01.bewe.co.kr/api/health" || true)
+  code=$(curl -s -o /dev/null -w '%{http_code}' "https://drone01.shade-signals.com/api/health" || true)
   [ "$code" = "200" ] && break
   echo -n "."; sleep 3
 done
 echo " $code"
 [ "$code" = "200" ] || { systemctl status lab-drone01 --no-pager -n 10 || true; tail -20 /home/ku/drone01-data/server.log || true; exit 1; }
-curl -s https://drone01.bewe.co.kr/api/health; echo
+curl -s https://drone01.shade-signals.com/api/health; echo

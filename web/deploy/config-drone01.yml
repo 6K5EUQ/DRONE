@@ -4,6 +4,8 @@ tunnel: REPLACE_WITH_TUNNEL_UUID
 credentials-file: /home/ku/.cloudflared/REPLACE_WITH_TUNNEL_UUID.json
 
 ingress:
+  - hostname: drone01.shade-signals.com
+    service: http://localhost:4310
   - hostname: drone01.bewe.co.kr
     service: http://localhost:4310
   - service: http_status:404

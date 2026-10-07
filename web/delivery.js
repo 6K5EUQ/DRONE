@@ -112,7 +112,7 @@ function who(req) {
 }
 const setCookie = (v, age) => `${COOKIE}=${v}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${age}`;
 
-// 쿠키로 인증하는 POST 의 CSRF 막이. shade01.bewe.co.kr 가 같은 사이트라 SameSite 만으로는 모자란다.
+// 쿠키로 인증하는 POST 의 CSRF 막이. shade01.shade-signals.com 가 같은 사이트라 SameSite 만으로는 모자란다.
 function postGuard(req, res) {
   if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) { json(req, res, 415, { error: 'json' }); return false; }
   const o = req.headers.origin;
@@ -368,7 +368,7 @@ function init(ctx) {
   KEY = env.DELIVERY_KEY || '';
   SUGANG_URL = env.SUGANG_URL || '';
   SUGANG_LOGOUT = env.SUGANG_LOGOUT || '';
-  ORIGINS = new Set(String(env.DELIVERY_ORIGINS || 'https://drone01.bewe.co.kr').split(',').map((x) => x.trim()).filter(Boolean));
+  ORIGINS = new Set(String(env.DELIVERY_ORIGINS || 'https://drone01.shade-signals.com,https://drone01.bewe.co.kr').split(',').map((x) => x.trim()).filter(Boolean));
   PICKUP_WAIT = parseInt(env.PICKUP_WAIT || '300', 10);
   DEST_WAIT = parseInt(env.DEST_WAIT || '600', 10);
   if (env.DELIVERY_SECRET) SECRET = Buffer.from(env.DELIVERY_SECRET);

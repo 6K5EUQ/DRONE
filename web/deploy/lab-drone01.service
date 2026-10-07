@@ -1,6 +1,6 @@
 # /etc/systemd/system/lab-drone01.service 로 복사한다.
 [Unit]
-Description=DRONE01 flight-log viewer (drone01.bewe.co.kr)
+Description=DRONE01 flight-log viewer (drone01.shade-signals.com)
 After=network-online.target
 Wants=network-online.target
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""로컬 트래커의 라이브 상태를 drone01.bewe.co.kr 로 밀어 올린다.
+"""로컬 트래커의 라이브 상태를 drone01.shade-signals.com 로 밀어 올린다.
 
     [FC] ──USB──> [rim3 트래커 :4410] ──HTTPS POST──> [랩서버] ──> 웹
 
@@ -17,7 +17,7 @@
    무관하게 계속 돈다 — 중계가 죽어도 현장 화면은 안 죽는다.
 
     ./livepush.py                        # 기본값으로
-    ./livepush.py --to https://drone01.bewe.co.kr --interval 1.0
+    ./livepush.py --to https://drone01.shade-signals.com --interval 1.0
 """
 
 import argparse
@@ -132,8 +132,8 @@ def main():
                     default=os.environ.get('LIVE_LOCAL', 'http://127.0.0.1:4410'),
                     help='로컬 트래커 주소 (기본 http://127.0.0.1:4410)')
     ap.add_argument('--to', default=os.environ.get(
-        'LIVE_PUSH_URL', 'https://drone01.bewe.co.kr'),
-        help='랩서버 주소 (기본 https://drone01.bewe.co.kr)')
+        'LIVE_PUSH_URL', 'https://drone01.shade-signals.com'),
+        help='랩서버 주소 (기본 https://drone01.shade-signals.com)')
     ap.add_argument('--key', default=os.environ.get('LIVE_PUSH_KEY', ''),
                     help='밀어 올릴 때 쓰는 암호. 서버의 LIVE_PUSH_KEY 와 같아야 한다')
     ap.add_argument('--interval', type=float,

@@ -53,7 +53,7 @@ SD 카드 조사(2026-09-14) 결과, **이 보드는 새것이 아니다.**
 | `components/` | 부품별 사양·배선 문서 (`<카테고리>/<벤더-모델>/README.md`) |
 | `flights/` | 비행별 분석 기록 (`YYYY-MM-DD-<slug>.md`) |
 | `params/` | FC 파라미터 스냅샷 (`params_YYYYMMDD-HHMMSS.params`) |
-| `web/` | [drone01.bewe.co.kr](https://drone01.bewe.co.kr) — 비행로그·실시간·콕핏. 설치·배포는 [web/README.md](web/README.md) |
+| `web/` | [drone01.shade-signals.com](https://drone01.shade-signals.com) — 비행로그·실시간·콕핏. 설치·배포는 [web/README.md](web/README.md) |
 | `tools/` | 로그 회수(`loglist.py`·`logdl.py`), 라이브·재생 화면(`live/`), 정적 뷰어(`logview/`) |
 | `FC_CHANGELOG.md` | FC 상태를 바꾼 모든 작업의 이력 — **바꾸기 전에 읽고, 바꾼 뒤에 쓴다** |
 

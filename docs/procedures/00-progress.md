@@ -145,7 +145,7 @@ FC 가 각 출력에 신호를 내보내는지 확인:
   **SD 카드를 안 빼도 된다**
 - 재생: `tools/live/` 의 `./drone-live` → `localhost:4410` 아래 「재생」.
   FC 가 안 꽂혀 있어도 된다
-- 웹: `.BIN` 은 [drone01.bewe.co.kr](https://drone01.bewe.co.kr) 에 올린다 (공용 비밀번호 필요)
+- 웹: `.BIN` 은 [drone01.shade-signals.com](https://drone01.shade-signals.com) 에 올린다 (공용 비밀번호 필요)
 
 겪은 함정은 [절차 05](05-log-retrieval.md) 와 아래 함정 절에 적었다.
 

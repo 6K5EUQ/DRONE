@@ -1,17 +1,17 @@
-# web — drone01.bewe.co.kr
+# web — drone01.shade-signals.com
 
 DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업로드만 공유 암호.**
 
 ```
-목록      https://drone01.bewe.co.kr/
-분석      https://drone01.bewe.co.kr/log/<id>
-비교      https://drone01.bewe.co.kr/compare?a=<id>&b=<id>
-실시간    https://drone01.bewe.co.kr/live
-콕핏      https://drone01.bewe.co.kr/cockpit
-점검      https://drone01.bewe.co.kr/preflight
-배송      https://drone01.bewe.co.kr/cockpit#dlv
-소개      https://drone01.bewe.co.kr/intro
-상태      https://drone01.bewe.co.kr/api/health
+목록      https://drone01.shade-signals.com/
+분석      https://drone01.shade-signals.com/log/<id>
+비교      https://drone01.shade-signals.com/compare?a=<id>&b=<id>
+실시간    https://drone01.shade-signals.com/live
+콕핏      https://drone01.shade-signals.com/cockpit
+점검      https://drone01.shade-signals.com/preflight
+배송      https://drone01.shade-signals.com/cockpit#dlv
+소개      https://drone01.shade-signals.com/intro
+상태      https://drone01.shade-signals.com/api/health
 ```
 
 ## 구조
@@ -97,7 +97,7 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 | `DELIVERY_SERVICE` | `on` 이면 실제 배송 접수. 기본 꺼짐 (테스트 탭과는 무관) |
 | `DELIVERY_SECRET` | 쿠키 서명 키. 비우면 재시작 때마다 전원 재로그인 |
 | `DELIVERY_KEY` | 기체(Pi)가 act·job 을 부를 키 |
-| `DELIVERY_ORIGINS` | 허용 Origin (기본 `https://drone01.bewe.co.kr`) |
+| `DELIVERY_ORIGINS` | 허용 Origin (기본 `https://drone01.shade-signals.com,https://drone01.shade-signals.com`) |
 | `PICKUP_WAIT`·`DEST_WAIT` | 착륙 후 대기 초과 시 복귀, 초 (기본 300·600, 운영값) |
 
 ## 포트
@@ -145,7 +145,8 @@ systemctl --user daemon-reload && systemctl --user enable --now drone-playback
 # 터널 — 도메인마다 따로
 ~/.local/bin/cloudflared tunnel create drone01
 sed "s/REPLACE_WITH_TUNNEL_UUID/<UUID>/g" ~/DRONE/web/deploy/config-drone01.yml > ~/.cloudflared/config-drone01.yml
-~/.local/bin/cloudflared tunnel route dns drone01 drone01.bewe.co.kr
+# DNS 는 `cloudflared tunnel route dns` 로 만들지 마라 — 서버 cert.pem 이 bewe.co.kr 존이라 잘못 만든다.
+# Cloudflare API 로 CNAME drone01.shade-signals.com → <UUID>.cfargotunnel.com (proxied). 절차: 랩서버 ~/shade-signals/DEPLOY.md §4.4
 sudo systemctl enable --now lab-tunnel-drone01
 ```
 
