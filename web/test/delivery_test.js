@@ -54,6 +54,9 @@ async function act(who, a, args = {}) {
   const headers = who === 'drone' ? { 'X-Delivery-Key': KEY } : {};
   return req('POST', '/api/delivery/act', { who: who === 'drone' ? undefined : who, headers, body: { act: a, rev, ...args } });
 }
+// 기체 링크 — 살아 있고 GPS 3D fix, 전압 정상이면 「대기 중」
+const link = (o = {}) => fetch(H + '/api/live/push', { method: 'POST', headers: { 'X-Live-Key': LIVE, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ live: true, d: { lat: 35.18107, lon: 128.55381, fix: 3, sats: 14, volt: 16.2, ...o } }) });
 const fakeCount = async () => parseInt(await (await fetch(`http://127.0.0.1:${FAKE_PORT}/count`)).text(), 10);
 async function server() {
   const s = start(path.join(WEB, 'server.js'), [], ENV);
@@ -76,7 +79,7 @@ async function server() {
   ok((await login('u01')).s === 200 && !!cookies.u01, 'u01 로그인');
   ok((await login('u02')).s === 200, 'u02 로그인');
   let me = await state('u01');
-  ok(me.me && me.me.name === '박보냄' && me.me.admin === undefined, '학교 상단 인사에서 이름, 관리자 없음', JSON.stringify(me.me));
+  ok(me.me && me.me.id === 'u01' && me.me.name === '박보냄' && me.me.admin === undefined, '학교 상단 인사에서 이름, 관리자 없음', JSON.stringify(me.me));
   ok(parseInt(await (await fetch(`http://127.0.0.1:${FAKE_PORT}/logouts`)).text(), 10) >= 2, '확인 뒤 학교 세션 끊음');
   ok((await state()).points.length === 0 && (await state()).me === null, '비로그인은 지점 안 보임');
 
@@ -95,22 +98,27 @@ async function server() {
 
   console.log('— 운행 켜고 배송 한 바퀴');
   srv.kill(); await sleep(500); ENV.DELIVERY_SERVICE = 'on'; srv = await server();
+  ok((await state('u01')).status === 'down', '링크 없음 → 사용 불가');
+  ok((await act('u01', 'call', { point: 'main' })).s === 409, '사용 불가면 호출 409');
+  await link({ volt: 13.5 });
+  ok((await state('u01')).status === 'down', '전압 13.5 V → 사용 불가');
+  await link();
+  ok((await state('u01')).status === 'ready', '링크·GPS·전압 정상 → 대기 중');
   ok((await act('u01', 'call', { point: 'field' })).s === 400, '기지로 호출 → 400');
   ok((await act('u01', 'call', { point: 'main' })).s === 200, 'u01 본관 호출');
+  ok((await state('u02')).status === 'busy', '호출 후 → 사용 중');
   ok((await act('u02', 'call', { point: 'eng' })).s === 409, '동시 호출 → 409 busy');
   ok((await act('u02', 'cancel')).s === 403, '남의 취소 → 403');
   let st = await state('u02');
-  ok(st.job.by === '***' && st.job.by_name === null, '남의 학번·이름 가림');
+  ok(st.job.by === 'u01' && st.job.by_name === '박보냄', '다른 사람에게도 사용자 이름(학번)이 보인다');
   ok((await act('u01', 'depart')).s === 403, '사용자 출발 → 403');
   ok((await act('drone', 'depart')).s === 200, '기체 출발 (키)');
   ok((await act('drone', 'depart')).s === 409, '이미 비행 중 → 409');
   ok((await act('drone', 'land')).s === 200, '픽업 착륙');
-  ok((await act('u01', 'send', { point: 'main', to: 'u02' })).s === 400, '같은 지점으로 보내기 → 400');
-  ok((await act('u01', 'send', { point: 'eng', to: 'u02' })).s === 200, '공학관으로, 받는 사람 u02');
+  ok((await act('u02', 'send', { point: 'eng' })).s === 403, '남이 보내기 → 403');
+  ok((await act('u01', 'send', { point: 'main' })).s === 400, '같은 지점으로 보내기 → 400');
+  ok((await act('u01', 'send', { point: 'eng' })).s === 200, '공학관으로 (받는 사람 지정 없음)');
   st = await state('u02');
-  ok(st.job.by_name === '박보냄' && st.job.to_name === '이받음', '보낸 사람·받는 사람 이름', JSON.stringify([st.job.by_name, st.job.to_name]));
-  ok((await req('GET', '/api/delivery/who?id=u02', { who: 'u01' })).j.name === '이받음', '학번 → 이름');
-  ok((await req('GET', '/api/delivery/who?id=u02')).s === 401, '비로그인 이름 조회 → 401');
   const jb = await (await fetch(H + '/api/delivery/job', { headers: { 'X-Delivery-Key': KEY } })).json();
   ok(jb.job && jb.job.from.id === 'main' && jb.job.to.id === 'eng', '기체 일감 = 본관 → 공학관');
   ok((await act('drone', 'depart')).s === 200 && (await act('drone', 'land')).s === 200, '목적지 출발·착륙');
@@ -120,14 +128,15 @@ async function server() {
   st = await state('u02');
   ok(st.job && st.job.leg === 'dest' && st.job.phase === 'landed', '재시작 후 배송 유지');
   ok(st.me && st.me.id === 'u02', '재시작 후 로그인 유지');
-  ok(st.can.includes('done'), '받는 사람에게 수거완료 버튼');
+  ok(st.can.includes('done'), '호출하지 않은 사람에게도 수거완료 버튼');
   ok((await act('u02', 'done')).s === 200, 'u02 수거완료');
   ok((await act('drone', 'depart')).s === 200 && (await act('drone', 'land')).s === 200, '기지 복귀·착륙');
+  await link();
   st = await state('u01');
-  ok(st.job === null && st.can.includes('call'), '배송 끝, 다시 호출 가능');
+  ok(st.job === null && st.can.includes('call') && st.status === 'ready', '배송 끝 → 대기 중, 다시 호출 가능');
 
   console.log('— 대기 시간 초과');
-  await act('u01', 'call', { point: 'lib' }); await act('drone', 'depart'); await act('drone', 'land');
+  await link(); await act('u01', 'call', { point: 'lib' }); await act('drone', 'depart'); await act('drone', 'land');
   await sleep(4000);
   st = await state('u01');
   ok(st.job && st.job.leg === 'home' && st.job.flags.includes('timeout:pickup'), '픽업 대기 초과 → 복귀');

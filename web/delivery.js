@@ -16,7 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-let C = null;          // init 이 넘긴 것 — dataDir, send, readBody, log
+let C = null;          // init 이 넘긴 것 — dataDir, send, readBody, getLive, log
 let FILE = '', LOGF = '';
 let S = null;          // 저장되는 상태
 let SERVICE = false, KEY = '', SECRET = null, SUGANG_URL = '', SUGANG_LOGOUT = '', ORIGINS = new Set();
@@ -52,11 +52,11 @@ function syncCatalog() {
 const placed = (p) => p && p.lat != null && p.lon != null;
 
 // ── 저장 ────────────────────────────────────────────────────────────
-function blank() { return { v: 1, rev: 0, seq: 0, points: [], job: null, users: {} }; }   // users: 로그인했던 사람의 이름 (학번 → 이름)
+function blank() { return { v: 1, rev: 0, seq: 0, points: [], job: null }; }
 function load() {
   try { S = { ...blank(), ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }
   catch (e) { if (e.code !== 'ENOENT') C.log('배송 상태를 못 읽었다 — 새로 시작', e.message); S = blank(); }
-  S.users = S.users || {};
+  delete S.users;   // 이름을 모으던 때의 흔적 — 화면이 학번만 쓰므로 버린다 (2026-10-07)
   syncCatalog();
 }
 function save() {
@@ -174,7 +174,7 @@ async function sugangCheck(id, pw) {
   if (verdict === 'ok') {
     const auth = { ...opt.headers, Cookie: [...cookies, ...jar(p)].join('; ') };
     // 이름 — 로그인 뒤 상단 틀(Top.aspx)의 인사 「… 박준서 님 반갑습니다.」 에서 이름만 (2026-10-07 실측).
-    // 🔴 신상 페이지(SLW001S: 생년월일 등)는 열지 않는다 — 필요한 것은 이름뿐이다.
+    // 🔴 신상 페이지(SLW001S: 생년월일 등)는 열지 않는다 — 필요한 것은 이름뿐이다. 이름은 쿠키와 그 사람의 배송에만 남는다.
     try {
       const t = await fetch(new URL('Top.aspx', SUGANG_URL), { ...opt, signal: AbortSignal.timeout(5000), headers: auth });
       if (t.status === 200) name = nameFrom(await decode(t));
@@ -207,49 +207,58 @@ async function login(req, res) {
   inflight = true; tries.push(now);
   let r;
   try { r = await sugangCheck(id, pw); }
-  catch (e) { r = { v: 'error', name: null }; C.log('학교 로그인 요청 실패', e.name); }
+  catch (e) { r = { v: 'error' }; C.log('학교 로그인 요청 실패', e.name); }
   finally { inflight = false; }
   const ip = req.headers['cf-connecting-ip'] || req.socket.remoteAddress;
   if (r.v === 'bad') { f.push(now); fails.set(id, f); C.log('배송 로그인 실패', id, ip); return json(req, res, 401, { error: 'auth' }); }
   if (r.v !== 'ok') { C.log('배송 로그인 판정 불가', r.v, id); return json(req, res, 502, { error: 'school' }); }
   fails.delete(id);
-  const name = r.name || nameOf(id);
-  if (name !== ((S.users[id] || {}).name || null)) { S.users[id] = { name }; save(); }
   C.log('배송 로그인', id, ip);
-  return json(req, res, 200, { id, name }, { 'Set-Cookie': setCookie(sign(id, name), SESSION_S) });
+  return json(req, res, 200, { id, name: r.name }, { 'Set-Cookie': setCookie(sign(id, r.name), SESSION_S) });
 }
 
 // ── 배송 상태머신 ───────────────────────────────────────────────────
 // 상태 = leg(pickup·dest·home) × phase(wait·fly·landed). 기체 쪽 동작은 depart·land 둘뿐이다.
 const pt = (id) => S.points.find((p) => p.id === id) || null;
-const nameOf = (id) => (S.users && S.users[id] && S.users[id].name) || null;
 const base = () => S.points.find((p) => p.base) || null;
 const target = (j) => j.leg === 'pickup' ? j.pickup : j.leg === 'dest' ? j.dest : base() && base().id;
 const isReq = (a, j) => a && j && a.id === j.by;
 
-/** 지금 이 사람이 누를 수 있는 동작 — 화면은 이것만 그린다. 출발·착륙은 기체(키)만 */
+/**
+ * 기체가 부를 수 있는 상태인가 — 링크가 살아 있고(12초 안, server.js LIVE_STALE_MS 와 같다), GPS 3D fix,
+ * 전압 14.0 V 이상(4S 3.5 V/셀 — 00-progress #4 의 권장 저전압 임계). 하나라도 아니면 「사용 불가」.
+ * 배터리 % 는 쓰지 않는다 — ArduCopter 3.6.12 는 배터리를 떼도 99 % 를 보낸다(2026-09-21 실측).
+ */
+const READY_VOLT = 14.0, LIVE_FRESH_MS = 12000;
+function ready() {
+  const L = C.getLive(), d = L && L.state && L.state.d;
+  return !!(d && Date.now() - L.at <= LIVE_FRESH_MS && d.fix >= 3 && d.volt >= READY_VOLT);
+}
+/** 화면 오른쪽 위 상태 — 사용 중 / 대기 중 / 사용 불가 */
+const status = () => S.job ? 'busy' : SERVICE && ready() ? 'ready' : 'down';
+
+/** 지금 이 사람이 누를 수 있는 동작 — 화면은 이것만 그린다. 출발·착륙은 기체(키)만.
+ *  받는 사람은 정하지 않는다 — 학번으로 로그인한 사람이면 누구나 목적지에서 받을 수 있다. */
 function can(a) {
   const j = S.job, out = [];
   if (!a || a.drone) return out;
-  if (!j && SERVICE) out.push('call');
+  if (status() === 'ready') out.push('call');
   if (j) {
     if (j.leg === 'pickup' && j.phase === 'landed' && isReq(a, j)) out.push('send');
-    if (j.leg === 'dest' && j.phase === 'landed' && (a.id === j.to || isReq(a, j))) out.push('done');
+    if (j.leg === 'dest' && j.phase === 'landed') out.push('done');
     if (j.leg === 'pickup' && isReq(a, j)) out.push('cancel');
   }
   return out;
 }
 
+/** 사용자(호출한 사람의 이름·학번)는 로그인한 모두에게 보인다 — 지금 누가 쓰는지 알아야 한다 */
 function view(a) {
   const j = S.job;
-  const mine = a && (a.drone || (j && (a.id === j.by || a.id === j.to)));
   return {
-    rev: S.rev, service: SERVICE,
-    me: a && !a.drone ? { id: a.id, name: a.name || nameOf(a.id) } : null,
+    rev: S.rev, service: SERVICE, status: status(),
+    me: a && !a.drone ? { id: a.id, name: a.name } : null,
     points: a ? S.points : [],
-    job: !j ? null : a ? { ...j, by: mine ? j.by : '***', to: mine ? j.to : (j.to ? '***' : null),
-                           by_name: mine ? nameOf(j.by) : null, to_name: mine && j.to ? nameOf(j.to) : null,
-                           flags: mine ? j.flags : j.flags.map((f) => f.split(':')[0]) } : { leg: j.leg, phase: j.phase },
+    job: !j ? null : a ? j : { leg: j.leg, phase: j.phase },
     can: can(a),
   };
 }
@@ -259,7 +268,6 @@ function finish(how, by) {
   S.job = null;
 }
 
-const ID_RE = /^[A-Za-z0-9]{3,20}$/;
 
 const ACTS = new Set(['call', 'depart', 'land', 'send', 'done', 'cancel']);
 /** 동작 하나. 검사→변경→저장이 await 없이 한 번에 돈다 — 동시에 눌러도 섞이지 않는다. 반환은 [status, error?] */
@@ -269,6 +277,7 @@ function apply(a, b) {
   if (!can(a).includes(act) && !(a.drone && ['depart', 'land'].includes(act))) {
     if (act === 'call' && !SERVICE) return [503, 'off'];
     if (act === 'call' && j) return [409, 'busy'];
+    if (act === 'call') return [409, 'down'];
     return [a.drone ? 409 : 403, 'stage'];
   }
   if (a.drone && j == null) return [409, 'stage'];
@@ -282,7 +291,7 @@ function apply(a, b) {
       if (!p || p.base) return [400, 'point'];
       if (!placed(p)) return [400, 'nocoord'];
       if (!placed(base())) return [409, 'nobase'];
-      S.job = { id: 'j' + (++S.seq), by: a.id, to: null, pickup: p.id, dest: null, at: base().id,
+      S.job = { id: 'j' + (++S.seq), by: a.id, by_name: a.name || null, pickup: p.id, dest: null, at: base().id,
                 leg: 'pickup', phase: 'wait', since: now, deadline: null, flags: [] };
       break;
     }
@@ -293,11 +302,10 @@ function apply(a, b) {
       j.deadline = now + (j.leg === 'pickup' ? PICKUP_WAIT : DEST_WAIT) * 1000;
       break;
     case 'send': {
-      const p = pt(b.point), to = String(b.to || '').trim();
+      const p = pt(b.point);
       if (!p || p.base || p.id === j.pickup) return [400, 'point'];
       if (!placed(p)) return [400, 'nocoord'];
-      if (!ID_RE.test(to)) return [400, 'to'];
-      Object.assign(j, { dest: p.id, to, leg: 'dest', phase: 'wait', since: now, deadline: null });
+      Object.assign(j, { dest: p.id, leg: 'dest', phase: 'wait', since: now, deadline: null });
       break;
     }
     case 'done':
@@ -372,7 +380,7 @@ function init(ctx) {
 }
 
 function health() {
-  return { login: SUGANG_URL ? 'enabled' : 'disabled', service: SERVICE, job: !!S.job, points: S.points.length };
+  return { login: SUGANG_URL ? 'enabled' : 'disabled', service: SERVICE, status: status(), job: !!S.job, points: S.points.length };
 }
 
 /** 맞는 경로면 처리하고 promise, 아니면 false */
@@ -387,11 +395,6 @@ function handle(req, res, url) {
   if (p === '/api/delivery/state' && m === 'GET') { tick(); return Promise.resolve(json(req, res, 200, view(who(req)))); }
   if (p === '/api/delivery/act' && m === 'POST') return act(req, res);
   if (p === '/api/delivery/job' && m === 'GET') return Promise.resolve(job(req, res));
-  if (p === '/api/delivery/who' && m === 'GET') {
-    const a = who(req), id = url.searchParams.get('id') || '';
-    if (!a || a.drone) return Promise.resolve(json(req, res, 401, { error: 'login' }));
-    return Promise.resolve(json(req, res, 200, { id, name: ID_RE.test(id) ? nameOf(id) : null }));
-  }
   if (p.startsWith('/api/auth/') || p.startsWith('/api/delivery/')) return Promise.resolve(json(req, res, 404, { error: 'route' }));
   return false;
 }

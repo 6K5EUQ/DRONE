@@ -777,7 +777,7 @@ function rowsHtml(rows) {
 }
 function renderInfo() {
   const box = $('info');
-  if (tab === 'dlv' || tab === 'tst') { renderDlv(); return; }   // 배송은 지도 위에 카드를 둔다
+  if (tab === 'dlv' || tab === 'tst') { box.hidden = true; renderDlv(); return; }   // 배송 칸은 왼쪽 패널에 있다
   if (mode !== '3d') { box.hidden = true; return; }
   if (sel) {
     const b = BAYS[sel];
@@ -1220,8 +1220,15 @@ const SPREAD_WARN = 10, SPREAD_BAD = 20, MAVG_WARN = 65, MAVG_BAD = 75;
 function renderStrip(d) {
   const sc = (id, c) => { $(id).className = 'sc' + (c ? ' ' + c : ''); };
   const u = (v, n, unit) => v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(n)}<small>${unit}</small>`;
-  html('st-cur', u(d.cur, 1, 'A'));
-  sc('sc-cur', d.cur > 56 ? 'bad' : d.cur > 40 ? 'warn' : '');
+  if (dlvTab()) {   // 배송·테스트 — 드론을 모르는 사람이 쓴다. 전류 대신 배터리
+    txt('st-cur-l', '배터리');
+    html('st-cur', u(d.batt_pct, 0, '%'));
+    sc('sc-cur', lvl(d.batt_pct, 35, 20));
+  } else {
+    txt('st-cur-l', '전류');
+    html('st-cur', u(d.cur, 1, 'A'));
+    sc('sc-cur', d.cur > 56 ? 'bad' : d.cur > 40 ? 'warn' : '');
+  }
   const mt = d.motors || {}, vs = ['LF', 'RF', 'LB', 'RB'].map((k) => mt[k]).filter((v) => v != null);
   const spread = vs.length ? Math.max(...vs) - Math.min(...vs) : null;
   const avg = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
@@ -1330,7 +1337,7 @@ async function loadRec() {
 // 테스트 탭 — 같은 화면을 **이 브라우저 안의 시뮬레이터**로 돌린다. 기체가 기지에 연결된 것처럼
 // 놓이고, 지점을 부르면 상승·직선 순항·하강으로 날아간다. 서버에는 아무것도 쓰지 않는다
 // (배송 상태·기록, 다른 사람 화면, 앱 알림 모두 그대로). 지점 목록만 서버에서 읽는다.
-const dlv = { st: null, off: false, test: false, sel: null, err: '', timer: 0, drawn: '', card: '', cardSer: '', to: '' };
+const dlv = { st: null, off: false, test: false, sel: null, err: '', timer: 0, drawn: '', card: '', cardSer: '' };
 // 3D — 지점 원판·진행 구간 선은 땅(world)에, 이름표는 화면(#dlvPts)에
 const dlvG = new THREE.Group(); dlvG.visible = false; world.add(dlvG);
 const dlvPads = new Map();          // 지점 id → { g, el }
@@ -1348,7 +1355,7 @@ function dlvXZ(lat, lon) {
   return { x: (geo.e - e) * G, z: (n - geo.n) * G, dist: Math.hypot(n - geo.n, e - geo.e) };
 }
 const DLV_ERR = { busy: '진행 중 배송', stage: '단계 아님', nobase: '기지 없음', nofix: 'GPS 없음',
-  inuse: '사용 중 지점', off: '운행 중지', nocoord: '좌표 없음', input: '입력 오류', to: '학번 오류', point: '지점 오류', login: '로그인 필요' };
+  inuse: '사용 중 지점', off: '운행 중지', nocoord: '좌표 없음', down: '사용 불가', input: '입력 오류', point: '지점 오류', login: '로그인 필요' };
 const LOGIN_ERR = { 400: '입력 오류', 401: '로그인 실패', 429: '잠시 후 다시', 502: '학교 응답 없음', 503: '로그인 준비 중' };
 const dpt = (id) => ((dlv.st && dlv.st.points) || []).find((p) => p.id === id) || null;
 const dbase = () => ((dlv.st && dlv.st.points) || []).find((p) => p.base && placed(p)) || null;
@@ -1383,20 +1390,26 @@ function tpos(now) {
   if (t < T) return { ...at(1), alt: Math.max(0, top - SIMV.desc * (t - tc - tr)), spd: 0, climb: -SIMV.desc, hdg, stage: 'land', armed: true, remain: 0, eta: T - t };
   return { ...at(1), alt: 0, spd: 0, climb: 0, hdg, stage: 'done', armed: true, remain: 0, eta: 0 };
 }
+// 상태 — 서버 delivery.js status() 와 같은 규칙: 배송 중이면 사용 중, 링크·GPS 3D·전압 14.0 V 이상이면 대기 중
+function tstatus() {
+  if (test.job) return 'busy';
+  const d = S.d || {};
+  return S.live && d.fix >= 3 && d.volt >= 14.0 ? 'ready' : 'down';
+}
 function tcan() {
   const j = test.job, me = dlv.st && dlv.st.me, out = [];
   if (!me) return out;
-  if (!j) out.push('call');
-  else {
-    if (j.leg === 'pickup' && j.phase === 'landed') out.push('send');
+  if (tstatus() === 'ready') out.push('call');
+  if (j) {
+    if (j.leg === 'pickup' && j.phase === 'landed' && j.by === me.id) out.push('send');
     if (j.leg === 'dest' && j.phase === 'landed') out.push('done');
-    if (j.leg !== 'home') out.push('cancel');
+    if (j.leg === 'pickup' && j.by === me.id) out.push('cancel');
   }
   return out;
 }
 function tview() {
   const st = dlv.st || {}, j = test.job, p = j && j.phase === 'fly' ? tpos(Date.now()) : null;
-  return { rev: test.rev, service: true, me: st.me || null, points: st.points || [], job: j, can: tcan(),
+  return { rev: test.rev, service: true, status: tstatus(), me: st.me || null, points: st.points || [], job: j, can: tcan(),
     fly: p && { alt: Math.round(p.alt), remain: Math.round(p.remain), eta: Math.ceil(p.eta) } };
 }
 const view = () => dlv.test ? tview() : dlv.st;
@@ -1409,15 +1422,12 @@ function tact(k, a = {}) {
     if (!dbase()) dlv.err = DLV_ERR.nobase;
     else if (!p || p.base) dlv.err = DLV_ERR.point;
     else if (!placed(p)) dlv.err = DLV_ERR.nocoord;
-    else { test.track = []; test.job = { id: 't' + (++test.seq), by: me.id, by_name: me.name || null, to: null, to_name: null, pickup: p.id, dest: null, at: dbase().id, leg: 'pickup', phase: 'wait', since: now, flags: [] }; }
+    else { test.track = []; test.job = { id: 't' + (++test.seq), by: me.id, by_name: me.name || null, pickup: p.id, dest: null, at: dbase().id, leg: 'pickup', phase: 'wait', since: now, flags: [] }; }
   } else if (k === 'send' && j) {
     const p = dpt(a.point);
     if (!p || p.base || p.id === j.pickup) dlv.err = DLV_ERR.point;
     else if (!placed(p)) dlv.err = DLV_ERR.nocoord;
-    else {
-      Object.assign(j, { dest: p.id, to: a.to || null, to_name: null, leg: 'dest', phase: 'wait', since: now });
-      if (j.to) fetch('/api/delivery/who?id=' + encodeURIComponent(j.to)).then((r) => r.json()).then((w) => { if (test.job === j && w.name) { j.to_name = w.name; renderDlv(); } }).catch(() => {});
-    }
+    else Object.assign(j, { dest: p.id, leg: 'dest', phase: 'wait', since: now });
   } else if (k === 'done' && j) Object.assign(j, { leg: 'home', phase: 'wait', since: now });
   else if (k === 'cancel' && j) {
     if (j.leg === 'pickup' && j.phase === 'wait') test.job = null;
@@ -1465,18 +1475,10 @@ function testStop() {
   render(); pollLive(true);
 }
 
-function dlvStage(st) {
-  const j = st && st.job;
-  if (!st) return '';
-  if (!j) return st.service ? '대기' : '운행 중지';
-  if (j.leg === 'home') return '복귀';
-  if (j.leg === 'pickup') return j.phase === 'wait' ? '호출' : j.phase === 'fly' ? '이동' : '적재';
-  return j.phase === 'landed' ? '수거대기' : '배송';
-}
-
 async function dlvEnter(isTest) {
   dlv.test = isTest; dlv.err = ''; dlv.card = '';
   dlvG.visible = true; $('dlvPts').hidden = false;
+  document.body.classList.add('dlvmode'); $('dlvPane').hidden = false;
   dlvDraw(true);
   await dlvPoll();
   if (isTest && tab === 'tst') testStart();
@@ -1487,6 +1489,8 @@ function dlvLeave(stay) {
   dlv.sel = null;
   if (stay) return;
   dlvG.visible = false; $('dlvPts').hidden = true;
+  document.body.classList.remove('dlvmode'); $('dlvPane').hidden = true;
+  render();
 }
 
 /** 지점 원판·이름표를 지금 목록으로 맞춘다 (바뀌었을 때만) */
@@ -1557,20 +1561,17 @@ $('dlvPts').addEventListener('click', (e) => {
   dlvDraw(true); renderDlv();
 });
 
+const DLV_STATUS = { busy: '사용 중', ready: '대기 중', down: '사용 불가' };
 function renderDlv() {
-  const box = $('info'); box.hidden = false;
+  const box = $('dlvPane'); box.hidden = false;
   const st = view(), me = st && st.me, can = new Set(st ? st.can : []), j = st && st.job;
-  let h = `<div class="ih"><b>${dlv.test ? '테스트' : '배송'}</b><span class="at">${dlv.off ? '서버 없음' : esc(dlvStage(st))}</span></div>`;
+  const stt = dlv.off ? 'down' : (st && st.status) || 'down';
+  let h = `<div class="ih"><b>${dlv.test ? '테스트' : '배송'}</b><span class="at ${stt}">${DLV_STATUS[stt]}</span></div>`;
   if (st && !dlv.off) {
-    // 사람 — 「이름 (학번)」. 이름을 모르면 학번만, 남의 배송이면 가린다
-    const who = (id, nm) => !id || id === '***' ? '—' : nm ? `${nm} (${id})` : id;
+    // 사용자 — 지금 기체를 쓰는(호출한) 사람, 「이름 (학번)」. 누구에게나 보인다
     const row = (k, v) => `<div class="row"><span>${k}</span><b>${esc(v)}</b></div>`;
-    if (me) h += row('사용자', who(me.id, me.name));
-    if (j && me) {
-      h += row('보낸 사람', who(j.by, j.by_name));
-      if (j.to) h += row('받는 사람', who(j.to, j.to_name));
-    }
-    if (st.fly) h += row('고도', `${st.fly.alt} m`) + row('남은 거리', `${st.fly.remain} m`) + row('예상 시간', mmss(st.fly.eta));
+    if (j && j.by) h += row('사용자', j.by_name ? `${j.by_name} (${j.by})` : j.by);
+    if (st.fly) h += row('남은 거리', `${st.fly.remain} m`) + row('예상 시간', mmss(st.fly.eta));   // 고도는 바로 위 계기에 있다
     const sp = dpt(dlv.sel);
     // 지점 — 소스에 정해 둔 고정 목록 (web/delivery.js CATALOG). 기지는 고를 수 없다
     const list = (st.points || []).filter((p) => placed(p) && !p.base);
@@ -1579,7 +1580,7 @@ function renderDlv() {
     else {
       const pick = sp && !sp.base;
       if (can.has('call')) h += `<button class="pfgo" data-dlv="call"${pick ? '' : ' disabled'}>호출</button>`;
-      if (can.has('send')) h += `<input class="dlvin" id="dlvTo" maxlength="20" placeholder="받는 사람 학번" autocapitalize="off" spellcheck="false"><button class="pfgo" data-dlv="send"${pick && sp.id !== j.pickup ? '' : ' disabled'}>보내기</button>`;
+      if (can.has('send')) h += `<button class="pfgo" data-dlv="send"${pick && sp.id !== j.pickup ? '' : ' disabled'}>보내기</button>`;
       if (can.has('done')) h += '<button class="pfgo" data-dlv="done">수거완료</button>';
       if (can.has('cancel')) h += '<button class="pfgo" data-dlv="cancel">취소</button>';
       h += '<div class="chips"><button class="chip" data-dlv="logout">로그아웃</button></div>';
@@ -1589,22 +1590,17 @@ function renderDlv() {
   // 자주 다시 그리면 입력 중인 칸이 지워진다 — 바뀐 것이 있을 때만 다시 그린다
   if (h === dlv.card && box.innerHTML === dlv.cardSer) return;
   box.innerHTML = h; dlv.card = h; dlv.cardSer = box.innerHTML;
-  const to = $('dlvTo'); if (to) { to.value = dlv.to; to.oninput = () => { dlv.to = to.value; }; }
 }
 // 사람이 누르는 배송 동작 — 테스트면 브라우저 안의 시뮬레이터로, 아니면 서버로
 const go = (k, a = {}) => Promise.resolve(dlv.test ? tact(k, a) : dlvAct(k, a));
-$('info').addEventListener('click', (e) => {
+$('dlvPane').addEventListener('click', (e) => {
   const b = e.target.closest('[data-dlv]');
   if (!b || (tab !== 'dlv' && tab !== 'tst') || b.disabled) return;
   const k = b.dataset.dlv, sp = dlv.sel;
   if (k === 'login') return dlvLoginAsk();
   if (k === 'logout') return dlvLogout();
   if (k === 'call') return go('call', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
-  if (k === 'send') {
-    const to = dlv.to.trim();
-    if (!dlv.test && !/^[A-Za-z0-9]{3,20}$/.test(to)) { dlv.err = '학번 오류'; return renderDlv(); }
-    return go('send', { point: sp, to }).then((ok) => { if (ok) { dlv.sel = null; dlv.to = ''; dlvDraw(true); renderDlv(); } });
-  }
+  if (k === 'send') return go('send', { point: sp }).then((ok) => { if (ok) { dlv.sel = null; dlvDraw(true); renderDlv(); } });
   if (k === 'pick') { dlv.sel = dlv.sel === b.dataset.pt ? null : b.dataset.pt; dlv.err = ''; dlvDraw(true); return renderDlv(); }
   return go(k);   // done · cancel
 });
