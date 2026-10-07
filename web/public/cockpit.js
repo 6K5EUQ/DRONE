@@ -424,7 +424,7 @@ function updatePred() {
   const yaw = d.yaw != null ? d.yaw : d.hdg;
   pred.v = v || 0;
   // 느리면 방향이 잡음이다 — 호버 제자리에서 선이 춤추지 않게 끈다
-  pred.show = v != null && v > 0.8 && yaw != null && (!!d.armed || pb.on);
+  pred.show = !intro && v != null && v > 0.8 && yaw != null && (!!d.armed || pb.on);   // 첫 화면은 기체와 바닥만
   if (!pred.show) { pred.prev = null; return; }
   const chi = d.vx != null ? (Math.atan2(d.vy, d.vx) * 180 / Math.PI + 360) % 360 : yaw;
   if (pred.prev && t > pred.prev.t && t - pred.prev.t < 3) {
@@ -599,7 +599,7 @@ function groundStep(dt, ease) {
   ground.position.y = floorY;
   blob.position.y = floorY + 0.001;
   // 홈 — 땅과 같은 축척으로 제자리에. 높이 뜨면 패드를 키워 멀리서도 보이게.
-  homeG.visible = !!on;
+  homeG.visible = !!on && !intro;   // 첫 화면은 기체와 바닥만
   geo.home = on ? Math.hypot(geo.n, geo.e) : null;
   geo.hs = on ? hs : null;
   if (on) {
