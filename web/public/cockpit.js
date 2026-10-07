@@ -243,7 +243,7 @@ const look = new THREE.Vector3(0, 0.02, 0);
 const ptrs = new Map();
 let pinch0 = 0, dist0 = 0, down = null;
 const clampTilt = (t) => Math.max(-Math.PI / 2, Math.min(Math.PI / 2, t));   // ±90° — 음수면 바닥 밑에서 올려다본다
-const clampDist = (d) => Math.max(0.5, Math.min(15, d));   // 높이 뜨면 멀리 물러나 땅까지 본다
+const clampDist = (d) => Math.max(0.5, Math.min(80, d));   // 80 = 160 m 밖까지 물러나 도착지까지 본다   // 높이 뜨면 멀리 물러나 땅까지 본다
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 function pickBay(e) {
   const r = canvas.getBoundingClientRect();
@@ -637,10 +637,10 @@ function placeHome() {
 const SAT = {
   opacity: 0.70,          // 0 안 보임 ~ 1 원본
   zoom: 18,               // 타일 줌 (18 ≈ 0.5 m/px). 비행장은 Esri 에 18 까지만 있다 — 19 는 회색 「없음」 타일
-  tiles: 5,               // 한 변 타일 수 (5 × 256 px ≈ 625 m)
+  tiles: 7,               // 한 변 타일 수 (7 × 256 px ≈ 875 m) — 기체를 따라 다시 깐다
 };
 const SAT_FIELD = [35.1811, 128.5538];   // 링크가 없을 때 가운데 — 비행장 (server.js ADSB_LAT/LON)
-const sat = { on: false, mesh: null, key: '', lat: 0, lon: 0 };
+const sat = { on: false, mesh: null, key: '', old: [] };
 function satBuild(lat, lon) {
   const z = SAT.zoom, n = 2 ** z, N = SAT.tiles, T = 256, rad = Math.PI / 180;
   const xt = (lon + 180) / 360 * n, yt = (1 - Math.asinh(Math.tan(lat * rad)) / Math.PI) / 2 * n;
@@ -655,29 +655,41 @@ function satBuild(lat, lon) {
   }
   // 캔버스 가운데의 위경도와 한 변 길이(m)
   const cx = x0 + N / 2, cy = y0 + N / 2;
-  sat.lon = cx / n * 360 - 180;
-  sat.lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * cy / n))) / rad;
+  const cLon = cx / n * 360 - 180, cLat = Math.atan(Math.sinh(Math.PI * (1 - 2 * cy / n))) / rad;
   const size = N * T * 156543.03392 * Math.cos(lat * rad) / n;
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size * G, size * G),
     new THREE.MeshBasicMaterial({ map: tex, alphaMap: grid.material.alphaMap, transparent: true, opacity: SAT.opacity, depthWrite: false }));
   mesh.rotation.set(-Math.PI / 2, 0, Math.PI);   // 이미지 위 = 북(+z), 오른쪽 = 동(-x)
   mesh.renderOrder = -2;                          // 격자 밑
+  mesh.userData = { lat: cLat, lon: cLon };       // 사진 가운데 — 땅을 따라 옮길 때 쓴다
   world.add(mesh);
   return mesh;
 }
 function satStep() {
   grid.visible = !sat.on;   // 지도일 때는 격자를 걷어 사진만
-  if (!sat.on) { if (sat.mesh) sat.mesh.visible = false; return; }
-  const ref = geo.hs || (dlvTab() && dlvRef()) || SAT_FIELD, key = ref.join(',');   // 배송 탭은 연결 전에도 기지 둘레를 깐다
+  if (!sat.on) { if (sat.mesh) sat.mesh.visible = false; for (const m of sat.old) m.visible = false; return; }
+  const ref = geo.hs || (dlvTab() && dlvRef()) || SAT_FIELD;   // 배송 탭은 연결 전에도 기지 둘레를 깐다
+  // 사진은 **기체가 있는 곳**을 가운데로 깐다 — 홈 둘레에만 깔면 멀리 날아갔을 때 그 아래가 비었다.
+  // 기체가 있는 타일(줌 18 ≈ 128 m)이 바뀔 때만 다시 받는다. 위치 = 홈 + 땅 좌표(geo).
+  const cLat = ref[0] + geo.n / 111320, cLon = ref[1] + geo.e / (111320 * Math.cos(ref[0] * Math.PI / 180));
+  const n2 = 2 ** SAT.zoom, tx = Math.floor((cLon + 180) / 360 * n2), ty = Math.floor((1 - Math.asinh(Math.tan(cLat * Math.PI / 180)) / Math.PI) / 2 * n2);
+  const key = ref.join(',') + '/' + tx + ',' + ty;
   if (!sat.mesh || sat.key !== key) {
-    if (sat.mesh) { world.remove(sat.mesh); sat.mesh.material.map.dispose(); sat.mesh.geometry.dispose(); }
-    sat.mesh = satBuild(ref[0], ref[1]); sat.key = key;
+    const old = sat.mesh;
+    sat.mesh = satBuild(cLat, cLon); sat.key = key;
+    // 옛 사진은 새 타일이 들어올 시간만큼 밑에 남겨 둔다 — 바로 지우면 한순간 땅이 빈다
+    if (old) {
+      old.renderOrder = -3; sat.old.push(old);
+      setTimeout(() => { world.remove(old); old.material.map.dispose(); old.geometry.dispose(); sat.old = sat.old.filter((m) => m !== old); }, 1500);
+    }
   }
-  sat.mesh.visible = true;
   sat.mesh.material.opacity = SAT.opacity;
   // 이미지 가운데가 홈에서 떨어진 만큼 — 땅 좌표(+z 북, -x 동)로 옮긴다
-  const nC = (sat.lat - ref[0]) * 111320, eC = (sat.lon - ref[1]) * 111320 * Math.cos(ref[0] * Math.PI / 180);
-  sat.mesh.position.set((geo.e - eC) * G, FLOOR - 0.002, (nC - geo.n) * G);
+  for (const m of [sat.mesh, ...sat.old]) {
+    const nC = (m.userData.lat - ref[0]) * 111320, eC = (m.userData.lon - ref[1]) * 111320 * Math.cos(ref[0] * Math.PI / 180);
+    m.visible = true;
+    m.position.set((geo.e - eC) * G, FLOOR - 0.002, (nC - geo.n) * G);
+  }
 }
 
 const timer = new THREE.Timer();
@@ -1396,11 +1408,14 @@ function tact(k, a = {}) {
     const p = dpt(a.point);
     if (!dbase()) dlv.err = DLV_ERR.nobase;
     else if (!p || p.base) dlv.err = DLV_ERR.point;
-    else { test.track = []; test.job = { id: 't' + (++test.seq), by: me.id, to: null, pickup: p.id, dest: null, at: dbase().id, leg: 'pickup', phase: 'wait', since: now, flags: [] }; }
+    else { test.track = []; test.job = { id: 't' + (++test.seq), by: me.id, by_name: me.name || null, to: null, to_name: null, pickup: p.id, dest: null, at: dbase().id, leg: 'pickup', phase: 'wait', since: now, flags: [] }; }
   } else if (k === 'send' && j) {
     const p = dpt(a.point);
     if (!p || p.base || p.id === j.pickup) dlv.err = DLV_ERR.point;
-    else Object.assign(j, { dest: p.id, to: a.to || null, leg: 'dest', phase: 'wait', since: now });
+    else {
+      Object.assign(j, { dest: p.id, to: a.to || null, to_name: null, leg: 'dest', phase: 'wait', since: now });
+      if (j.to) fetch('/api/delivery/who?id=' + encodeURIComponent(j.to)).then((r) => r.json()).then((w) => { if (test.job === j && w.name) { j.to_name = w.name; renderDlv(); } }).catch(() => {});
+    }
   } else if (k === 'done' && j) Object.assign(j, { leg: 'home', phase: 'wait', since: now });
   else if (k === 'cancel' && j) {
     if (j.leg === 'pickup' && j.phase === 'wait') test.job = null;
@@ -1564,14 +1579,15 @@ function renderDlv() {
   const st = view(), me = st && st.me, can = new Set(st ? st.can : []), j = st && st.job;
   let h = `<div class="ih"><b>${dlv.test ? '테스트' : '배송'}</b><span class="at">${dlv.off ? '서버 없음' : esc(dlvStage(st))}</span></div>`;
   if (st && !dlv.off) {
-    const name = (id) => { const p = dpt(id); return p ? p.name : '—'; };
-    if (me) h += `<div class="row"><span>사용자</span><b>${esc(me.name || me.id)}${me.admin && !dlv.test ? ' · 관리자' : ''}</b></div>`;
+    // 사람 — 「이름 (학번)」. 이름을 모르면 학번만, 남의 배송이면 가린다
+    const who = (id, nm) => !id || id === '***' ? '—' : nm ? `${nm} (${id})` : id;
+    const row = (k, v) => `<div class="row"><span>${k}</span><b>${esc(v)}</b></div>`;
+    if (me) h += row('사용자', who(me.id, me.name));
     if (j && me) {
-      h += `<div class="row"><span>픽업</span><b>${esc(name(j.pickup))}</b></div>`;
-      if (j.dest) h += `<div class="row"><span>목적지</span><b>${esc(name(j.dest))}</b></div>`;
-      if (j.to) h += `<div class="row"><span>받는 사람</span><b>${esc(j.to)}</b></div>`;
+      h += row('보낸 사람', who(j.by, j.by_name));
+      if (j.to) h += row('받는 사람', who(j.to, j.to_name));
     }
-    if (st.fly) h += `<div class="row"><span>고도</span><b>${st.fly.alt} m</b></div><div class="row"><span>남은 거리</span><b>${st.fly.remain} m</b></div><div class="row"><span>도착</span><b>${mmss(st.fly.eta)}</b></div>`;
+    if (st.fly) h += row('고도', `${st.fly.alt} m`) + row('남은 거리', `${st.fly.remain} m`) + row('예상 시간', mmss(st.fly.eta));
     const sp = dpt(dlv.sel);
     if (sp) {
       h += `<div class="row"><span>지점</span><b>${esc(sp.name)}${sp.base ? ' · 기지' : ''}${sp.verified || dlv.test ? '' : ' · 미검증'}</b></div>`;

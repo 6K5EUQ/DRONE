@@ -28,10 +28,11 @@ const LIVE_FRESH_MS = 12000;      // server.js LIVE_STALE_MS 와 같다
 const JSON_TYPE = 'application/json; charset=utf-8';
 
 // ── 저장 ────────────────────────────────────────────────────────────
-function blank() { return { v: 1, rev: 0, seq: 0, service: false, points: [], job: null }; }
+function blank() { return { v: 1, rev: 0, seq: 0, service: false, points: [], job: null, users: {} }; }   // users: 로그인했던 사람의 이름 (학번 → 이름)
 function load() {
   try { S = { ...blank(), ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }
   catch (e) { if (e.code !== 'ENOENT') C.log('배송 상태를 못 읽었다 — 새로 시작', e.message); S = blank(); }
+  S.users = S.users || {};
 }
 function save() {
   const tmp = FILE + '.tmp';
@@ -52,8 +53,8 @@ async function body(req) {
 // ── 세션 ────────────────────────────────────────────────────────────
 const b64 = (b) => Buffer.from(b).toString('base64url');
 const mac = (s) => crypto.createHmac('sha256', SECRET).update(s).digest('base64url');
-function sign(u) {
-  const p = b64(JSON.stringify({ u, exp: Math.floor(Date.now() / 1000) + SESSION_S }));
+function sign(u, n) {
+  const p = b64(JSON.stringify({ u, n: n || null, exp: Math.floor(Date.now() / 1000) + SESSION_S }));
   return p + '.' + mac(p);
 }
 function verify(tok) {
@@ -63,7 +64,7 @@ function verify(tok) {
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   try {
     const o = JSON.parse(Buffer.from(p, 'base64url').toString('utf8'));
-    return o.exp > Date.now() / 1000 ? o.u : null;
+    return o.exp > Date.now() / 1000 ? { u: o.u, n: o.n || null } : null;
   } catch { return null; }
 }
 function cookieOf(req, name) {
@@ -81,8 +82,8 @@ function keyOk(given) {
 /** 누가 부르나 — 기체(키), 로그인 사용자, 또는 null. 관리자 여부는 매번 .env 로 다시 본다. */
 function who(req) {
   if (req.headers['x-delivery-key']) return keyOk(req.headers['x-delivery-key']) ? { id: 'drone', drone: true, admin: false } : null;
-  const u = verify(cookieOf(req, COOKIE));
-  return u ? { id: u, admin: ADMINS.has(u), drone: false } : null;
+  const v = verify(cookieOf(req, COOKIE));
+  return v ? { id: v.u, name: v.n, admin: ADMINS.has(v.u), drone: false } : null;
 }
 const setCookie = (v, age) => `${COOKIE}=${v}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${age}`;
 
@@ -149,7 +150,7 @@ async function sugangCheck(id, pw) {
     const all = [...cookies, ...jar(p)];
     fetch(SUGANG_LOGOUT, { ...opt, signal: AbortSignal.timeout(5000), headers: { ...opt.headers, Cookie: all.join('; ') } }).catch(() => {});
   }
-  return verdict;
+  return { v: verdict, name: null };   // 🔶 이름은 로그인 뒤 학교 페이지에서 읽는다 — 어느 페이지인지 실측 후 (sugang_probe.js)
 }
 
 async function login(req, res) {
@@ -166,21 +167,24 @@ async function login(req, res) {
   if (tries.length >= TRY_MAX) return json(req, res, 429, { error: 'rate', retry: Math.ceil((tries[0] + TRY_WIN - now) / 1000) });
   if (inflight) return json(req, res, 429, { error: 'busy', retry: 2 });
   inflight = true; tries.push(now);
-  let verdict;
-  try { verdict = await sugangCheck(id, pw); }
-  catch (e) { verdict = 'error'; C.log('학교 로그인 요청 실패', e.name); }
+  let r;
+  try { r = await sugangCheck(id, pw); }
+  catch (e) { r = { v: 'error', name: null }; C.log('학교 로그인 요청 실패', e.name); }
   finally { inflight = false; }
   const ip = req.headers['cf-connecting-ip'] || req.socket.remoteAddress;
-  if (verdict === 'bad') { f.push(now); fails.set(id, f); C.log('배송 로그인 실패', id, ip); return json(req, res, 401, { error: 'auth' }); }
-  if (verdict !== 'ok') { C.log('배송 로그인 판정 불가', verdict, id); return json(req, res, 502, { error: 'school' }); }
+  if (r.v === 'bad') { f.push(now); fails.set(id, f); C.log('배송 로그인 실패', id, ip); return json(req, res, 401, { error: 'auth' }); }
+  if (r.v !== 'ok') { C.log('배송 로그인 판정 불가', r.v, id); return json(req, res, 502, { error: 'school' }); }
   fails.delete(id);
+  const name = r.name || nameOf(id);
+  if (name !== ((S.users[id] || {}).name || null)) { S.users[id] = { name }; save(); }
   C.log('배송 로그인', id, ADMINS.has(id) ? '(관리자)' : '', ip);
-  return json(req, res, 200, { id, admin: ADMINS.has(id) }, { 'Set-Cookie': setCookie(sign(id), SESSION_S) });
+  return json(req, res, 200, { id, name, admin: ADMINS.has(id) }, { 'Set-Cookie': setCookie(sign(id, name), SESSION_S) });
 }
 
 // ── 배송 상태머신 ───────────────────────────────────────────────────
 // 상태 = leg(pickup·dest·home) × phase(wait·fly·landed). 기체 쪽 동작은 depart·land 둘뿐이다.
 const pt = (id) => S.points.find((p) => p.id === id) || null;
+const nameOf = (id) => (S.users && S.users[id] && S.users[id].name) || null;
 const base = () => S.points.find((p) => p.base) || null;
 const target = (j) => j.leg === 'pickup' ? j.pickup : j.leg === 'dest' ? j.dest : base() && base().id;
 const isReq = (a, j) => a && j && a.id === j.by;
@@ -206,9 +210,10 @@ function view(a) {
   const mine = a && (a.admin || (j && (a.id === j.by || a.id === j.to)));
   return {
     rev: S.rev, service: S.service,
-    me: a && !a.drone ? { id: a.id, admin: a.admin } : null,
+    me: a && !a.drone ? { id: a.id, name: a.name || nameOf(a.id), admin: a.admin } : null,
     points: a ? S.points : [],
     job: !j ? null : a ? { ...j, by: mine ? j.by : '***', to: mine ? j.to : (j.to ? '***' : null),
+                           by_name: mine ? nameOf(j.by) : null, to_name: mine && j.to ? nameOf(j.to) : null,
                            flags: mine ? j.flags : j.flags.map((f) => f.split(':')[0]) } : { leg: j.leg, phase: j.phase },
     can: can(a),
   };
@@ -390,6 +395,11 @@ function handle(req, res, url) {
   if (p === '/api/delivery/state' && m === 'GET') { tick(); return Promise.resolve(json(req, res, 200, view(who(req)))); }
   if (p === '/api/delivery/act' && m === 'POST') return act(req, res);
   if (p === '/api/delivery/job' && m === 'GET') return Promise.resolve(job(req, res));
+  if (p === '/api/delivery/who' && m === 'GET') {
+    const a = who(req), id = url.searchParams.get('id') || '';
+    if (!a || a.drone) return Promise.resolve(json(req, res, 401, { error: 'login' }));
+    return Promise.resolve(json(req, res, 200, { id, name: ID_RE.test(id) ? nameOf(id) : null }));
+  }
   if (p.startsWith('/api/auth/') || p.startsWith('/api/delivery/')) return Promise.resolve(json(req, res, 404, { error: 'route' }));
   return false;
 }

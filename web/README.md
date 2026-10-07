@@ -73,6 +73,7 @@ DRONE01 의 비행로그·실시간·콕핏 사이트. **조회는 공개, 업�
 | `GET /api/delivery/state` | `{rev, service, me, points, job, can}` — 비로그인은 단계만 |
 | `POST /api/delivery/act {act, rev, …}` | 호출·보내기·수거완료·취소, 관리자: 출발·착륙·운행·지점 편집·실측 |
 | `GET /api/delivery/job` | 기체(Pi)용 일감, `X-Delivery-Key` |
+| `GET /api/delivery/who?id=` | 학번 → 이름 (로그인했던 사람만 이름을 안다), 로그인 필요 |
 
 **테스트 탭** (배송 오른쪽) — 같은 화면을 **브라우저 안의 시뮬레이터**로 돌리는 시연 모드. 기체가 기지에
 연결된 것처럼 놓이고(링크·GPS·배터리), 지점을 호출하면 상승 → 순항고도 직선 → 하강 → 착륙으로 날아간다.
