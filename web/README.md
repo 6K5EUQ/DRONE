@@ -157,7 +157,20 @@ sudo systemctl enable --now lab-tunnel-drone01
 ```
 
 점검(콕핏 점검 탭)은 `.env` 에 `PREFLIGHT_KEY`·`PREFLIGHT_AGENTS` 가
-있어야 켜진다. 에이전트는 아직 없다 — 탭은 뜨고 점검만 막힌다.
+있어야 켜진다 — 없으면 탭은 뜨고 점검만 막힌다. 암호는 없다(2026-10-07).
+
+```
+브라우저 → 웹서버 POST /api/preflight/stream
+         → rim3 tools/preflight/agent.py :4412 (X-Preflight-Key, Tailscale 주소)
+         → preflight.py --stream → FC USB
+```
+
+- 에이전트: rim3 user 유닛 `drone-preflight` ([tools/preflight/drone-preflight.service](../tools/preflight/drone-preflight.service)),
+  키는 `~/.config/drone-preflight.env` 의 `DRONE_PREFLIGHT_KEY` = 랩서버 `PREFLIGHT_KEY`
+- 랩서버 `.env`: `PREFLIGHT_AGENTS=100.117.47.105:4412`
+- 🔴 점검하는 동안 에이전트가 `drone-live`·`drone-livepush` 를 내렸다 올린다 (FC USB 는 하나).
+  그 뒤에도 포트를 쥔 프로그램이 있으면 점검하지 않는다
+- 판정은 [tools/preflight/preflight.py](../tools/preflight/preflight.py) 의 check_* 뿐 — 웹·에이전트는 줄을 해석하지 않는다
 
 ## 배포 (이후)
 

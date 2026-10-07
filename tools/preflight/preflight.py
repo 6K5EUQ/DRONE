@@ -3,6 +3,10 @@
 
     .venv/bin/python tools/preflight/preflight.py
     .venv/bin/python tools/preflight/preflight.py --conn /dev/ttyACM0
+    .venv/bin/python tools/preflight/preflight.py --json      판정 한 벌 (기계용)
+    .venv/bin/python tools/preflight/preflight.py --stream    NDJSON — 묶음이 끝나는 대로 (웹 콕핏용)
+
+`--json`·`--stream` 은 터미널과 같은 check_* 로 판정한다. 모양만 다르다.
 
 🔴 FC USB 는 하나다. drone-live 가 켜져 있으면 먼저 끈다 (`tools/live/drone-live off`).
 
@@ -18,6 +22,7 @@
    근거뿐이다 — 실비행 후 재검증이 필요하다.
 """
 import argparse
+import json
 import sys
 import time
 
@@ -94,8 +99,8 @@ def connect(explicit):
     return None, None, None, notes
 
 
-def read_params(m, names, timeout=6.0):
-    got = {}
+def read_params(m, names, timeout=6.0, got=None, on_msg=None):
+    got = {} if got is None else got
     for attempt in range(3):
         need = [n for n in names if n not in got]
         if not need:
@@ -104,7 +109,7 @@ def read_params(m, names, timeout=6.0):
             m.mav.param_request_read_send(m.target_system, m.target_component, name.encode(), -1)
             time.sleep(0.02)
         t0 = time.time()
-        while time.time() - t0 < timeout:
+        while time.time() - t0 < timeout and any(n not in got for n in need):
             msg = m.recv_match(type='PARAM_VALUE', blocking=True, timeout=1)
             if msg is None:
                 continue
@@ -113,19 +118,21 @@ def read_params(m, names, timeout=6.0):
                 pid = pid.decode()
             pid = pid.rstrip('\x00')
             got[pid] = msg.param_value
+            if on_msg:
+                on_msg()
     return got
 
 
-def sample_telemetry(m, seconds=3.0):
-    """DATA_STREAM 요청 후 들어오는 대로 최신값만 남긴다."""
+def sample_telemetry(m, seconds=3.0, tel=None, on_msg=None):
+    """DATA_STREAM 요청 후 들어오는 대로 최신값만 남긴다. TEL_KEYS 가 다 오면 일찍 끝낸다."""
     try:
         m.mav.request_data_stream_send(m.target_system, m.target_component,
                                         mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1)
     except Exception:
         pass
-    tel = {}
+    tel = {} if tel is None else tel
     t0 = time.time()
-    while time.time() - t0 < seconds:
+    while time.time() - t0 < seconds and any(k not in tel for k in TEL_KEYS):
         msg = m.recv_match(blocking=True, timeout=0.5)
         if msg is None:
             continue
@@ -136,6 +143,10 @@ def sample_telemetry(m, seconds=3.0):
         elif t in ('SYS_STATUS', 'GPS_RAW_INT', 'RC_CHANNELS', 'VIBRATION',
                    'BATTERY_STATUS', 'EKF_STATUS_REPORT', 'ATTITUDE'):
             tel[t] = msg
+        else:
+            continue
+        if on_msg:
+            on_msg()
     return tel
 
 
@@ -356,37 +367,192 @@ def check_live(r, tel):
             r.add('warn', 'EKF', 'flags=%d' % ek.flags, '추정기 일부가 아직 안 섰다')
 
 
+# ── 기계용 출력 (--json · --stream) ─────────────────────────────────
+# 웹 콕핏 점검 탭이 읽는다. 모양은 SHADE01 tools/preflight 와 같다 —
+# 웹서버(web/server.js)·에이전트(agent.py)는 줄을 해석하지 않고 그대로 넘긴다.
+#
+# 🔴 판정은 위의 check_* 뿐이다. 여기서는 묶어서 옮기기만 한다.
+
+WANT_PARAMS = [
+    'BATT_LOW_VOLT', 'BATT_CRT_VOLT', 'FS_THR_ENABLE', 'FS_GCS_ENABLE',
+    'SERVO1_FUNCTION', 'SERVO2_FUNCTION', 'SERVO3_FUNCTION', 'SERVO4_FUNCTION',
+    'FRAME_CLASS', 'FRAME_TYPE',
+    'COMPASS_USE', 'COMPASS_USE2', 'COMPASS_USE3',
+    'COMPASS_OFS_X', 'COMPASS_OFS_Y', 'COMPASS_OFS_Z',
+    'MOT_THST_HOVER', 'MOT_HOVER_LEARN', 'MOT_BAT_VOLT_MAX', 'MOT_BAT_VOLT_MIN',
+    'BRD_SBUS_OUT', 'BRD_PWM_COUNT', 'ANGLE_MAX', 'FENCE_ENABLE',
+]
+TEL_KEYS = ['armed', 'SYS_STATUS', 'GPS_RAW_INT', 'RC_CHANNELS', 'VIBRATION', 'EKF_STATUS_REPORT']
+
+# 묶음마다 무엇이 와야 끝난 것인가. 진행률은 이 중 **실제로 도착한 개수**다.
+# 🔴 이름은 check_* 의 r.group, 콕핏 PF_BAY(web/public/cockpit.js) 와 같아야 한다.
+# 순서는 현장 점검 순서 — 시동·전원부터.
+GROUP_NEEDS = {
+    'ARM 상태':        {'tel': ['armed']},
+    '배터리':          {'tel': ['SYS_STATUS']},
+    '배터리 failsafe': {'params': ['BATT_LOW_VOLT', 'BATT_CRT_VOLT', 'FS_THR_ENABLE', 'FS_GCS_ENABLE']},
+    'RC 수신':         {'params': ['BRD_SBUS_OUT', 'BRD_PWM_COUNT'], 'tel': ['RC_CHANNELS']},
+    'GPS':             {'tel': ['GPS_RAW_INT']},
+    '나침반':          {'params': ['COMPASS_USE', 'COMPASS_USE2', 'COMPASS_USE3',
+                                   'COMPASS_OFS_X', 'COMPASS_OFS_Y', 'COMPASS_OFS_Z']},
+    '출력 매핑':       {'params': ['SERVO1_FUNCTION', 'SERVO2_FUNCTION', 'SERVO3_FUNCTION',
+                                   'SERVO4_FUNCTION', 'FRAME_CLASS', 'FRAME_TYPE']},
+    '모터·프레임':     {'params': ['MOT_THST_HOVER', 'MOT_HOVER_LEARN', 'MOT_BAT_VOLT_MAX', 'MOT_BAT_VOLT_MIN']},
+    '자세제어':        {'params': ['ANGLE_MAX']},
+    '진동·센서':       {'tel': ['VIBRATION', 'EKF_STATUS_REPORT']},
+    '지오펜스':        {'params': ['FENCE_ENABLE']},
+}
+GROUP_ORDER = list(GROUP_NEEDS)
+# 묶음 하나의 판정 = 가장 나쁜 등급. GO 가 아니면 NO GO (SHADE01 과 같은 규칙).
+GROUP_VERDICT = {'blk': 'NO GO', 'warn': 'NO GO', 'ok': 'GO', 'info': '참고'}
+STANDING = [('실비행 이력', '이 기체는 실비행 이력이 0회다. 이 판정은 파라미터·정지상태 텔레메트리 '
+                            '기준이며, 모터 동시기동 실패(00-progress.md #1)·나침반 재보정 등 '
+                            '지상시험에서만 드러나는 문제는 이 도구로 못 잡는다.')]
+
+
+def verdict_of(r):
+    if any(x[0] == 'blk' for x in r.items):
+        return 'NO-GO'
+    if any(x[0] == 'warn' for x in r.items):
+        return '확인 후 판단'
+    return 'GO'
+
+
+def judge(p, tel):
+    r = Result()
+    check_params(r, p)
+    check_live(r, tel)
+    return r
+
+
+def group_progress(name, p, tel):
+    need = GROUP_NEEDS[name]
+    want = need.get('params', []) + need.get('tel', [])
+    have = sum(1 for n in need.get('params', []) if n in p) + sum(1 for k in need.get('tel', []) if k in tel)
+    return have / len(want)
+
+
+def as_groups(r):
+    groups = {}
+    for i, (level, g, name, value, why) in enumerate(r.items):
+        groups.setdefault(g, {'name': g, 'items': []})['items'].append(
+            {'level': level, 'name': name, 'detail': value, 'why': why, 'seq': i})
+    order = {g: i for i, g in enumerate(GROUP_ORDER)}
+    out = []
+    for g in sorted(groups, key=lambda g: (order.get(g, 99), g)):
+        gr = groups[g]
+        lv = {it['level'] for it in gr['items']}
+        worst = 'blk' if 'blk' in lv else 'warn' if 'warn' in lv else 'ok' if 'ok' in lv else 'info'
+        gr['level'], gr['verdict'] = worst, GROUP_VERDICT[worst]
+        out.append(gr)
+    return out
+
+
+def empty_group(g):
+    """판정거리가 하나도 안 온 채 끝난 묶음. 🔴 GO 로 내지 않는다 — 안 본 것이다."""
+    return {'name': g, 'items': [], 'level': 'info', 'verdict': '수신 없음'}
+
+
+def as_json(r, how, notes, elapsed):
+    groups = as_groups(r)
+    have = {g['name'] for g in groups}
+    groups += [empty_group(g) for g in GROUP_ORDER if g not in have]
+    v = verdict_of(r)
+    return {
+        'ok': True,
+        'at': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+        'airframe': 'DRONE01',
+        'verdict': v,
+        'exit': 0 if v == 'GO' else 1,
+        'elapsed': round(elapsed, 2),
+        'how': how,
+        'notes': notes,
+        'groups': groups,
+        'standing': [{'name': n, 'text': t} for n, t in STANDING],
+    }
+
+
+def machine(m, how, notes, secs, streaming, t0):
+    """--json 이면 끝에 한 벌, --stream 이면 묶음이 끝나는 대로 한 줄씩 (NDJSON).
+
+      {"t":"start", groups:[{name,label}...]}   무엇을 볼 것인지
+      {"t":"prog",  progress:{name: 0.0~1.0}}   지금까지 몇 개가 왔나
+      {"t":"group", group:{...}}                한 묶음이 끝났다 (판정 포함)
+      {"t":"done",  ...as_json...}              전부 끝났다 — 이것이 정본
+    """
+    def line(obj):
+        json.dump(obj, sys.stdout, ensure_ascii=False)
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+
+    p, tel, sent, last = {}, {}, set(), [None]
+
+    def tick():
+        prog = {g: round(group_progress(g, p, tel), 3) for g in GROUP_ORDER}
+        if prog == last[0]:
+            return
+        last[0] = prog
+        line({'t': 'prog', 'progress': prog, 'elapsed': round(time.time() - t0, 2)})
+        ready = [g for g, v in prog.items() if v >= 1.0 and g not in sent]
+        if not ready:
+            return
+        groups = {g['name']: g for g in as_groups(judge(p, tel))}
+        for g in ready:
+            sent.add(g)
+            line({'t': 'group', 'group': groups.get(g) or empty_group(g),
+                  'elapsed': round(time.time() - t0, 2)})
+
+    if streaming:
+        line({'t': 'start', 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'how': how, 'secs': secs,
+              'airframe': 'DRONE01', 'groups': [{'name': g, 'label': g} for g in GROUP_ORDER]})
+    cb = tick if streaming else None
+    read_params(m, WANT_PARAMS, got=p, on_msg=cb)
+    sample_telemetry(m, seconds=secs, tel=tel, on_msg=cb)
+
+    blob = as_json(judge(p, tel), how, notes, time.time() - t0)
+    if streaming:
+        blob['t'] = 'done'
+    line(blob)
+    return blob['exit']
+
+
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description='DRONE01 비행 전 점검 (읽기 전용 — FC 값을 바꾸지 않는다)')
     ap.add_argument('--conn', help='mavlink 연결 문자열. 안 주면 이 기체의 FC USB 를 USB id 로 찾는다')
-    ap.add_argument('--json', action='store_true')
+    ap.add_argument('-t', '--secs', type=float, default=3.0, help='텔레메트리 수집 최대 시간 (기본 3초)')
+    ap.add_argument('--no-color', action='store_true', help='색 없음 (지금은 원래 색이 없다 — 에이전트 호환용)')
+    ap.add_argument('--json', action='store_true', help='판정을 JSON 한 벌로')
+    ap.add_argument('--stream', action='store_true', help='묶음이 끝나는 대로 NDJSON 으로')
     a = ap.parse_args()
+    t0 = time.time()
 
     m, how, hb_s, notes = connect(a.conn)
     if m is None:
+        if a.json or a.stream:
+            # 🔴 붙지 못한 것을 "이상 없음" 으로 내지 않는다.
+            json.dump({'ok': False, 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+                       'verdict': 'NO-GO', 'exit': 1, 'error': 'FC 에 붙지 못했다',
+                       'notes': notes, 'groups': [], 'standing': [], 't': 'done'},
+                      sys.stdout, ensure_ascii=False)
+            sys.stdout.write('\n')
+            sys.exit(1)
         print('연결 실패')
         for n in notes:
             print(' ·', n)
         sys.exit(2)
+
+    if a.json or a.stream:
+        sys.exit(machine(m, how, notes, a.secs, a.stream, t0))
 
     print('DRONE(쿼드) 비행 전 점검   %s' % time.strftime('%Y-%m-%d %H:%M:%S'))
     print('경로: %s   %.1f초' % (how, hb_s))
     print('─' * 70)
 
     r = Result()
-    WANT_PARAMS = [
-        'BATT_LOW_VOLT', 'BATT_CRT_VOLT', 'FS_THR_ENABLE', 'FS_GCS_ENABLE',
-        'SERVO1_FUNCTION', 'SERVO2_FUNCTION', 'SERVO3_FUNCTION', 'SERVO4_FUNCTION',
-        'FRAME_CLASS', 'FRAME_TYPE',
-        'COMPASS_USE', 'COMPASS_USE2', 'COMPASS_USE3',
-        'COMPASS_OFS_X', 'COMPASS_OFS_Y', 'COMPASS_OFS_Z',
-        'MOT_THST_HOVER', 'MOT_HOVER_LEARN', 'MOT_BAT_VOLT_MAX', 'MOT_BAT_VOLT_MIN',
-        'BRD_SBUS_OUT', 'BRD_PWM_COUNT', 'ANGLE_MAX', 'FENCE_ENABLE',
-    ]
     p = read_params(m, WANT_PARAMS)
     check_params(r, p)
 
-    tel = sample_telemetry(m, seconds=3.0)
+    tel = sample_telemetry(m, seconds=a.secs)
     check_live(r, tel)
 
     blk = [x for x in r.items if x[0] == 'blk']
@@ -409,12 +575,7 @@ def main():
         print('\n✔ 정상 (%d)  ' % len(ok) + ', '.join(name for _, _, name, _, _ in ok))
 
     print('\n' + '─' * 70)
-    if blk:
-        verdict = 'NO-GO'
-    elif warn:
-        verdict = '확인 후 판단'
-    else:
-        verdict = 'GO'
+    verdict = verdict_of(r)
     print('판정: %s' % verdict)
     print('  🔴 이 기체는 실비행 이력이 0회다. 이 판정은 파라미터·정지상태 텔레메트리')
     print('     기준이며, 모터 동시기동 실패(00-progress.md #1)·나침반 재보정 등')

@@ -1,0 +1,21 @@
+# FC 가 USB 로 꽂힌 PC 에 둔다 (지금은 rim3).
+#   cp tools/preflight/drone-preflight.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now drone-preflight
+#
+# 🔴 암호는 이 파일에 적지 않는다. ~/.config/drone-preflight.env 에 두고 chmod 600 —
+#    리포가 public 이다.
+#      DRONE_PREFLIGHT_KEY=<랩서버 ~/DRONE/web/.env 의 PREFLIGHT_KEY 와 같은 값>
+[Unit]
+Description=DRONE01 preflight agent (:4412, Tailscale)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/drone-preflight.env
+ExecStart=%h/DRONE/.venv/bin/python %h/DRONE/tools/preflight/agent.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
