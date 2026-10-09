@@ -175,6 +175,7 @@ const SKIN = /^(top_plate|bottom_plate|name)/;
 
 new GLTFLoader().load('/model/drone01.glb', (g) => {
   const m = g.scene;
+  const tailZ = new THREE.Box3().setFromObject(m).min.z;
   m.traverse((o) => {
     if (!o.isMesh) return;
     o.castShadow = true; o.receiveShadow = true;
@@ -219,6 +220,7 @@ new GLTFLoader().load('/model/drone01.glb', (g) => {
     bat: at('bay_battery', [0, -0.02, 0]),
     LF: at('rotor_LF'), RF: at('rotor_RF'), LB: at('rotor_LB'), RB: at('rotor_RB'),
   };
+  anchors.tail = new THREE.Object3D(); anchors.tail.position.set(0, 0, tailZ); m.add(anchors.tail);   // 지나온 길이 매달리는 곳
   attitude.add(m);
   $('loading').remove();
   setView();
@@ -692,6 +694,100 @@ function satStep() {
   }
 }
 
+// ── 지나온 길 — 재생 중 기체 뒤에 남는 선. 실제 높이로 뜨고 고도로 색이 변한다.
+// 정점은 홈 기준(땅 좌표: x = -동, z = 북, y = 고도)으로 한 번만 굽고, 재생 시각까지만 드러낸다.
+// 항적은 0.4 m 이상 움직일 때만 찍히므로, 마지막 점에서 기체까지는 head 가 이어 준다.
+const TRAIL_CMAP = [[0.13, 0.29, 0.80], [0.10, 0.66, 0.86], [0.24, 0.78, 0.45], [0.96, 0.84, 0.22], [0.88, 0.27, 0.17]];   // 파랑 → 빨강
+const TRAIL_R = 0.005, TRAIL_SIDES = 6, TRAIL_SEG = TRAIL_SIDES * 6;
+const trail = { fl: null, ts: [], pts: [], scale: 10, body: null };
+const trailG = new THREE.Group(); trailG.visible = false; world.add(trailG);
+const trailMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false });
+const trailHead = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * 6), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * 6), 3));
+  g.setIndex(new THREE.BufferAttribute(trailIndex(1), 1));
+  const m = new THREE.Mesh(g, trailMat); m.frustumCulled = false; trailG.add(m);
+  return m;
+})();
+function trailIndex(segs) {
+  const S = TRAIL_SIDES, ix = new Uint32Array(segs * TRAIL_SEG);
+  let o = 0;
+  for (let j = 0; j < segs; j++) for (let s = 0; s < S; s++) {
+    const a = j * S + s, b = j * S + (s + 1) % S, c = a + S, d = b + S;
+    ix.set([a, c, b, b, c, d], o); o += 6;
+  }
+  return ix;
+}
+const tS = new THREE.Vector3(), tU = new THREE.Vector3(), tT = new THREE.Vector3();
+// 중심 c, 진행방향 t 둘레의 고리 하나를 pos 의 ring 번째 칸에 쓴다
+function trailRing(pos, ring, c, t) {
+  tS.set(0, 1, 0).cross(t);
+  if (tS.lengthSq() < 1e-4) tS.set(1, 0, 0);   // 수직 비행
+  tS.normalize(); tU.copy(t).cross(tS);
+  for (let s = 0; s < TRAIL_SIDES; s++) {
+    const a = s / TRAIL_SIDES * Math.PI * 2, u = Math.cos(a) * TRAIL_R, v = Math.sin(a) * TRAIL_R;
+    pos.set([c.x + tS.x * u + tU.x * v, c.y + tS.y * u + tU.y * v, c.z + tS.z * u + tU.z * v], (ring * TRAIL_SIDES + s) * 3);
+  }
+}
+function trailColor(col, ring, alt) {
+  const f = Math.max(0, Math.min(1, alt / trail.scale)) * (TRAIL_CMAP.length - 1), k = Math.min(TRAIL_CMAP.length - 2, Math.floor(f)), u = f - k, A = TRAIL_CMAP[k], B = TRAIL_CMAP[k + 1];
+  const c = [A[0] + (B[0] - A[0]) * u, A[1] + (B[1] - A[1]) * u, A[2] + (B[2] - A[2]) * u];
+  for (let s = 0; s < TRAIL_SIDES; s++) col.set(c, (ring * TRAIL_SIDES + s) * 3);
+}
+function trailBuild(F) {
+  trail.fl = F;
+  if (trail.body) { trailG.remove(trail.body); trail.body.geometry.dispose(); trail.body = null; }
+  const hs = geo.hs, kE = 111320 * Math.cos(hs[0] * Math.PI / 180) * G;
+  const P = F.track.filter((p) => p.length > 3), n = P.length;
+  trail.ts = P.map((p) => p[3]);
+  trail.pts = P.map((p) => new THREE.Vector3(-(p[1] - hs[1]) * kE, p[2] * G, (p[0] - hs[0]) * 111320 * G));
+  trail.scale = Math.max(10, ...P.map((p) => p[2]));
+  if (n < 2) return;
+  const pos = new Float32Array(n * TRAIL_SIDES * 3), col = new Float32Array(n * TRAIL_SIDES * 3);
+  for (let i = 0; i < n; i++) {
+    tT.subVectors(trail.pts[Math.min(n - 1, i + 1)], trail.pts[Math.max(0, i - 1)]);
+    if (tT.lengthSq() < 1e-12) tT.set(0, 0, 1);
+    trailRing(pos, i, trail.pts[i], tT.normalize());
+    trailColor(col, i, P[i][2]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setIndex(new THREE.BufferAttribute(trailIndex(n - 1), 1));
+  trail.body = new THREE.Mesh(g, trailMat); trail.body.frustumCulled = false;
+  trailG.add(trail.body);
+}
+const tHead = new THREE.Vector3(), tCtr = new THREE.Vector3();
+function trailStep() {
+  const F = pb.on && pb.fl;
+  if (!F || !geo.hs || !anchors.tail || intro) { trailG.visible = false; return; }
+  if (trail.fl !== F) trailBuild(F);
+  // 재생 시각까지 찍힌 점 수
+  let lo = 0, hi = trail.ts.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (trail.ts[mid] <= pb.t) lo = mid + 1; else hi = mid; }
+  trailG.position.set(geo.e * G, 0, -geo.n * G);
+  // 꼬리 끝(자세를 따라 움직인다)과 기체 중심 — 둘 다 trailG 좌표
+  anchors.tail.getWorldPosition(tHead); world.worldToLocal(tHead).sub(trailG.position);
+  tCtr.set(-geo.e * G, geo.alt * G, geo.n * G);
+  // 기체 중심에서 꼬리까지 거리 안쪽 점은 뺀다 — 꼬리 앞으로 선이 되돌아 겹치지 않게
+  const reach = tHead.distanceTo(tCtr);
+  let k = lo - 1;
+  while (k >= 0 && trail.pts[k].distanceTo(tCtr) < reach) k--;
+  trailG.visible = k >= 0;
+  if (k < 0) return;
+  if (trail.body) trail.body.geometry.setDrawRange(0, k * TRAIL_SEG);
+  // 마지막 점 → 꼬리
+  const a = trail.pts[k], pos = trailHead.geometry.attributes.position, col = trailHead.geometry.attributes.color;
+  tT.subVectors(tHead, a);
+  trailHead.visible = tT.lengthSq() > 1e-8;
+  if (!trailHead.visible) return;
+  tT.normalize();
+  trailRing(pos.array, 0, a, tT); trailRing(pos.array, 1, tHead, tT);
+  trailColor(col.array, 0, a.y / G); trailColor(col.array, 1, geo.alt);
+  pos.needsUpdate = col.needsUpdate = true;
+}
+
 const timer = new THREE.Timer();
 let shiftX = 0, distK = 1;   // 정보 카드를 피해 화면 중심을 옮긴 폭(px), 물러선 배율
 function frame() {
@@ -701,7 +797,7 @@ function frame() {
   timer.update();
   const dt = Math.min(timer.getDelta(), 0.05);
   const ease = (r) => 1 - Math.exp(-dt * r);
-  flyStep(dt); flyFloor(); groundStep(dt, ease); satStep(); dlvPlace();
+  flyStep(dt); flyFloor(); groundStep(dt, ease); satStep(); trailStep(); dlvPlace();
   if (goal.on) {
     const k = ease(3.2);
     cam.yaw += (goal.yaw - cam.yaw) * k; cam.tilt += (goal.tilt - cam.tilt) * k; cam.dist += (goal.dist - cam.dist) * k;
