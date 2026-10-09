@@ -584,10 +584,12 @@ function groundStep(dt, ease) {
     if (Math.hypot(rn - geo.n, re - geo.e) > 300) { geo.n = rn; geo.e = re; }   // 홈이 바뀌었다 — 따라가지 말고 옮긴다
     geo.n += (d.vx || 0) * dt; geo.e += (d.vy || 0) * dt;
   }
-  geo.n += (rn - geo.n) * ease(1.5); geo.e += (re - geo.e) * ease(1.5);
-  geo.alt += ((on && d.alt != null ? d.alt : 0) - geo.alt) * ease(3);
+  // 재생은 로그 값이 이미 매 프레임 이어 붙어 있다 — 완화하면 감을 때 기체가 밀려 보인다
+  const k = (r) => (S.playback ? 1 : ease(r));
+  geo.n += (rn - geo.n) * k(1.5); geo.e += (re - geo.e) * k(1.5);
+  geo.alt += ((on && d.alt != null ? d.alt : 0) - geo.alt) * k(3);
   const yaw = d.yaw != null ? d.yaw : d.hdg;
-  geo.psi += unwrap((on && yaw != null ? yaw : 0) - geo.psi) * ease(4);
+  geo.psi += unwrap((on && yaw != null ? yaw : 0) - geo.psi) * k(4);
   // 바닥 — 내려가고, 기수만큼 돌고, 무늬가 흐른다. 멀어질수록 넓게 깔아 화면에 남긴다.
   const depth = Math.max(0, geo.alt) * G;
   floorY = FLOOR - depth;
@@ -704,9 +706,9 @@ const trailG = new THREE.Group(); trailG.visible = false; world.add(trailG);
 const trailMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false });
 const trailHead = (() => {
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * 6), 3));
-  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * 6), 3));
-  g.setIndex(new THREE.BufferAttribute(trailIndex(1), 1));
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * 9), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * 9), 3));
+  g.setIndex(new THREE.BufferAttribute(trailIndex(2), 1));
   const m = new THREE.Mesh(g, trailMat); m.frustumCulled = false; trailG.add(m);
   return m;
 })();
@@ -758,7 +760,7 @@ function trailBuild(F) {
   trail.body = new THREE.Mesh(g, trailMat); trail.body.frustumCulled = false;
   trailG.add(trail.body);
 }
-const tHead = new THREE.Vector3(), tCtr = new THREE.Vector3();
+const tHead = new THREE.Vector3(), tCtr = new THREE.Vector3(), tP = new THREE.Vector3(), tD = new THREE.Vector3(), tA = new THREE.Vector3(), tT2 = new THREE.Vector3();
 function trailStep() {
   const F = pb.on && pb.fl;
   if (!F || !geo.hs || !anchors.tail || intro) { trailG.visible = false; return; }
@@ -770,21 +772,32 @@ function trailStep() {
   // 꼬리 끝(자세를 따라 움직인다)과 기체 중심 — 둘 다 trailG 좌표
   anchors.tail.getWorldPosition(tHead); world.worldToLocal(tHead).sub(trailG.position);
   tCtr.set(-geo.e * G, geo.alt * G, geo.n * G);
-  // 기체 중심에서 꼬리까지 거리 안쪽 점은 뺀다 — 꼬리 앞으로 선이 되돌아 겹치지 않게
+  // 기체 중심에서 꼬리까지 거리(reach) 안쪽 점은 뺀다 — 꼬리 앞으로 선이 되돌아 겹치지 않게
   const reach = tHead.distanceTo(tCtr);
   let k = lo - 1;
   while (k >= 0 && trail.pts[k].distanceTo(tCtr) < reach) k--;
   trailG.visible = k >= 0;
   if (k < 0) return;
   if (trail.body) trail.body.geometry.setDrawRange(0, k * TRAIL_SEG);
-  // 마지막 점 → 꼬리
-  const a = trail.pts[k], pos = trailHead.geometry.attributes.position, col = trailHead.geometry.attributes.color;
-  tT.subVectors(tHead, a);
-  trailHead.visible = tT.lengthSq() > 1e-8;
+  // 경로가 반지름 reach 구를 빠져나오는 지점 — 선분 위에서 연속으로 움직인다 (점 단위로 건너뛰지 않는다).
+  // 점 k 는 밖, 다음 점(없으면 기체 중심)은 안이다.
+  const a = trail.pts[k], nx = k + 1 < lo ? trail.pts[k + 1] : tCtr;
+  tD.subVectors(nx, a); tA.subVectors(a, tCtr);
+  const A = tD.lengthSq(), b = tA.dot(tD), C = tA.lengthSq() - reach * reach;
+  const u = A > 1e-12 ? Math.min(1, Math.max(0, (-b - Math.sqrt(Math.max(0, b * b - A * C))) / A)) : 0;
+  tP.copy(a).addScaledVector(tD, u);
+  // 마지막 점 → 교점 → 꼬리
+  const pos = trailHead.geometry.attributes.position, col = trailHead.geometry.attributes.color;
+  tT.subVectors(tP, a); tT2.subVectors(tHead, tP);
+  const l1 = tT.lengthSq() > 1e-10, l2 = tT2.lengthSq() > 1e-10;
+  trailHead.visible = l1 || l2;
   if (!trailHead.visible) return;
-  tT.normalize();
-  trailRing(pos.array, 0, a, tT); trailRing(pos.array, 1, tHead, tT);
-  trailColor(col.array, 0, a.y / G); trailColor(col.array, 1, geo.alt);
+  if (!l1) tT.copy(tT2); if (!l2) tT2.copy(tT);
+  tT.normalize(); tT2.normalize();
+  trailRing(pos.array, 0, a, tT);
+  tD.addVectors(tT, tT2); if (tD.lengthSq() < 1e-8) tD.copy(tT2); trailRing(pos.array, 1, tP, tD.normalize());
+  trailRing(pos.array, 2, tHead, tT2);
+  trailColor(col.array, 0, a.y / G); trailColor(col.array, 1, tP.y / G); trailColor(col.array, 2, tHead.y / G);
   pos.needsUpdate = col.needsUpdate = true;
 }
 
