@@ -175,7 +175,16 @@ const SKIN = /^(top_plate|bottom_plate|name)/;
 
 new GLTFLoader().load('/model/drone01.glb', (g) => {
   const m = g.scene;
+  // 꼬리 — 모델 맨 뒤. 높이는 맨 뒤 5 cm 정점들의 가운데 (동체 중심선이 아니라 꼬리날개에 붙게)
+  m.updateMatrixWorld(true);
   const tailZ = new THREE.Box3().setFromObject(m).min.z;
+  let tailY0 = Infinity, tailY1 = -Infinity;
+  { const v = new THREE.Vector3();
+    m.traverse((o) => {
+      if (!o.isMesh) return;
+      const pa = o.geometry.attributes.position;
+      for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld); if (v.z < tailZ + 0.05) { tailY0 = Math.min(tailY0, v.y); tailY1 = Math.max(tailY1, v.y); } }
+    }); }
   m.traverse((o) => {
     if (!o.isMesh) return;
     o.castShadow = true; o.receiveShadow = true;
@@ -220,7 +229,10 @@ new GLTFLoader().load('/model/drone01.glb', (g) => {
     bat: at('bay_battery', [0, -0.02, 0]),
     LF: at('rotor_LF'), RF: at('rotor_RF'), LB: at('rotor_LB'), RB: at('rotor_RB'),
   };
-  anchors.tail = new THREE.Object3D(); anchors.tail.position.set(0, 0, tailZ); m.add(anchors.tail);   // 지나온 길이 매달리는 곳
+  anchors.tail = new THREE.Object3D(); { // 쿼드는 꼬리가 없다 — 뒤 로터 축 높이·위치의 한가운데(프레임 뒤쪽 가운데)에 단다. 모델 맨 뒤는 프롭 끝이라 허공이다.
+    const rb = m.getObjectByName('rotor_LB'), w = rb && new THREE.Vector3().setFromMatrixPosition(rb.matrixWorld);
+    anchors.tail.position.set(0, w ? w.y : (tailY0 + tailY1) / 2, w ? w.z : tailZ);
+  } m.add(anchors.tail);   // 지나온 길이 매달리는 곳
   attitude.add(m);
   $('loading').remove();
   setView();
@@ -696,22 +708,21 @@ function satStep() {
   }
 }
 
-// ── 지나온 길 — 재생 중 기체 뒤에 남는 선. 실제 높이로 뜨고 고도로 색이 변한다.
-// 정점은 홈 기준(땅 좌표: x = -동, z = 북, y = 고도)으로 한 번만 굽고, 재생 시각까지만 드러낸다.
-// 항적은 0.4 m 이상 움직일 때만 찍히므로, 마지막 점에서 기체까지는 head 가 이어 준다.
+// ── 지나온 길 — 재생 중 꼬리가 지나온 자리. 실제 높이로 뜨고 고도로 색이 변한다.
+// 선은 **꼬리 끝이 지난 궤적**이다 — 기체 중심의 GPS 경로가 아니다. 중심 경로를 그리면 몸통 방향과
+// 이동 방향이 다를 때 꼬리에서 경로로 넘어가는 자리가 꺾인다. 꼬리 궤적은 꼬리에서 그대로 이어진다.
+// 정점은 홈 기준 땅 좌표(x = -동, z = 북, y = 고도)로 한 번만 굽고, 재생 시각까지만 드러낸다.
+// 마지막 점에서 지금 꼬리까지는 head 가 잇는다 (프레임 격자 0.2 s 사이라 거의 직선이다).
 const TRAIL_CMAP = [[0.13, 0.29, 0.80], [0.10, 0.66, 0.86], [0.24, 0.78, 0.45], [0.96, 0.84, 0.22], [0.88, 0.27, 0.17]];   // 파랑 → 빨강
 const TRAIL_R = 0.005, TRAIL_SIDES = 6, TRAIL_SEG = TRAIL_SIDES * 6;
 const trail = { fl: null, ts: [], pts: [], scale: 10, body: null };
 const trailG = new THREE.Group(); trailG.visible = false; world.add(trailG);
 const trailMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false });
-// 이음 구간 — 마지막 점 → 경로가 원을 빠져나오는 점 → (곡선 HEAD_N 마디) → 꼬리
-const HEAD_N = 8, HEAD_RINGS = HEAD_N + 2;
-const headPts = Array.from({ length: HEAD_RINGS }, () => new THREE.Vector3());
 const trailHead = (() => {
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * HEAD_RINGS * 3), 3));
-  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * HEAD_RINGS * 3), 3));
-  g.setIndex(new THREE.BufferAttribute(trailIndex(HEAD_RINGS - 1), 1));
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * 6), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * 6), 3));
+  g.setIndex(new THREE.BufferAttribute(trailIndex(1), 1));
   const m = new THREE.Mesh(g, trailMat); m.frustumCulled = false; trailG.add(m);
   return m;
 })();
@@ -740,21 +751,36 @@ function trailColor(col, ring, alt) {
   const c = [A[0] + (B[0] - A[0]) * u, A[1] + (B[1] - A[1]) * u, A[2] + (B[2] - A[2]) * u];
   for (let s = 0; s < TRAIL_SIDES; s++) col.set(c, (ring * TRAIL_SIDES + s) * 3);
 }
+const tHead = new THREE.Vector3(), tQ = new THREE.Quaternion(), tQy = new THREE.Quaternion(), tE = new THREE.Euler(0, 0, 0, 'YXZ');
+const rad = THREE.MathUtils.degToRad;
+const yAxis = new THREE.Vector3(0, 1, 0);
 function trailBuild(F) {
   trail.fl = F;
   if (trail.body) { trailG.remove(trail.body); trail.body.geometry.dispose(); trail.body = null; }
-  const hs = geo.hs, kE = 111320 * Math.cos(hs[0] * Math.PI / 180) * G;
-  const P = F.track.filter((p) => p.length > 3), n = P.length;
-  trail.ts = P.map((p) => p[3]);
-  trail.pts = P.map((p) => new THREE.Vector3(-(p[1] - hs[1]) * kE, p[2] * G, (p[0] - hs[0]) * 111320 * G));
-  trail.scale = Math.max(10, ...P.map((p) => p[2]));
+  const hs = geo.hs, kN = 111320 * G, kE = kN * Math.cos(hs[0] * Math.PI / 180), ix = F.ix;
+  const tOff = anchors.tail.position;
+  trail.ts = []; trail.pts = [];
+  F.rows.forEach((r, i) => {
+    const lat = r[ix.lat], lon = r[ix.lon], alt = r[ix.alt];
+    if (lat == null || lon == null || alt == null) return;
+    // 꼬리 = 기체 중심 + 자세로 돌린 꼬리 벡터. 화면과 같은 순서 — 자세(YXZ: 피치 -x, 롤 z) 뒤에 요(-psi)
+    tE.set(-rad(r[ix.pitch] ?? 0), 0, rad(r[ix.roll] ?? 0)); tQ.setFromEuler(tE);
+    tQ.premultiply(tQy.setFromAxisAngle(yAxis, -rad(r[ix.yaw] ?? r[ix.hdg] ?? 0)));
+    const p = tOff.clone().applyQuaternion(tQ);
+    p.x += -(lon - hs[1]) * kE; p.y += alt * G; p.z += (lat - hs[0]) * kN;
+    const last = trail.pts[trail.pts.length - 1];
+    if (last && last.distanceToSquared(p) < 1.6e-5) return;   // 거의 안 움직였다 — 점을 늘리지 않는다
+    trail.ts.push(i / F.hz); trail.pts.push(p);
+  });
+  const n = trail.pts.length;
+  trail.scale = Math.max(10, ...trail.pts.map((p) => p.y / G));
   if (n < 2) return;
   const pos = new Float32Array(n * TRAIL_SIDES * 3), col = new Float32Array(n * TRAIL_SIDES * 3);
   for (let i = 0; i < n; i++) {
     tT.subVectors(trail.pts[Math.min(n - 1, i + 1)], trail.pts[Math.max(0, i - 1)]);
     if (tT.lengthSq() < 1e-12) tT.set(0, 0, 1);
     trailRing(pos, i, trail.pts[i], tT.normalize());
-    trailColor(col, i, P[i][2]);
+    trailColor(col, i, trail.pts[i].y / G);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -763,7 +789,6 @@ function trailBuild(F) {
   trail.body = new THREE.Mesh(g, trailMat); trail.body.frustumCulled = false;
   trailG.add(trail.body);
 }
-const tHead = new THREE.Vector3(), tCtr = new THREE.Vector3(), tP = new THREE.Vector3(), tD = new THREE.Vector3(), tA = new THREE.Vector3(), tT2 = new THREE.Vector3();
 function trailStep() {
   const F = pb.on && pb.fl;
   if (!F || !geo.hs || !anchors.tail || intro) { trailG.visible = false; return; }
@@ -771,49 +796,19 @@ function trailStep() {
   // 재생 시각까지 찍힌 점 수
   let lo = 0, hi = trail.ts.length;
   while (lo < hi) { const mid = (lo + hi) >> 1; if (trail.ts[mid] <= pb.t) lo = mid + 1; else hi = mid; }
+  trailG.visible = lo > 0;
+  if (!lo) return;
   trailG.position.set(geo.e * G, 0, -geo.n * G);
-  // 꼬리 끝(자세를 따라 움직인다)과 기체 중심 — 둘 다 trailG 좌표
+  if (trail.body) trail.body.geometry.setDrawRange(0, (lo - 1) * TRAIL_SEG);
+  // 마지막 점 → 지금 꼬리 (화면에 보이는 꼬리 앵커, trailG 좌표)
   anchors.tail.getWorldPosition(tHead); world.worldToLocal(tHead).sub(trailG.position);
-  tCtr.set(-geo.e * G, geo.alt * G, geo.n * G);
-  // 기체 중심에서 꼬리까지 거리(reach) 안쪽 점은 뺀다 — 꼬리 앞으로 선이 되돌아 겹치지 않게
-  const reach = tHead.distanceTo(tCtr);
-  let k = lo - 1;
-  while (k >= 0 && trail.pts[k].distanceTo(tCtr) < reach) k--;
-  trailG.visible = k >= 0;
-  if (k < 0) return;
-  if (trail.body) trail.body.geometry.setDrawRange(0, k * TRAIL_SEG);
-  // 경로가 반지름 reach 구를 빠져나오는 지점 — 선분 위에서 연속으로 움직인다 (점 단위로 건너뛰지 않는다).
-  // 점 k 는 밖, 다음 점(없으면 기체 중심)은 안이다.
-  const a = trail.pts[k], nx = k + 1 < lo ? trail.pts[k + 1] : tCtr;
-  tD.subVectors(nx, a); tA.subVectors(a, tCtr);
-  const A = tD.lengthSq(), b = tA.dot(tD), C = tA.lengthSq() - reach * reach;
-  const u = A > 1e-12 ? Math.min(1, Math.max(0, (-b - Math.sqrt(Math.max(0, b * b - A * C))) / A)) : 0;
-  tP.copy(a).addScaledVector(tD, u);
-  // 교점 → 꼬리를 에르미트 곡선으로 잇는다. 시작은 경로가 가던 방향, 끝은 몸통 축(꼬리에서 기수 쪽) —
-  // 몸통과 이동 방향이 달라도(요 차이·피치로 올라간 꼬리) 단차가 곡선 안에서 풀린다.
-  const pos = trailHead.geometry.attributes.position, col = trailHead.geometry.attributes.color;
-  tT.copy(nx).sub(trail.pts[Math.max(0, k - 1)]);                       // 경로 방향 (앞뒤 점으로 잡아 점을 건널 때 튀지 않게)
-  if (tT.lengthSq() < 1e-10) tT.subVectors(nx, a);
-  tT2.subVectors(tCtr, tHead);                                          // 몸통 축 (꼬리 → 기수)
-  const ay = tT2.y; tT2.y = 0;                                          // 위아래는 뺀다 — 피치로 꼬리가 올라가 있으면 곡선이 위로 솟았다 내려온다
-  if (tT2.lengthSq() < 1e-8) tT2.y = ay;                                // 거의 수직이면 그대로
-  const L = tHead.distanceTo(tP);
-  trailHead.visible = L > 1e-5 || tD.lengthSq() > 1e-10;
+  const a = trail.pts[lo - 1], pos = trailHead.geometry.attributes.position, col = trailHead.geometry.attributes.color;
+  tT.subVectors(tHead, a);
+  trailHead.visible = tT.lengthSq() > 1e-10;
   if (!trailHead.visible) return;
-  tT.normalize().multiplyScalar(L); tT2.normalize().multiplyScalar(L * 0.5);   // 끝 쪽은 세기를 줄여 꼬리 끝의 발 모양을 짧게
-  headPts[0].copy(a); headPts[1].copy(tP);
-  for (let n = 1; n <= HEAD_N; n++) {
-    const u = n / HEAD_N, u2 = u * u, u3 = u2 * u;
-    headPts[1 + n].set(0, 0, 0)
-      .addScaledVector(tP, 2 * u3 - 3 * u2 + 1).addScaledVector(tT, u3 - 2 * u2 + u)
-      .addScaledVector(tHead, -2 * u3 + 3 * u2).addScaledVector(tT2, u3 - u2);
-  }
-  for (let r = 0; r < HEAD_RINGS; r++) {
-    tD.subVectors(headPts[Math.min(HEAD_RINGS - 1, r + 1)], headPts[Math.max(0, r - 1)]);
-    if (tD.lengthSq() < 1e-12) tD.set(0, 0, 1);
-    trailRing(pos.array, r, headPts[r], tD.normalize());
-    trailColor(col.array, r, headPts[r].y / G);
-  }
+  tT.normalize();
+  trailRing(pos.array, 0, a, tT); trailRing(pos.array, 1, tHead, tT);
+  trailColor(col.array, 0, a.y / G); trailColor(col.array, 1, tHead.y / G);
   pos.needsUpdate = col.needsUpdate = true;
 }
 
@@ -864,8 +859,9 @@ function frame() {
   const tr = d.roll != null ? THREE.MathUtils.degToRad(d.roll) : 0;
   const tp = d.pitch != null ? THREE.MathUtils.degToRad(d.pitch) : 0;
   attitude.rotation.order = 'YXZ';
-  attitude.rotation.z += (tr - attitude.rotation.z) * ease(6);
-  attitude.rotation.x += (-tp - attitude.rotation.x) * ease(6);
+  const ka = S.playback ? 1 : ease(6);   // 재생은 로그 자세 그대로 — 꼬리 궤적과 화면의 꼬리가 겹쳐야 한다
+  attitude.rotation.z += (tr - attitude.rotation.z) * ka;
+  attitude.rotation.x += (-tp - attitude.rotation.x) * ka;
 
   // 로터 — ARM 이고 출력이 있으면 돈다. 빨라지면 날 대신 원판이 보인다.
   const mt = d.motors || {};
