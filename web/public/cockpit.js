@@ -704,11 +704,14 @@ const TRAIL_R = 0.005, TRAIL_SIDES = 6, TRAIL_SEG = TRAIL_SIDES * 6;
 const trail = { fl: null, ts: [], pts: [], scale: 10, body: null };
 const trailG = new THREE.Group(); trailG.visible = false; world.add(trailG);
 const trailMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false });
+// 이음 구간 — 마지막 점 → 경로가 원을 빠져나오는 점 → (곡선 HEAD_N 마디) → 꼬리
+const HEAD_N = 8, HEAD_RINGS = HEAD_N + 2;
+const headPts = Array.from({ length: HEAD_RINGS }, () => new THREE.Vector3());
 const trailHead = (() => {
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * 9), 3));
-  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * 9), 3));
-  g.setIndex(new THREE.BufferAttribute(trailIndex(2), 1));
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * HEAD_RINGS * 3), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_SIDES * HEAD_RINGS * 3), 3));
+  g.setIndex(new THREE.BufferAttribute(trailIndex(HEAD_RINGS - 1), 1));
   const m = new THREE.Mesh(g, trailMat); m.frustumCulled = false; trailG.add(m);
   return m;
 })();
@@ -786,18 +789,31 @@ function trailStep() {
   const A = tD.lengthSq(), b = tA.dot(tD), C = tA.lengthSq() - reach * reach;
   const u = A > 1e-12 ? Math.min(1, Math.max(0, (-b - Math.sqrt(Math.max(0, b * b - A * C))) / A)) : 0;
   tP.copy(a).addScaledVector(tD, u);
-  // 마지막 점 → 교점 → 꼬리
+  // 교점 → 꼬리를 에르미트 곡선으로 잇는다. 시작은 경로가 가던 방향, 끝은 몸통 축(꼬리에서 기수 쪽) —
+  // 몸통과 이동 방향이 달라도(요 차이·피치로 올라간 꼬리) 단차가 곡선 안에서 풀린다.
   const pos = trailHead.geometry.attributes.position, col = trailHead.geometry.attributes.color;
-  tT.subVectors(tP, a); tT2.subVectors(tHead, tP);
-  const l1 = tT.lengthSq() > 1e-10, l2 = tT2.lengthSq() > 1e-10;
-  trailHead.visible = l1 || l2;
+  tT.copy(nx).sub(trail.pts[Math.max(0, k - 1)]);                       // 경로 방향 (앞뒤 점으로 잡아 점을 건널 때 튀지 않게)
+  if (tT.lengthSq() < 1e-10) tT.subVectors(nx, a);
+  tT2.subVectors(tCtr, tHead);                                          // 몸통 축 (꼬리 → 기수)
+  const ay = tT2.y; tT2.y = 0;                                          // 위아래는 뺀다 — 피치로 꼬리가 올라가 있으면 곡선이 위로 솟았다 내려온다
+  if (tT2.lengthSq() < 1e-8) tT2.y = ay;                                // 거의 수직이면 그대로
+  const L = tHead.distanceTo(tP);
+  trailHead.visible = L > 1e-5 || tD.lengthSq() > 1e-10;
   if (!trailHead.visible) return;
-  if (!l1) tT.copy(tT2); if (!l2) tT2.copy(tT);
-  tT.normalize(); tT2.normalize();
-  trailRing(pos.array, 0, a, tT);
-  tD.addVectors(tT, tT2); if (tD.lengthSq() < 1e-8) tD.copy(tT2); trailRing(pos.array, 1, tP, tD.normalize());
-  trailRing(pos.array, 2, tHead, tT2);
-  trailColor(col.array, 0, a.y / G); trailColor(col.array, 1, tP.y / G); trailColor(col.array, 2, tHead.y / G);
+  tT.normalize().multiplyScalar(L); tT2.normalize().multiplyScalar(L * 0.5);   // 끝 쪽은 세기를 줄여 꼬리 끝의 발 모양을 짧게
+  headPts[0].copy(a); headPts[1].copy(tP);
+  for (let n = 1; n <= HEAD_N; n++) {
+    const u = n / HEAD_N, u2 = u * u, u3 = u2 * u;
+    headPts[1 + n].set(0, 0, 0)
+      .addScaledVector(tP, 2 * u3 - 3 * u2 + 1).addScaledVector(tT, u3 - 2 * u2 + u)
+      .addScaledVector(tHead, -2 * u3 + 3 * u2).addScaledVector(tT2, u3 - u2);
+  }
+  for (let r = 0; r < HEAD_RINGS; r++) {
+    tD.subVectors(headPts[Math.min(HEAD_RINGS - 1, r + 1)], headPts[Math.max(0, r - 1)]);
+    if (tD.lengthSq() < 1e-12) tD.set(0, 0, 1);
+    trailRing(pos.array, r, headPts[r], tD.normalize());
+    trailColor(col.array, r, headPts[r].y / G);
+  }
   pos.needsUpdate = col.needsUpdate = true;
 }
 
