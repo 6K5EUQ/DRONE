@@ -305,8 +305,7 @@ const up = (e) => {
   // 거의 안 움직였으면 누른 것이다
   if (down && e.type === 'pointerup' && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6) {
     if (intro) { if (hitCraft(e)) launch(); }
-    else if (dlvTab()) { /* 배송·테스트는 지점이 고정 목록이다 — 땅을 눌러 추가하지 않는다 */ }
-    else { const k = pickBay(e); if (k) selectBay(k === sel ? null : k); }
+    else if (tab === 'sum') { const k = pickBay(e); if (k) selectBay(k === sel ? null : k); }   // 부품 카드는 부품 탭에서만
   }
   down = null;
 };
@@ -994,6 +993,20 @@ $('tabs').addEventListener('click', (e) => {
   if (prev === 'dlv' && tab !== 'dlv') dlvLeave();
   if (tab === 'dlv' && prev !== 'dlv') dlvEnter();
 });
+
+// ── 기체 전환 — 이름을 누르면 기체 목록. 트래커 PC(localhost)에서는 그 PC 의 다른 트래커 콕핏으로 간다.
+const CRAFTS = [['SHADE01', 'https://shade01.shade-signals.com/', 4400], ['DRONE01', 'https://drone01.shade-signals.com/', 4410]];
+{
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+  const menu = document.createElement('div');
+  menu.id = 'craftMenu'; menu.hidden = true;
+  menu.innerHTML = CRAFTS.map(([n, web, port]) => n === 'DRONE01' ? `<a class="on">${n}<span>✓</span></a>`
+    : `<a href="${local ? `${location.protocol}//${location.hostname}:${port}/cockpit` : web}">${n}</a>`).join('');
+  document.querySelector('.ident').append(menu);
+  $('craft').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
+  document.addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menu.hidden = true; });
+}
 
 // ── 기체 / 지도 ──────────────────────────────────────────────────────
 let predLine = null;
