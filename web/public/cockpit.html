@@ -35,6 +35,13 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
 .pane::-webkit-scrollbar { display: none; }
 .ident { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .ident b { font-size: 20px; font-weight: 700; letter-spacing: .02em; }
+.ident { position: relative; }
+#craft { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+#craft svg { width: 12px; height: 12px; opacity: .45; }
+#craftMenu { position: absolute; top: 30px; left: -8px; z-index: 50; background: #fff; border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05); padding: 6px; min-width: 150px; }
+#craftMenu a { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-radius: 8px; font-weight: 700; font-size: 15px; color: inherit; text-decoration: none; }
+#craftMenu a[href]:hover { background: #f0f2f6; }
+#craftMenu a.on { color: var(--acc); cursor: default; }
 .ident span { font-size: 13px; font-weight: 600; letter-spacing: .06em; color: var(--dim); font-variant-numeric: tabular-nums; }
 .gear { display: flex; align-items: center; gap: 14px; font-size: 13px; letter-spacing: .14em; color: var(--muted); font-weight: 500; }
 .gear .grow { flex: 1; }
@@ -343,7 +350,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
 <script>if (!location.hash) document.body.classList.add('intro');</script>
 <div class="scr">
   <aside class="pane">
-    <div class="ident"><b>DRONE01</b><em class="replay"><i id="replayWhen"></i></em></div>
+    <div class="ident"><b id="craft">DRONE01<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5l3.5 3.5 3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></b><em class="replay"><i id="replayWhen"></i></em></div>
     <div class="gear">
       <span class="grow"></span>
       <span class="bat" id="batBox">
