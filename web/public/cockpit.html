@@ -146,7 +146,7 @@ body.intro #htag, .main.mapmode #htag { display: none; }
 #loading i { display: block; height: 100%; width: 0; background: var(--acc); transition: width .2s; }
 
 /* 로고 — 시작 페이지는 기체 아래 가운데(날아가면 사라진다), 대시보드는 도크 왼쪽 */
-#brandIntro { position: absolute; left: 50%; bottom: 40px; width: 150px; height: 30px; transform: translateX(-50%); color: var(--muted); z-index: 2; pointer-events: none; opacity: 0; transition: opacity .4s; }
+#brandIntro { position: absolute; left: 50%; bottom: 30px; width: 169.4px; height: 49.8px; transform: translateX(-50%); color: var(--muted); z-index: 2; pointer-events: none; opacity: 0; transition: opacity .4s; }
 body.intro:not(.launch) #brandIntro { opacity: 1; }
 /* 첫 화면 워드마크 — 왼쪽에서 번개처럼 긋고 들어와 멈춘 뒤, 빛줄기가 한 번 훑고 지나간다 */
 body.intro:not(.launch) #brandIntro {
@@ -160,7 +160,7 @@ body.intro:not(.launch) #brandIntro {
   100% { opacity: 1; transform: translateX(-50%) skewX(0); filter: blur(0); }
 }
 /* 기체를 눌러 넘어갈 때 — 화면 한가운데 큰 워드마크 */
-#logoPlay { position: fixed; left: 50%; top: 50%; width: min(64vw, 620px); aspect-ratio: 1237 / 243; transform: translate(-50%, -50%);
+#logoPlay { position: fixed; left: 50%; top: 50%; width: calc(min(64vw, 620px) * 1.1293); aspect-ratio: 1397.1 / 403;   /* 글자 + 흐림이 퍼질 여백 */ transform: translate(-50%, -50%);
   color: var(--ink2); z-index: 50; pointer-events: none; opacity: 0;
   -webkit-mask-image: linear-gradient(105deg, #000 0 42%, rgba(0,0,0,.08) 50%, #000 58% 100%); mask-image: linear-gradient(105deg, #000 0 42%, rgba(0,0,0,.08) 50%, #000 58% 100%);
   -webkit-mask-size: 300% 100%; mask-size: 300% 100%; }
@@ -429,7 +429,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
       <button data-t="dlv">배송</button>
     </nav>
     <div id="loading"><i></i></div>
-    <svg class="brand" id="brandIntro" role="img" aria-label="SHADE SIGNALS"><use href="#i-brand"/></svg>
+    <svg class="brand" id="brandIntro" role="img" aria-label="SHADE SIGNALS" viewBox="1.5 -66 1397.1 403"><use href="#i-brand" x="81.5" y="14" width="1237.1" height="243"/></svg>
     <canvas id="view"></canvas>
     <div id="map"></div>
     <div id="calls"></div>
@@ -461,7 +461,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
   </form>
 </div>
 
-<svg id="logoPlay" role="img" aria-label="SHADE SIGNALS"><use href="#i-brand"/></svg>
+<svg id="logoPlay" role="img" aria-label="SHADE SIGNALS" viewBox="1.5 -66 1397.1 403"><use href="#i-brand" x="81.5" y="14" width="1237.1" height="243"/></svg>
 
 <script type="importmap">{ "imports": { "three": "/vendor/three/three.module.js", "three/addons/": "/vendor/three/addons/" } }</script>
 <script type="module" src="/cockpit.js"></script>
