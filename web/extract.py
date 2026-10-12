@@ -396,12 +396,18 @@ def armed_window(log):
     return float(log.tmin), float(log.tmax), False
 
 
-def gps_utc(log, t_at):
-    """GPS 주·ms 로 t_at(부팅초) 의 KST. GPS 시각이 없으면 None."""
+def gps_utc(log, t_at, fix_only=True):
+    """GPS 주·ms 로 t_at(부팅초) 의 KST. GPS 시각이 없으면 None.
+
+    fix_only=False 면 3D fix 가 없어도 주 번호(GWk)가 있는 행을 쓴다 — DRONE01 은 fix 없이도 GPS 모듈이 시각을 알고 있었다
+    (2026-10-07 로그 19~22: 받은 시각·로그끼리 간격과 맞았다). 🔶 이 시각의 절대 오차는 측정 못 했다.
+    """
     g = log.get("GPS")
     if g is None:
         return None
-    ok = (g["GWk"] > 0) & (g["Status"] >= 3) & np.isfinite(g["GMS"])
+    ok = (g["GWk"] > 0) & np.isfinite(g["GMS"])
+    if fix_only:
+        ok &= g["Status"] >= 3
     if not ok.any():
         return None
     i = np.where(ok)[0][0]
@@ -1034,12 +1040,15 @@ def main():
     st = os.stat(path)
     stamp = time_from_name(path)
     gps_t = gps_utc(log, t0)
+    gps_src = "gps"
+    if gps_t is None:
+        gps_t, gps_src = gps_utc(log, t0, fix_only=False), "gps_nofix"   # fix 없이 모듈이 알던 시각
     row = {
         "name": os.path.basename(path),
         "size": st.st_size,
         # 정렬·표시 시각: 파일명 → GPS 시각(arm 순간). 둘 다 없으면 null (RTC 없음).
         "utc": stamp if stamp is not None else gps_t,
-        "time_source": "filename" if stamp is not None else ("gps" if gps_t else None),
+        "time_source": "filename" if stamp is not None else (gps_src if gps_t else None),
         "boot_utc": rep.get("utc"),
         "duration": rep.get("duration"),
         "alt_max": rep.get("alt_max"),
