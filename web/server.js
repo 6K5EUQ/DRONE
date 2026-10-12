@@ -505,9 +505,12 @@ async function handleLivePush(req, res) {
     const skip = have - from;
     if (skip < inc.length) for (const pt of inc.slice(skip)) live.track.push(pt);
   } else {
-    // 구멍이 생겼다 — 다음 푸시에서 처음부터 받도록 0 을 돌려준다.
-    live.track = [];
-    live.dropped = 0;
+    // 구멍이 생겼다 — 이 묶음을 새 기준으로 삼는다. 예전엔 비우고 0 을 돌려줘
+    //    "처음부터" 를 요구했는데, 트래커는 앞쪽을 버린 뒤라 0번부터는 줄 수 없다.
+    //    그러면 푸시마다 12000점이 통째로 올라오고 서버는 다시 비우는 일이
+    //    끝없이 반복된다 (2026-10-12, 상행 ~518 KB/s).
+    live.track = inc.slice();
+    live.dropped = from;
   }
   if (live.track.length > LIVE_TRACK_MAX) {
     const cut = live.track.length - LIVE_TRACK_MAX;
