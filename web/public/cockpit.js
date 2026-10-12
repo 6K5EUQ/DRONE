@@ -1443,7 +1443,6 @@ function render() {
 
   txt('sat', d.sats == null ? '—' : d.eph != null ? `${d.sats} (${d.eph.toFixed(1)})` : String(d.sats));   // 위성 수 (수평 오차 m)
   $('stSat').className = 'st ' + (d.fix != null && d.fix < 3 ? 'bad' : lvl(d.sats, 8, 5));
-  $('linkDot').className = 'dot' + (on ? ' on' : '');
 
 
   renderTiles();
