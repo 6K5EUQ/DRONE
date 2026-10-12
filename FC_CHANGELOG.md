@@ -315,6 +315,20 @@ FC 의 상태를 바꾸는 모든 작업을 남긴다.
   - 🔶 해석: **파워모듈 전류 센서가 작은 전류(무부하 모터 한 개 수백 mA 수준)를 못 본다.** 비행 중 호버(약 7 A)는 읽히므로
     큰 전류에서는 값이 나오지만, 낮은 전류 구간은 보이지 않거나 뭉개진다. 소모 mAh 적분이 낮게 나오는 한 원인일 수 있다 (미검증)
   - 09-16 지상시험에서 「15 % 스로틀에 총전류 0.15~0.19 A, 너무 작다」던 것과 같은 현상이다 ([00-progress](docs/procedures/00-progress.md))
+
+### 2026-10-12 14:59 — 배터리 failsafe 임계 `BATT_LOW_VOLT` 14.4 → 14.0, `BATT_CRT_VOLT` 14.0 → 13.2 (사용자 승인)
+
+- 작업 PC: ku PC (rim3 에서 원격 SSH 로 작업)
+- 경로: USB 직결 `/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00`, 미시동 확인 후 작성
+- 대상: 이 두 파라미터 **만**. 읽어 확인한 나머지(`BATT_FS_LOW_ACT=2` RTL, `BATT_FS_CRT_ACT=1` LAND, `BATT_LOW_TIMER=10`,
+  `BATT_LOW_MAH=0`, `BATT_CRT_MAH=0`)는 그대로다
+- 변경: `BATT_LOW_VOLT` **14.4 → 14.0** (셀당 3.5 V), `BATT_CRT_VOLT` **14.0 → 13.2** (셀당 3.3 V). 쓴 뒤 다시 읽어 확인
+- 백업: `params/params_20261012-1258_live-usb.param` (이후 다른 변경 없음 — `ESC_CALIBRATION` 은 0 으로 돌아왔다)
+- 이유: low 와 critical 이 0.4 V 차이뿐이라 사실상 동시에 터지고, 부하 새그만으로도 걸려 `PreArm: Battery failsafe` 가 반복됐다
+  ([00-progress](docs/procedures/00-progress.md) 미해결 4번)
+- 🟠 **만충에 가까운 팩 기준이다.** 로그 17~22 에서 부하 전압이 13.3~14.0 V 까지 내려갔다 — 🔶 시작 잔량이 약 40 % 이하인 팩은
+  14.0 V low(RTL)가 비행 중 걸릴 수 있다 (지연 10초가 짧은 새그는 거른다)
+- 다음 비행 로그에서 `Battery low`/`critical` 메시지와 `PreArm: Battery failsafe` 가 사라지는지 본다
 ---
 
 ## 🔶 아직 기록되지 않은 것 — 이 보드의 과거

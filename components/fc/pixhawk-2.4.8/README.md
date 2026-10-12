@@ -147,6 +147,8 @@ Motor1~4 로 순서대로 매핑할 뿐이고, 어느 MAIN 이 기체의 어느 
 
 📋 **비행 전에 반드시 재설정.** → [FC 셋업 절차 G 항](../../../docs/procedures/02-fc-setup.md)
 
+> 🟢 **2026-10-12 재설정함** — `BATT_LOW_VOLT` 14.4→14.0, `BATT_CRT_VOLT` 14.0→13.2 ([FC_CHANGELOG](../../../FC_CHANGELOG.md)). 위 표의 값은 이전 상태다.
+
 ### 자세 제어 PID
 
 | 파라미터 | 값 | 기본값 | |
