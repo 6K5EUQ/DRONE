@@ -1008,7 +1008,7 @@ const CRAFTS = [['SHADE01', 'https://shade01.shade-signals.com/', 4400], ['DRONE
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menu.hidden = true; });
 }
 
-// ── 기체 / 지도 / 공간 ───────────────────────────────────────────────
+// ── 기체 / 공간 / 지도 ───────────────────────────────────────────────
 let predLine = null;
 let lmap = null, trkLayer = null, trkCanvas = null, acMarker = null, homeMarker = null;
 let track = [], trkHave = 0, followAt = 0;
@@ -1093,7 +1093,7 @@ async function setMode(m) {
   renderTiles(); renderInfo(); resize();
 }
 // 기체 / 지도 / 공간 — 지도는 위에서 내려다본 2D 위성사진, 공간은 기체 화면 바닥에 위성사진을 깐다 (satStep)
-const VIEW_ORDER = ['3d', 'map', 'sat'];
+const VIEW_ORDER = ['3d', 'sat', 'map'];
 let viewMode = '3d';
 function pickView(v) {
   viewMode = v;
@@ -1102,7 +1102,7 @@ function pickView(v) {
   for (const b of document.querySelectorAll('#modes button')) b.classList.toggle('on', b.dataset.m === v);
 }
 $('modes').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) pickView(b.dataset.m); });
-// 왼쪽 Ctrl 을 혼자 눌렀다 떼면 기체 → 지도 → 공간 순으로 돈다. 다른 키·클릭·휠과 섞이면(Ctrl+C 등) 안 돈다
+// 왼쪽 Ctrl 을 혼자 눌렀다 떼면 기체 → 공간 → 지도 순으로 돈다. 다른 키·클릭·휠과 섞이면(Ctrl+C 등) 안 돈다
 let ctrlAlone = false;
 addEventListener('keydown', (e) => { if (e.code === 'ControlLeft') { if (!e.repeat) ctrlAlone = true; } else ctrlAlone = false; });
 addEventListener('pointerdown', () => { ctrlAlone = false; });
