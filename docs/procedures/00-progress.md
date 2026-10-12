@@ -253,6 +253,13 @@ low 와 critical 간격이 0.4 V 뿐이라 사실상 동시에 터진다.
 - 🔴 5 V 공급원 (ESC 가 OPTO/No BEC)
 - 🟠 전류센서 보정 (`BATT_AMP_PERVLT`)
 
+### 7. 🔴 GPS 모듈이 FC 에서 검출되지 않는다 (2026-10-12)
+
+읽기 전용 조회(ku PC 직결): `GPS_RAW_INT.fix_type=0` (NO_GPS), 외부 나침반(bus1) 사라짐,
+`COMPASS_EXTERNAL` 1→0. 지난 비행 로그 19~22 는 GPS 가 검출은 됐으나 위성 0 이었다.
+🔶 09-14 의 GPS 케이블 접촉 불량과 같은 증상 — **GPS 모듈 케이블부터 확인**한다 (아래 「2. GPS 케이블 접촉 불량」).
+원인 확정 전까지 실외 자동비행·미션은 보류. → [FC_CHANGELOG](../../FC_CHANGELOG.md) 2026-10-12
+
 ---
 
 ## 📋 작업 수칙 — FC USB 는 한 프로그램만
