@@ -1177,8 +1177,8 @@ async function pfRun() {
 const RATES = [1, 2, 4, 8];
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 // 목록의 `utc` 는 이름과 달리 이미 **한국시간**이다(extract.py 가 +9 해 둔다) — 다시 더하지 않는다.
-const fmtWhen = (kst, src) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(kst || '');
-  return m ? `${src === 'gps_nofix' ? '≈ ' : ''}${m[1]}.${m[2]}.${m[3]} ${m[4]}:${m[5]}` : ''; };   // ≈ = GPS 가 fix 없이 알던 시각
+const fmtWhen = (kst) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(kst || '');
+  return m ? `${m[1]}.${m[2]}.${m[3]} ${m[4]}:${m[5]}` : ''; };
 const PB_BADGE = { flight: '실비행', hover: '호버', ground: '지상', abort: '즉시 해제', noarm: '시동 없음', unknown: '판정 불가' };
 const PB_AUTO = { misn: '미션', rtl: 'RTL' };
 
@@ -1197,22 +1197,22 @@ async function pbSheet(open) {
     if (!rows.length) { sh.querySelector('.pbmsg').textContent = '기록 없음'; return; }
     sh.querySelector('.pbmsg').remove();
     const list = document.createElement('div'); list.className = 'pbl';
-    list.innerHTML = rows.map((x) => `<button data-log="${esc(x.name)}" data-utc="${esc(x.utc || '')}" data-src="${esc(x.time_source || '')}">
-      <span class="w">${esc(fmtWhen(x.utc, x.time_source) || x.name)}</span><span class="t"><span class="b ${esc(x.badge || '')}">${PB_BADGE[x.badge] || '—'}</span>${(x.auto || []).map((a) => `<span class="b ${esc(a)}">${esc(PB_AUTO[a] || a)}</span>`).join('')}</span>
+    list.innerHTML = rows.map((x) => `<button data-log="${esc(x.name)}" data-utc="${esc(x.utc || '')}">
+      <span class="w">${esc(fmtWhen(x.utc) || x.name)}</span><span class="t"><span class="b ${esc(x.badge || '')}">${PB_BADGE[x.badge] || '—'}</span>${(x.auto || []).map((a) => `<span class="b ${esc(a)}">${esc(PB_AUTO[a] || a)}</span>`).join('')}</span>
       <span class="n">${esc(mins(x.duration))}</span><span class="n">${x.alt_max != null ? x.alt_max.toFixed(0) + ' m' : '—'}</span></button>`).join('');
     sh.append(list);
   } catch { sh.querySelector('.pbmsg').textContent = '목록 오류'; }
 }
 $('pbSheet').addEventListener('click', (e) => {
   const b = e.target.closest('[data-log]');
-  if (b) pbStart(b.dataset.log, b.dataset.utc, b.dataset.src);
+  if (b) pbStart(b.dataset.log, b.dataset.utc);
 });
 $('pbBtn').onclick = () => pbSheet($('pbSheet').hidden);   // 재생 중에도 연다 — 고르면 그 파일로 바로 바뀐다
 
-async function pbStart(name, utc, src) {
+async function pbStart(name, utc) {
   pbSheet(false);
   if (pb.on) await pbStop(true);
-  pb.name = name; pb.when = fmtWhen(utc, src) || name;
+  pb.name = name; pb.when = fmtWhen(utc) || name;
   document.querySelector('.main').classList.add('pbmode');
   $('pbBar').hidden = false;
   $('pbName').textContent = pb.when;
