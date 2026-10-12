@@ -121,5 +121,5 @@ ELRS 와는 다른 구형 오픈소스 프로젝트)만 있을 뿐 **ExpressLRS 
 | ExpressLRS 되나? | 🔴 안 됨 — 내장 모듈이 Multiprotocol, ELRS 칩 자체가 없음 |
 | 소프트웨어 설정으로 켤 수 있나? | 🔴 불가 — 하드웨어 문제 |
 | 방법은? | 외장 JR 베이에 ELRS 모듈 구매·장착 (+ 기체 쪽 ELRS RX 별도 구매) |
-| 지금 쓰는 프로토콜은? | FrskyX (model17 "T1 Doran" 기준) |
+| 지금 쓰는 프로토콜은? | FrskyX (model17 "T1 Doran" 기준) = **FrSky D16**. 수신기 [RadioMaster R88 V2](../../receivers/radiomaster-r88-v2/README.md) 와 D16 으로 통신 (사용자 확인 2026-10-12) |
 | SD 카드 최신 상태 반영됐나? | 🟠 아니다 — `tx/backup/` 스냅샷에 Kill 스위치 추가분 누락 |

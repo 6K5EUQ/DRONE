@@ -13,7 +13,8 @@
 - 🟢 모터: GT DRONE 3508-380KV ×4 (보유)
 - 🟢 ESC: GT DRONE EC-X3 MultiRotor 30A OPTO, No BEC, 2S~6S ×4 (보유)
 - 🟢 FC: Pixhawk 2.4.8 — **PX4v3 타깃, ArduCopter V3.6.12 탑재, 쿼드 X 로 셋업됨**
-- 🟢 배터리: 6S 2900 mAh 70C, 4S 2900 mAh 20C (보유)
+- 🟢 배터리: 6S 2900 mAh 70C, 4S 2900 mAh ~~20C~~ 70C (보유)
+  - 🔶 2026-10-12 라벨 사진: **4cell 14.8 V 2900 mAh 팩이 70C 로 적혀 있다** (20C 아님) → [배터리](components/batteries/vega-graphene-4s-2900-70c/README.md)
 - 🟢 **4S 로 간다** — 6S 는 모터 정격 초과. [계산서 §4](docs/design/01-thrust-weight.md)
 
 미확정 — 조립 전에 답해야 하는 것:
@@ -22,7 +23,7 @@
 - 🔴 **프레임 모델명과 휠베이스** — 프롭 사이즈가 여기 묶인다
 - 🔴 **BEC** — ESC 가 OPTO(No BEC) 라 FC·수신기 5 V 공급원이 따로 필요하다
 - 🔴 **배터리 failsafe 임계** — 현재 값이 4S 에 맞지 않아 계속 오동작한다
-- 🟠 FC 전원 모듈(PM), GPS, 수신기 모델 확인
+- 🟠 FC 전원 모듈(PM — 라벨 「GM v1.0」, [기록](components/power/gm-power-module-v1.0/README.md)), GPS, 수신기 모델 확인 — 수신기는 **RadioMaster R88 V2** (2026-10-12 사용자 확인) → [수신기](components/receivers/radiomaster-r88-v2/README.md)
 - 🟠 로그 03 의 `Crash` 이력 — 기체·보드 손상 여부
 
 ---
