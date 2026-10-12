@@ -1010,7 +1010,7 @@ const CRAFTS = [['SHADE01', 'https://shade01.shade-signals.com/', 4400], ['DRONE
 
 // ── 기체 / 지도 / 공간 ───────────────────────────────────────────────
 let predLine = null;
-let lmap = null, trackLine = null, acMarker = null, homeMarker = null;
+let lmap = null, trkLayer = null, trkCanvas = null, acMarker = null, homeMarker = null;
 let track = [], trkHave = 0, followAt = 0;
 const AC_SVG = '<svg viewBox="0 0 32 32" width="34" height="34"><path d="M16 3l3 11 9 3v3l-9-1-1 7 3 2v2l-5-1-5 1v-2l3-2-1-7-9 1v-3l9-3z" fill="#3e6ae1" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>';
 async function ensureMap() {
@@ -1023,16 +1023,45 @@ async function ensureMap() {
   lmap.setView([36.5, 127.8], 7);   // 🔴 레이어 전에 뷰부터 (live.js 와 같은 함정)
   L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     { maxZoom: 20, maxNativeZoom: 18, attribution: 'Esri World Imagery' }).addTo(lmap);
-  trackLine = L.polyline([], { color: '#3e6ae1', weight: 3, opacity: 0.95 }).addTo(lmap);
+  trkCanvas = L.canvas({ padding: 0.5 });
+  trkLayer = L.layerGroup().addTo(lmap);
   predLine = L.polyline([], { color: '#8fb0ff', weight: 5, opacity: 0.9, dashArray: '2 8', lineCap: 'round' }).addTo(lmap);
   acMarker = L.marker([0, 0], { icon: L.divIcon({ className: 'ac', html: AC_SVG, iconSize: [34, 34], iconAnchor: [17, 17] }), interactive: false });
   homeMarker = L.circleMarker([0, 0], { radius: 6, color: '#fff', weight: 2, fillColor: '#171a20', fillOpacity: 1 });
   lmap.on('dragstart', () => { followAt = Date.now(); });
 }
+// 경로를 고도로 칠한다 — 꼬리선과 같은 색표로, 이 경로 안의 최저(파랑) ~ 최고(빨강).
+// 같은 색 칸이 이어지는 구간을 한 선으로 묶는다. 다시 칠하기는 초당 한 번(되감기는 바로)
+const TRK_BINS = 16;
+let trkN = 0, trkKey = '', trkAt = 0;
+function trkColor(t) {
+  const f = Math.max(0, Math.min(1, t)) * (TRAIL_CMAP.length - 1), k = Math.min(TRAIL_CMAP.length - 2, Math.floor(f)), u = f - k, A = TRAIL_CMAP[k], B = TRAIL_CMAP[k + 1];
+  return `rgb(${[0, 1, 2].map((j) => Math.round((A[j] + (B[j] - A[j]) * u) * 255)).join(',')})`;
+}
+function drawTrack() {
+  const n = track.length, key = n ? `${n}|${track[0][3]}|${track[n - 1][3]}` : '';
+  if (key === trkKey || (n >= trkN && performance.now() - trkAt < 1000)) return;
+  trkKey = key; trkN = n; trkAt = performance.now();
+  trkLayer.clearLayers();
+  if (n < 2) return;
+  let lo = Infinity, hi = -Infinity;
+  for (const p of track) if (p[2] != null) { lo = Math.min(lo, p[2]); hi = Math.max(hi, p[2]); }
+  const span = Math.max(1, hi - lo);   // 1 m 안쪽 차이는 한 색
+  const bin = (p) => p[2] == null ? 0 : Math.min(TRK_BINS - 1, Math.floor((p[2] - lo) / span * TRK_BINS));
+  let run = [[track[0][0], track[0][1]]], b = bin(track[0]);
+  for (let i = 1; i < n; i++) {
+    const p = track[i], k = bin(p);
+    run.push([p[0], p[1]]);
+    if (k !== b || i === n - 1) {
+      window.L.polyline(run, { renderer: trkCanvas, color: trkColor((b + 0.5) / TRK_BINS), weight: 3, opacity: 0.95, interactive: false }).addTo(trkLayer);
+      run = [[p[0], p[1]]]; b = k;
+    }
+  }
+}
 function renderMap() {
   if (!lmap) return;
   const d = D();
-  trackLine.setLatLngs(track.map((p) => [p[0], p[1]]));
+  drawTrack();
   const dd = D(), pts = [];
   if (pred.show && dd.lat != null) {
     let la = dd.lat, lo = dd.lon, chi = pred.chi;
@@ -1054,7 +1083,7 @@ function renderMap() {
     // 손으로 끈 뒤 8초는 따라가지 않는다 (live.js 와 같은 규칙)
     if (Date.now() - followAt > 8000) lmap.setView([d.lat, d.lon], Math.max(lmap.getZoom(), 17), { animate: false });
   } else if (track.length) {
-    lmap.fitBounds(trackLine.getBounds(), { padding: [40, 40] });
+    lmap.fitBounds(window.L.latLngBounds(track.map((p) => [p[0], p[1]])), { padding: [40, 40] });
   }
 }
 async function setMode(m) {
