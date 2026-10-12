@@ -72,7 +72,7 @@ let renderer = null;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); } catch { canvas.style.display = 'none'; }
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(26, 1, 0.05, 600);   // 높이 뜨면 먼 땅까지 보인다
+const camera = new THREE.PerspectiveCamera(26, 1, 0.05, 1200);   // 1 km 물러나도 먼 땅까지 보인다
 const craft = new THREE.Group();      // 사용자가 끌어 돌리는 것
 const flyG = new THREE.Group();       // 첫 화면에서 날아가는 것
 const attitude = new THREE.Group();   // 실시간 자세
@@ -258,7 +258,7 @@ const look = new THREE.Vector3(0, 0.02, 0);
 const ptrs = new Map();
 let pinch0 = 0, dist0 = 0, down = null;
 const clampTilt = (t) => Math.max(-Math.PI / 2, Math.min(Math.PI / 2, t));   // ±90° — 음수면 바닥 밑에서 올려다본다
-const clampDist = (d) => Math.max(0.5, Math.min(80, d));   // 80 = 160 m 밖까지 물러나 도착지까지 본다   // 높이 뜨면 멀리 물러나 땅까지 본다
+const clampDist = (d) => Math.max(0.5, Math.min(500, d));   // 500 = 1 km 밖까지 물러나 비행 경로 전체를 본다
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 function pickBay(e) {
   const r = canvas.getBoundingClientRect();
@@ -1008,7 +1008,7 @@ const CRAFTS = [['SHADE01', 'https://shade01.shade-signals.com/', 4400], ['DRONE
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menu.hidden = true; });
 }
 
-// ── 기체 / 지도 ──────────────────────────────────────────────────────
+// ── 기체 / 지도 / 공간 ───────────────────────────────────────────────
 let predLine = null;
 let lmap = null, trackLine = null, acMarker = null, homeMarker = null;
 let track = [], trkHave = 0, followAt = 0;
@@ -1059,17 +1059,30 @@ function renderMap() {
 }
 async function setMode(m) {
   mode = m;
-  for (const b of document.querySelectorAll('#modes button')) b.classList.toggle('on', b.dataset.m === m);
   document.querySelector('.main').classList.toggle('mapmode', m === 'map');
   if (m === 'map') { await ensureMap(); lmap.invalidateSize(); trkHave = 0; track = []; if (!pb.on) pollLive(true); }
   renderTiles(); renderInfo(); resize();
 }
-// 기체 / 지도 — 지도는 기체 화면 바닥에 위성사진을 깐다 (satStep)
-function setSat(on) {
-  sat.on = on;
-  for (const b of document.querySelectorAll('#modes button')) b.classList.toggle('on', (b.dataset.m === 'map') === on);
+// 기체 / 지도 / 공간 — 지도는 위에서 내려다본 2D 위성사진, 공간은 기체 화면 바닥에 위성사진을 깐다 (satStep)
+const VIEW_ORDER = ['3d', 'map', 'sat'];
+let viewMode = '3d';
+function pickView(v) {
+  viewMode = v;
+  sat.on = v === 'sat';
+  if ((v === 'map') !== (mode === 'map')) setMode(v === 'map' ? 'map' : '3d');
+  for (const b of document.querySelectorAll('#modes button')) b.classList.toggle('on', b.dataset.m === v);
 }
-$('modes').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setSat(b.dataset.m === 'map'); });
+$('modes').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) pickView(b.dataset.m); });
+// 왼쪽 Ctrl 을 혼자 눌렀다 떼면 기체 → 지도 → 공간 순으로 돈다. 다른 키·클릭·휠과 섞이면(Ctrl+C 등) 안 돈다
+let ctrlAlone = false;
+addEventListener('keydown', (e) => { if (e.code === 'ControlLeft') { if (!e.repeat) ctrlAlone = true; } else ctrlAlone = false; });
+addEventListener('pointerdown', () => { ctrlAlone = false; });
+addEventListener('wheel', () => { ctrlAlone = false; }, { passive: true });
+addEventListener('keyup', (e) => {
+  if (e.code !== 'ControlLeft' || !ctrlAlone) return;
+  ctrlAlone = false;
+  pickView(VIEW_ORDER[(VIEW_ORDER.indexOf(viewMode) + 1) % VIEW_ORDER.length]);
+});
 
 // ── 비행 전 점검 ─────────────────────────────────────────────────────
 // 점검 스트림(/api/preflight/stream).
@@ -1449,7 +1462,7 @@ async function loadRec() {
 // 테스트 탭 — 같은 화면을 **이 브라우저 안의 시뮬레이터**로 돌린다. 기체가 기지에 연결된 것처럼
 // 놓이고, 지점을 부르면 상승·직선 순항·하강으로 날아간다. 서버에는 아무것도 쓰지 않는다
 // (배송 상태·기록, 다른 사람 화면, 앱 알림 모두 그대로). 지점 목록만 서버에서 읽는다.
-const dlv = { st: null, off: false, sel: null, err: '', timer: 0, drawn: '', card: '', cardSer: '', satPrev: false, menu: false };
+const dlv = { st: null, off: false, sel: null, err: '', timer: 0, drawn: '', card: '', cardSer: '', viewPrev: '3d', menu: false };
 // 3D — 지점 원판·진행 구간 선은 땅(world)에, 이름표는 화면(#dlvPts)에
 const dlvG = new THREE.Group(); dlvG.visible = false; world.add(dlvG);
 const dlvPads = new Map();          // 지점 id → { g, el }
@@ -1477,7 +1490,7 @@ const view = () => dlv.st;
 
 async function dlvEnter() {
   dlv.err = ''; dlv.card = '';
-  dlv.satPrev = sat.on; setSat(true);   // 배송은 위성 지도 바닥으로 연다 — 나가면 원래대로
+  dlv.viewPrev = viewMode; pickView('sat');   // 배송은 공간(위성 바닥)으로 연다 — 나가면 원래대로
   pollLive(true);                       // 기체를 배송 기체로 바로 바꿔 받는다
   dlvG.visible = true; $('dlvPts').hidden = false;
   document.body.classList.add('dlvmode');
@@ -1487,7 +1500,7 @@ async function dlvEnter() {
 function dlvLeave() {
   clearTimeout(dlv.timer);
   dlv.sel = null;
-  if (!dlv.satPrev) setSat(false);
+  pickView(dlv.viewPrev);
   pollLive(true);                       // 다시 실제 실시간 상태로
   dlvG.visible = false; $('dlvPts').hidden = true;
   document.body.classList.remove('dlvmode');
@@ -1690,7 +1703,7 @@ tick(); setInterval(tick, 5000);
 renderInfo(); render(); pollLive(); loadRec(); setInterval(loadRec, 60000);
 // 주소로 바로 열기 — /cockpit#pf 점검, #map 지도
 if (location.hash === '#pf') document.querySelector('[data-t=pf]').click();
-if (location.hash === '#map') setSat(true);
+if (location.hash === '#map') pickView('sat');
 if (location.hash === '#dlv') document.querySelector('[data-t=dlv]').click();
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (!$('modal').hidden) $('modal').hidden = true; else if (!$('pbSheet').hidden) pbSheet(false); else if (sel) selectBay(null); }

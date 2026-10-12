@@ -164,7 +164,7 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, lpOut .5s ease-i
 @keyframes lpIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes lpOut { to { opacity: 0; transform: translate(-50%, -50%); filter: blur(10px); } }   /* 제자리에서 흐려지며 사라진다 */
 
-/* 기체 / 지도 전환 — 상태줄 왼쪽의 두 칸짜리 스위치 */
+/* 기체 / 지도 / 공간 전환 — 상태줄 왼쪽의 세 칸짜리 스위치 */
 .seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
 .seg button { border: 0; background: none; font-size: 13px; font-weight: 600; color: var(--dim); padding: 5px 14px; border-radius: 6px; cursor: pointer; }
 .seg button.on { background: #fff; color: var(--ink2); }
@@ -172,7 +172,7 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, lpOut .5s ease-i
 .main.mapmode #map { display: block; }
 .main.mapmode #view, .main.mapmode .tabs, .main.mapmode #calls, .main.mapmode .tiles { display: none; }
 .main.mapmode .bar { background: linear-gradient(rgba(244,244,246,.92), rgba(244,244,246,0)); }
-#map .leaflet-tile-pane { filter: saturate(.75) brightness(1.04); }
+#map .leaflet-tile-pane { filter: saturate(.75) brightness(1.04); opacity: .7; }   /* 투명도 30% — 뒤의 밝은 바탕이 비쳐 뿌옇게 */
 /* 배송 — 3D 땅 위 지점 이름표 */
 #dlvPts { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 #dlvPts[hidden], body.intro #dlvPts { display: none; }
@@ -409,7 +409,7 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
 
   <section class="main">
     <div class="bar">
-      <div class="seg" id="modes"><button data-m="3d" class="on">기체</button><button data-m="map">지도</button></div>
+      <div class="seg" id="modes"><button data-m="3d" class="on">기체</button><button data-m="map">지도</button><button data-m="sat">공간</button></div>
       <button class="pbbtn" id="pbBtn"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z"/></svg>재생</button>
       <span class="grow"></span>
       <span class="st" id="stSat"><svg class="i"><use href="#i-sat"/></svg><span class="num" id="sat">—</span></span>
