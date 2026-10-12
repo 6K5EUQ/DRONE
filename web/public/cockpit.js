@@ -35,7 +35,7 @@ const BAYS = {
     ['프롭', '12 × 4.5 2엽'],
     ['회전', '좌전·우후 CW · 우전·좌후 CCW'] ] },
   battery: { name: '배터리', rows: [
-    ['배터리', '4S 2,900 mAh 20C'],
+    ['배터리', '4S 2,900 mAh 70C'],
     ['위치', '아랫판 밑'] ] },
   power: { name: 'ESC', rows: [
     ['ESC', 'GT DRONE EC-X3 30 A × 4'],
