@@ -25,6 +25,8 @@ import time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import batt_soc   # 같은 폴더 — 시작 잔량 (시동 전 무부하 전압)
+
 try:
     from pymavlink import mavutil
 except ImportError:
@@ -247,6 +249,8 @@ class State:
         self.boot = time.time()
         self._seq = 0
         self._last_track = 0.0
+        self._soc = None                # {'p0': 시작 잔량 %, 'fc0': 그때 FC 잔량 %, 'fc': 마지막 FC 잔량 %}
+        self._boot_ms = None            # 마지막 SYSTEM_TIME.time_boot_ms — 줄면 FC 가 다시 켜진 것
 
     # ── 수신 ──────────────────────────────────────────────────────
     def feed(self, msg):
@@ -265,6 +269,26 @@ class State:
                 self.messages.append(
                     {'t': time.time(), 'sev': 3,
                      'text': '파싱 오류 %s: %s' % (t, exc)})
+
+    def _batt_pct(self, d, fc_pct):
+        """잔량(%) — 시동 전 무부하 전압으로 시작 잔량을 잡고, 그 뒤에는 FC 가 센 소모량(100 % 에서 줄어든 만큼)만 뺀다.
+
+        ArduCopter 3.6 은 부팅 때 100 % 로 시작해서 반쯤 쓴 팩을 꽂아도 100 % 가 나온다.
+        시작 전압을 못 본 채 켜졌으면(비행 중에 연결) FC 값을 그대로 쓴다.
+        """
+        if fc_pct is None:
+            return None
+        s = self._soc
+        if s is not None and fc_pct > s['fc']:
+            s = self._soc = None        # FC 잔량이 올라갔다 — 다시 켜진 것
+        volt, cur = d.get('volt'), d.get('cur')
+        if (s is None and not d.get('armed') and volt and cur is not None
+                and cur < batt_soc.REST_MAX_A):
+            s = self._soc = {'p0': batt_soc.pct_from_rest_voltage(volt), 'fc0': fc_pct, 'fc': fc_pct}
+        if s is None:
+            return fc_pct
+        s['fc'] = fc_pct
+        return int(round(max(0.0, min(100.0, s['p0'] - (s['fc0'] - fc_pct)))))
 
     def _apply(self, t, msg, d):
         if t == 'HEARTBEAT':
@@ -285,11 +309,16 @@ class State:
                          if msg.voltage_battery not in (0, 65535) else None)
             d['cur'] = (msg.current_battery / 100.0
                         if msg.current_battery != -1 else None)
-            d['batt_pct'] = (msg.battery_remaining
-                             if msg.battery_remaining != -1 else None)
+            d['batt_pct'] = self._batt_pct(
+                d, msg.battery_remaining if msg.battery_remaining != -1 else None)
             d['load'] = round(msg.load / 10.0, 1)
             d['drop'] = msg.drop_rate_comm
             d['errors_comm'] = msg.errors_comm
+
+        elif t == 'SYSTEM_TIME':
+            if self._boot_ms is not None and msg.time_boot_ms < self._boot_ms:
+                self._soc = None        # FC 가 다시 켜졌다 — 새 배터리일 수 있다
+            self._boot_ms = msg.time_boot_ms
 
         elif t == 'BATTERY_STATUS':
             # ArduCopter 3.6.12 는 여기를 껍데기로 보낸다 (실측). 값이 실제로

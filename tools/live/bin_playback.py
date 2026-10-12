@@ -11,6 +11,8 @@
 import math
 import os
 
+import batt_soc   # 같은 폴더 — 시작 잔량 (시동 전 무부하 전압)
+
 from pymavlink import mavutil
 
 FRAME_HZ = 5.0
@@ -57,6 +59,23 @@ def _pct_from_mah(used_mah):
         return None
     pct = (1.0 - used_mah / BATT_CAPACITY_MAH) * 100.0
     return int(max(0.0, min(100.0, pct)))
+
+
+def _batt_start(bat):
+    """로그 첫 몇 초의 무부하 샘플에서 (시작 잔량 %, 그때의 누적 소모 mAh). 없으면 None.
+
+    🟠 2026-10-12 정정: 위 「만충을 가정한다」 는 쓰던 배터리를 꽂으면 틀렸다. 이 팩은 만충이 아닌 채 날았다
+       (셀당 3.65~3.89 V 에서 충전 시작). 시동 직후 무부하 전압에서 시작 잔량을 잡고 그 뒤 소모만 뺀다.
+    """
+    if not bat:
+        return None
+    t0 = bat[0][0]
+    for ts, volt, cur, tot in bat:
+        if ts - t0 > 5.0:
+            break
+        if tot is not None and cur is not None and cur < batt_soc.REST_MAX_A and volt and volt > 9.0:
+            return batt_soc.pct_from_rest_voltage(volt), tot
+    return None
 
 
 def load_flight(path):
@@ -170,6 +189,8 @@ def load_flight(path):
 
     att.sort(); gps.sort(); bat.sort(); rcou.sort(); ctun.sort()
 
+    batt0 = _batt_start(bat)
+
     n_frames = max(1, int(dur * FRAME_HZ) + 1)
     frames = []
     track = []
@@ -208,7 +229,10 @@ def load_flight(path):
             d['cur'] = round(b[2], 2)
             if b[3] is not None:
                 d['mah'] = round(b[3], 1)
-                pct = _pct_from_mah(b[3])
+                if batt0:
+                    pct = int(max(0.0, min(100.0, batt0[0] - (b[3] - batt0[1]) / BATT_CAPACITY_MAH * 100.0)))
+                else:
+                    pct = _pct_from_mah(b[3])   # 시작 전압을 못 봤다 — 만충 가정으로 돌아간다
                 if pct is not None:
                     d['batt_pct'] = pct
                     d['batt_pct_est'] = True   # FC 가 준 값이 아니라 계산한 값
