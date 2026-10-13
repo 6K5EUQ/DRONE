@@ -968,6 +968,8 @@ const TILES = {
     ['trip', '이동 거리', ...dist(trav.now)],
     ['volt', '전압', num(d.volt, 1), 'V'],
     ['bat', '배터리', num(d.batt_pct), '%', lvl(d.batt_pct, 35, 20)],
+    // EKF 나침반 분산(EKF_STATUS_REPORT.compass_variance). 0.8 을 넘으면 EKF 페일세이프 기준이다
+    ['mag', '나침반', num(d.ekf_ratio && d.ekf_ratio.mag, 2), '', lvl(d.ekf_ratio && d.ekf_ratio.mag, 0.5, 0.8, false)],
   ],
   rec: () => [
     ['count', '비행 횟수', R ? String(R.n) : '—', '회'],
