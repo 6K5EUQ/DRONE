@@ -315,7 +315,7 @@ canvas.addEventListener('wheel', (e) => { e.preventDefault(); goal.on = false; c
 canvas.addEventListener('dblclick', () => setView());
 
 function setView() {
-  const v = VIEWS[intro ? 'intro' : sel ? BAYS[sel].view || 'bay' : tab || 'sum'], twoPi = Math.PI * 2;
+  const v = VIEWS[intro ? 'intro' : sel ? BAYS[sel].view || 'bay' : tab === 'mis' ? 'fly' : tab || 'sum'], twoPi = Math.PI * 2;
   goal.yaw = v.yaw + Math.round((cam.yaw - v.yaw) / twoPi) * twoPi;   // 가까운 쪽으로 돈다
   goal.tilt = v.tilt; goal.dist = v.dist; goal.on = true; cam.vYaw = cam.vTilt = 0;
 }
@@ -899,6 +899,7 @@ function rowsHtml(rows) {
 function renderInfo() {
   const box = $('info');
   if (tab === 'dlv') { box.hidden = true; renderDlv(); return; }   // 배송 칸은 왼쪽 패널에 있다
+  if (tab === 'mis') { box.hidden = false; misInfo(box); return; }
   if (mode !== '3d') { box.hidden = true; return; }
   if (sel) {
     const b = BAYS[sel];
@@ -991,6 +992,7 @@ $('tabs').addEventListener('click', (e) => {
   setView(); renderTiles(); renderInfo();
   if (prev === 'dlv' && tab !== 'dlv') dlvLeave();
   if (tab === 'dlv' && prev !== 'dlv') dlvEnter();
+  misTab();
 });
 
 // ── 기체 전환 — 이름을 누르면 기체 목록. 트래커 PC(localhost)에서는 그 PC 의 다른 트래커 콕핏으로 간다.
@@ -1080,7 +1082,7 @@ function renderMap() {
     const el = acMarker.getElement();
     if (el) el.firstChild.style.transform = `rotate(${d.hdg || 0}deg)`;
     // 손으로 끈 뒤 8초는 따라가지 않는다 (live.js 와 같은 규칙)
-    if (Date.now() - followAt > 8000) lmap.setView([d.lat, d.lon], Math.max(lmap.getZoom(), 17), { animate: false });
+    if (tab !== 'mis' && Date.now() - followAt > 8000) lmap.setView([d.lat, d.lon], Math.max(lmap.getZoom(), 17), { animate: false });
   } else if (track.length) {
     lmap.fitBounds(window.L.latLngBounds(track.map((p) => [p[0], p[1]])), { padding: [40, 40] });
   }
@@ -1467,6 +1469,7 @@ async function pollLive(now) {
     }
   } catch { S = { live: false, d: {} }; }
   render();
+  misSync();
   // 연결 중에는 응답이 오는 대로 바로 다시 묻는다(최소 0.2초) — 1초 간격이면 그만큼 늦게 보였다
   pollTimer = setTimeout(pollLive, linked() ? 200 : 4000);
 }
@@ -1736,3 +1739,33 @@ addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (!$('modal').hidden) $('modal').hidden = true; else if (!$('pbSheet').hidden) pbSheet(false); else if (sel) selectBay(null); }
   else if (intro && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); launch(); }   // 좁은 창에서 스페이스가 페이지를 내리지 않게
 });
+
+// ── 미션 탭 — FC 의 현재 미션을 보기만 한다 (S.mission = [[lat, lon, seq, cmd]], S.d.wp_seq). ──
+const MIS_CMD = { 22: '이륙', 16: '경유', 19: '호버', 21: '착륙' };
+const mis = { layer: null, sig: '', fit: false };
+const misItems = () => (Array.isArray(S.mission) ? S.mission : []);
+function misInfo(box) {
+  const items = misItems(), cur = S.d && S.d.wp_seq;
+  box.innerHTML = `<div class="ih"><b>미션</b></div>` + (items.length
+    ? items.map((m, i) => `<div class="row"><span class="num">${i + 1}</span><span>${esc(MIS_CMD[m[3]] || String(m[3]))}</span><b class="num">${cur === m[2] ? '● ' : ''}${m[0].toFixed(5)}, ${m[1].toFixed(5)}</b></div>`).join('')
+    : '<div class="row"><span>미션 없음</span></div>');
+}
+function misTab() {
+  mis.sig = ''; mis.fit = false;
+  document.querySelector('.main').classList.toggle('mis', tab === 'mis');
+  if (tab === 'mis' && viewMode === '3d') pickView('map');
+  misSync();
+}
+function misSync() {
+  const L = window.L, items = misItems(), cur = S.d && S.d.wp_seq;
+  if (!lmap || !L || tab !== 'mis') { if (mis.layer && lmap) lmap.removeLayer(mis.layer); mis.sig = ''; return; }
+  const sig = JSON.stringify([items, cur]);
+  if (sig === mis.sig) return;
+  mis.sig = sig;
+  if (!mis.layer) mis.layer = L.layerGroup();
+  mis.layer.clearLayers().addTo(lmap);
+  if (items.length > 1) L.polyline(items.map((m) => [m[0], m[1]]), { color: '#3e6ae1', weight: 3, opacity: 0.9, interactive: false }).addTo(mis.layer);
+  items.forEach((m, i) => L.marker([m[0], m[1]], { interactive: false, icon: L.divIcon({ className: 'mk' + (cur === m[2] ? ' cur' : ''), html: `<b>${i + 1}</b>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(mis.layer));
+  if (items.length && !mis.fit) { mis.fit = true; lmap.fitBounds(L.latLngBounds(items.map((m) => [m[0], m[1]])), { padding: [60, 60], maxZoom: 18 }); }
+  misInfo($('info'));
+}
