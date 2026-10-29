@@ -27,6 +27,7 @@ import os
 import socket
 import sys
 import time
+import gzip
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -101,8 +102,10 @@ def _push(to, key, payload):
        idle 연결을 끊는 것은 정상이고, 그때마다 예외를 올리면 호출부가
        backoff 를 걸어 중계가 느려진다.
     """
-    body = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+    # gzip — 약 2.2 KB → 0.8 KB (2026-10-29). 서버(server.js)가 Content-Encoding 을 보고 푼다.
+    body = gzip.compress(json.dumps(payload, separators=(',', ':')).encode('utf-8'), 6)
     headers = {'Content-Type': 'application/json',
+               'Content-Encoding': 'gzip',
                'User-Agent': USER_AGENT,
                'X-Live-Key': key}
     for attempt in (0, 1):

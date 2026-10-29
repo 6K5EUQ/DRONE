@@ -481,6 +481,11 @@ async function handleLivePush(req, res) {
   try { raw = await readBody(req, 1024 * 1024); }
   catch { return sendJson(req, res, 413, { error: '너무 크다' }); }
 
+  // 중계는 gzip 으로 보낸다 (2026-10-29). 생 JSON 도 받는다.
+  if (/\bgzip\b/.test(req.headers['content-encoding'] || '')) {
+    try { raw = zlib.gunzipSync(raw, { maxOutputLength: 4 * 1024 * 1024 }); }
+    catch { return sendJson(req, res, 400, { error: 'gzip 이 아니다' }); }
+  }
   let snap;
   try { snap = JSON.parse(raw.toString('utf8')); }
   catch { return sendJson(req, res, 400, { error: 'JSON 이 아니다' }); }
