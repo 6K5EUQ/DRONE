@@ -1,5 +1,5 @@
 # rim3 user 유닛 — ~/.config/systemd/user/drone-livepush.service
-# drone-live 의 /api/state 를 drone01.shade-signals.com 로 1초마다 올린다 (한 방향).
+# drone-live 의 /api/state 를 drone01.shade-signals.com 로 0.2초(5Hz)마다 올린다 (한 방향).
 # 키: ~/.config/drone-live.env 에 LIVE_PUSH_KEY=<서버 .env 와 같은 값>
 [Unit]
 Description=DRONE01 live push -> drone01.shade-signals.com
@@ -7,6 +7,7 @@ After=drone-live.service
 
 [Service]
 EnvironmentFile=%h/.config/drone-live.env
+Environment=LIVE_PUSH_INTERVAL=0.2
 ExecStart=%h/DRONE/.venv/bin/python %h/DRONE/web/live/livepush.py
 Restart=always
 RestartSec=5

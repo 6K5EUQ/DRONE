@@ -5,7 +5,7 @@ Description=DRONE01 live (:4410)
 
 [Service]
 ExecStart=%h/DRONE/.venv/bin/python %h/DRONE/tools/live/drone_live.py --device auto --http 4410
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]

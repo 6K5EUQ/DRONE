@@ -38,7 +38,9 @@ import urllib.request
 # (POLL_MS)만 올려도 소용없다 — 소스가 1Hz 면 폴 대부분이 같은 값이다.
 #
 # ⚠️ 데이터를 먹는다. 현장 회선이 모바일 테더링이면 10Hz 는 프레임 크기 ×10 /s
-#    다. 아까우면 `--interval 0.2` (5Hz) 로 낮춰라.
+#    다. 아까우면 `--interval 0.2` (5Hz) 또는 env `LIVE_PUSH_INTERVAL=0.2` 로 낮춰라.
+#    raspb1 의 drone-livepush.service 는 env 로 0.2 (5Hz) 를 쓴다 — 0.1 일 때
+#    wlan0 송신 약 82 MB/h — 2026-10-30 실측.
 #
 # ⚠️ 주기를 왕복 시간보다 짧게 잡지 마라 — 루프가 쉬지 못하고 요청만 쌓인다.
 DEFAULT_INTERVAL = 0.1
