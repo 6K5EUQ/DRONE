@@ -76,6 +76,31 @@ def dumps_json(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
 
 
+# 파이(UPS 보드)의 남은 배터리 — ups-log 가 1분마다 남기는 CSV 의 마지막 줄.
+# 파일이 없거나 3분 넘게 안 갱신되면 None (rim3·랩서버는 이 파일이 없다).
+UPS_CSV = os.environ.get('DRONE_UPS_CSV', os.path.expanduser('~/ups_history.csv'))
+_ups = {'at': 0.0, 'pct': None}
+
+
+def pi_batt():
+    if time.monotonic() - _ups['at'] < 10:
+        return _ups['pct']
+    _ups['at'] = time.monotonic()
+    pct = None
+    try:
+        with open(UPS_CSV, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 256))
+            row = f.read().decode('utf-8', 'replace').strip().splitlines()[-1].split(',')
+        ts = time.mktime(time.strptime(row[0], '%Y-%m-%d %H:%M:%S'))
+        if time.time() - ts < 180:
+            pct = round(float(row[2]))
+    except (OSError, ValueError, IndexError):
+        pass
+    _ups['pct'] = pct
+    return pct
+
+
 # 재생할 .BIN 이 있는 곳. 하위 폴더까지 훑는다. 랩서버는 웹 업로드 폴더를 준다.
 LOG_DIRS = [p for p in os.environ.get('DRONE_LOG_DIRS', os.path.join(REPO, 'flights')).split(':') if p]
 
@@ -459,7 +484,7 @@ class State:
                 'sysid': self.sysid,
                 'uptime': round(time.time() - self.boot),
                 'vehicle': 'DRONE',      # 화면이 기체를 구분할 수 있게
-                'd': dict(self.d),
+                'd': dict(self.d, pi_batt=pi_batt()),
                 'home': self.home,
                 'mission': None,
                 'track_n': self.track_total,
