@@ -12,6 +12,11 @@
 읽기 전용이다. FC 로 나가는 바이트는 **데이터 스트림 요청뿐**이다 —
 `request_data_stream_send` 는 텔레메트리를 달라는 요청이고 파라미터·명령이
 아니다. 파라미터 쓰기, arm/disarm, 모드 변경은 이 파일에 없다.
+
+🔴 예외는 `--bridge 127.0.0.1:14560` (기본 꺼짐) 하나다. 켜면 FC 에서 받은 MAVLink 프레임을
+   그 UDP 주소(cmd_agent.py --live)로 그대로 내보내고, **그 주소에서 온** 프레임을 잠금 걸고
+   직렬로 FC 에 쓴다 — 명령을 만드는 것은 cmd_agent 이고 이 파일은 나르기만 한다.
+   RC_CHANNELS_OVERRIDE 는 다리에서도 버린다. 루프백 주소만 받는다.
 """
 
 import argparse
@@ -494,6 +499,70 @@ class State:
             }
 
 
+# ── 로컬 MAVLink 다리 (--bridge) ────────────────────────────────────────
+class Bridge:
+    """FC ↔ 로컬 UDP. FC 프레임을 peer 로 내보내고, peer 에서 온 프레임만 FC 에 쓴다.
+
+    --bridge 를 안 주면 만들지 않는다 — 그때 drone_live 는 예전 그대로 읽기 전용이다.
+    """
+
+    RC_OVERRIDE = 70                # RC_CHANNELS_OVERRIDE — 다리로 절대 안 보낸다
+
+    def __init__(self, addr):
+        host, _, port = addr.rpartition(':')
+        if not host.startswith('127.'):
+            sys.exit('--bridge 는 루프백(127.x.x.x:포트)만 받는다: %s' % addr)
+        self.peer = (host, int(port))
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind((host, 0))
+        self.lock = threading.Lock()    # 직렬 쓰기 — 스트림 요청과 다리가 같이 쓴다
+        self.conn = None
+        # 다리로 오는 것은 MAVLink2 다 (cmd_fc). v2 파서는 v1 프레임도 읽는다
+        from pymavlink.dialects.v20 import ardupilotmega as mav2
+        self.parser = mav2.MAVLink(None)
+        self.parser.robust_parsing = True
+        self.dropped = 0
+        threading.Thread(target=self._rx, daemon=True).start()
+        print('[bridge] FC ↔ udp %s:%d (보내는 쪽 %s:%d)' % (self.peer + self.sock.getsockname()), flush=True)
+
+    def attach(self, conn):
+        with self.lock:
+            self.conn = conn
+
+    def forward(self, msg):
+        """FC 에서 받은 프레임 원문을 peer 로."""
+        try:
+            self.sock.sendto(msg.get_msgbuf(), self.peer)
+        except OSError:
+            pass                        # peer 가 없다 (cmd_agent 꺼짐) — 정상
+
+    def _rx(self):
+        while True:
+            try:
+                data, src = self.sock.recvfrom(65535)
+            except OSError:
+                continue
+            if src != self.peer:        # cmd_agent 가 아닌 곳에서 온 것은 버린다
+                continue
+            try:
+                msgs = self.parser.parse_buffer(data) or []
+            except Exception:           # noqa: BLE001
+                continue
+            for m in msgs:
+                if m.get_type() == 'BAD_DATA':
+                    continue
+                if m.get_msgId() == self.RC_OVERRIDE:
+                    self.dropped += 1
+                    print('[bridge] RC_CHANNELS_OVERRIDE 버림 (%d)' % self.dropped, flush=True)
+                    continue
+                with self.lock:
+                    if self.conn is not None:
+                        try:
+                            self.conn.write(m.get_msgbuf())
+                        except Exception:   # noqa: BLE001
+                            pass
+
+
 # ── MAVLink 수신 스레드 ───────────────────────────────────────────────
 def find_fc():
     """이 기체의 FC(Pixhawk 2.4.8) USB 경로. USB id 로 고른다 — 다른 FC 는 안 잡는다."""
@@ -502,9 +571,10 @@ def find_fc():
     return os.path.realpath(hits[0]) if hits else None
 
 
-def reader(st, device, baud, stop):
+def reader(st, device, baud, stop, bridge=None):
     """FC 에 붙어 계속 읽는다. 끊기면 다시 붙는다. device='auto' 면 USB id 로 찾는다."""
     want = device
+    tx = bridge.lock if bridge else threading.Lock()   # 다리가 없으면 혼자 쓰는 잠금
     while not stop.is_set():
         conn = None
         device = find_fc() if want == 'auto' else want
@@ -531,9 +601,12 @@ def reader(st, device, baud, stop):
                   % (hb.get_srcSystem(), hb.type, hb.autopilot), flush=True)
 
             # 텔레메트리를 달라는 요청. 읽기 전용 보장을 깨지 않는다.
-            conn.mav.request_data_stream_send(
-                conn.target_system, conn.target_component,
-                mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
+            with tx:
+                conn.mav.request_data_stream_send(
+                    conn.target_system, conn.target_component,
+                    mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
+            if bridge:
+                bridge.attach(conn)
 
             last_req = time.monotonic()
             while not stop.is_set():
@@ -542,15 +615,20 @@ def reader(st, device, baud, stop):
                     # 2초 조용하면 스트림 요청을 다시 보낸다. FC 가 재부팅
                     # 되면 스트림 설정이 날아간다.
                     if time.monotonic() - last_req > 5:
-                        conn.mav.request_data_stream_send(
-                            conn.target_system, conn.target_component,
-                            mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
+                        with tx:
+                            conn.mav.request_data_stream_send(
+                                conn.target_system, conn.target_component,
+                                mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
                         last_req = time.monotonic()
                     continue
                 st.feed(msg)
+                if bridge and msg.get_type() != 'BAD_DATA':
+                    bridge.forward(msg)
         except Exception as exc:                    # noqa: BLE001
             print('[link] 끊김: %s' % exc, flush=True)
         finally:
+            if bridge:
+                bridge.attach(None)
             if conn is not None:
                 try:
                     conn.close()
@@ -740,6 +818,8 @@ def main():
     ap.add_argument('--public', action='append', default=None,
                     help='화면 자산 경로. 여러 번 줄 수 있고 앞이 이긴다. '
                          '(기본: 이 저장소의 web/live/public + web/public)')
+    ap.add_argument('--bridge', default=None, metavar='127.0.0.1:PORT',
+                    help='cmd_agent --live 용 로컬 MAVLink 다리 (기본 꺼짐 — 끄면 읽기 전용)')
     args = ap.parse_args()
 
     roots = [os.path.realpath(os.path.expanduser(p))
@@ -751,8 +831,9 @@ def main():
     st = State()
     stop = threading.Event()
     if args.device != 'none':      # none = 재생만 (랩서버)
+        bridge = Bridge(args.bridge) if args.bridge else None
         threading.Thread(target=reader,
-                         args=(st, args.device, args.baud, stop),
+                         args=(st, args.device, args.baud, stop, bridge),
                          daemon=True).start()
 
     Handler.st = st
