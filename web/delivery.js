@@ -111,6 +111,11 @@ function who(req) {
   const v = verify(cookieOf(req, COOKIE));
   return v ? { id: v.u, name: v.n, drone: false } : null;
 }
+/** 로그인 사용자만 — 쿠키 검사. 기체 키는 보지 않는다 (cmd.js 가 쓴다) */
+function session(req) {
+  const v = verify(cookieOf(req, COOKIE));
+  return v ? { id: v.u, name: v.n } : null;
+}
 const setCookie = (v, age) => `${COOKIE}=${v}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${age}`;
 
 // 쿠키로 인증하는 POST 의 CSRF 막이. shade01.shade-signals.com 가 같은 사이트라 SameSite 만으로는 모자란다.
@@ -493,4 +498,4 @@ function handle(req, res, url) {
   return false;
 }
 
-module.exports = { init, handle, health, judge, hidden, nameFrom, simSnapshot };
+module.exports = { init, handle, health, judge, hidden, nameFrom, simSnapshot, session, postGuard };

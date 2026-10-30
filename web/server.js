@@ -19,6 +19,7 @@ const zlib = require('zlib');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const delivery = require('./delivery');
+const cmd = require('./cmd');
 
 const REPO = path.dirname(__dirname);
 const PUBLIC = path.join(__dirname, 'public');
@@ -447,6 +448,8 @@ async function serveStatic(req, res, urlPath) {
 // 🔴 **한 방향뿐이다.** 받기만 하고, 여기서 기체로 나가는 경로는 없다.
 //    트래커(drone_live.py)가 FC 로 명령을 안 보낸다는 성질을 웹까지 이어 놓은
 //    것이다 — 웹에서 ARM·모드변경을 할 길이 구조적으로 존재하지 않는다.
+//    ⚠️ 2026-10-30 무효 — 라이브 중계는 여전히 한 방향이지만, 명령 대기열(cmd.js, /api/cmd)이
+//       생겼다. 파이가 롱폴로 가져가는 길이다 (1단계: 아직 FC 로 보내는 코드는 없다).
 //
 // 메모리에만 둔다. 디스크에 안 쓰는 이유: 라이브는 지금 이 순간의 값이고,
 // 재시작하면 rim3 가 다음 초에 다시 보낸다. 정본은 비행 후 .BIN 으로 올라온다.
@@ -743,6 +746,9 @@ async function route(req, res) {
   // 교내 배송 — 학교 계정 로그인과 배송 상태머신 (delivery.js). 405 차단보다 위에 있어야 한다.
   const dr = delivery.handle(req, res, url);
   if (dr) return dr;
+  // 웹 → 기체 명령 대기열 (cmd.js). 파이가 롱폴로 가져간다 — 405 차단보다 위
+  const cr = cmd.handle(req, res, url);
+  if (cr) return cr;
 
   if (p === '/api/health') {
     return sendJson(req, res, 200, {
@@ -869,6 +875,8 @@ async function main() {
   else log(`점검 에이전트 후보: ${PREFLIGHT_AGENTS.join(', ')}`);
   log(`지문 ${FINGERPRINT}, 로그 ${LOGS}`);
   delivery.init({ dataDir: DATA, env: process.env, send, readBody, log, getLive: () => live });
+  cmd.init({ dataDir: DATA, env: process.env, send, readBody, log, getLive: () => live,
+             session: delivery.session, postGuard: delivery.postGuard });
   await reconcile();
 
   http.createServer((req, res) => {
