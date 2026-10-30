@@ -1729,8 +1729,6 @@ async function dlvLogout() {
   dlvPoll();
 }
 
-function tick() { const n = new Date(); txt('clk', `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`); }
-tick(); setInterval(tick, 5000);
 renderInfo(); render(); pollLive(); loadRec(); setInterval(loadRec, 60000);
 // 주소로 바로 열기 — /cockpit#pf 점검, #map 지도
 if (location.hash === '#pf') document.querySelector('[data-t=pf]').click();
