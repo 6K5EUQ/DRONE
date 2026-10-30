@@ -22,6 +22,7 @@ DRONE01 의 콕핏·비행로그 사이트. **조회는 공개, 업로드만 공
 |---|---|
 | `server.js` | node 내장만 쓴다. 업로드·카탈로그·캐시·라이브 중계·재생 프록시 |
 | `delivery.js` | 교내 배송 — 학교 계정 대리 로그인, 배송 상태머신, 지점 ([설계 02](../docs/design/02-delivery-system.md)) |
+| `mission.js` | 미션 절차 탭 저장, 항목 계획·검증·hash, 배송 지점 자동 생성. 지형 `public/terrain/` (SHADE01 에서 복사) |
 | `test/` | 배송 시험 `delivery_test.js` 와 가짜 학교 로그인 서버 `fake_sugang.js` |
 | `extract.py` | ArduCopter `.BIN` → 목록 한 줄(`row`) / 요약+시계열(`full`). **유일한 파싱 경로** |
 | `public/` | 콕핏·목록·분석·비교·소개 화면, `vendor/`(leaflet·three·inter) |
@@ -105,6 +106,22 @@ DRONE01 의 콕핏·비행로그 사이트. **조회는 공개, 업로드만 공
 | `DELIVERY_KEY` | 기체(Pi)가 act·job 을 부를 키 |
 | `DELIVERY_ORIGINS` | 허용 Origin (기본 `https://drone01.shade-signals.com`) |
 | `PICKUP_WAIT`·`DEST_WAIT` | 착륙 후 대기 초과 시 복귀, 초 (기본 300·600, 운영값) |
+
+## 미션 (`mission.js`)
+
+🔴 FC 로 아무것도 보내지 않는다 — 항목을 만들고 검사만 한다. 업로드는 `mission_upload` 명령(cmd.js)이 같은 검사를 다시 돌린다.
+
+| 라우트 | 쓰임 |
+|---|---|
+| `GET /api/mission/tabs` | 내 절차 탭 (로그인) |
+| `PUT /api/mission/tabs/:id {name, steps, rev}` | 저장 — 운용자(`CMD_OPERATORS`), rev 가 다르면 409. `DATA_DIR/mission-tabs.json` |
+| `DELETE /api/mission/tabs/:id` | 삭제 — 운용자 |
+| `POST /api/mission/plan {steps \| title, home?}` | 항목·hash·검사 결과. `title` 만 주면 그 배송 지점으로 자동 생성 |
+
+- 항목: seq 0 홈(16) → 22 → 16·19 → 21, 프레임 3 만. 기지 500 m 안, 고도 ≤ 60 m, 항목 ≤ 30, 예상 4분 이하 — 운영값
+- 자동 생성 순항 H = max(경로 최고 지반, 목적지 지반) − 출발 지반 + 25 m. 🔶 추정 — DSM 30 m 격자라 건물·나무를 다 담지 못한다
+- hash: 항목 배열, 각 항목 키 정렬, 숫자 전부 `toFixed(7)`, 공백 없음 → sha256 앞 16자
+- 시험: `node web/test/mission_test.js`
 
 ## 포트
 

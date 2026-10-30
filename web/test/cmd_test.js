@@ -151,8 +151,14 @@ async function server() {
   await link({ armed: true });
   ok((await confirm('u01', arm.j.id)).j.reason === 'armed', '이미 시동 → rejected armed');
   arm = await cmd('u01', 'mission_start');
-  await link({ fix: 2 });
+  await link({ fix: 2, armed: true });
   ok((await confirm('u01', arm.j.id)).j.reason === 'gps', 'fix 2 → rejected gps');
+  arm = await cmd('u01', 'mission_start');
+  await link({ armed: false });
+  ok((await confirm('u01', arm.j.id)).j.reason === 'disarmed', 'mission_start 는 시동이 꺼져 있으면 → rejected disarmed');
+  arm = await cmd('u01', 'mission_start');
+  await link({ armed: true });
+  ok((await confirm('u01', arm.j.id)).j.state === 'queued', '시동 뒤 mission_start → queued');
   arm = await cmd('u01', 'arm');
   await link(); await sleep(3200);
   ok((await confirm('u01', arm.j.id)).j.reason === 'live-stale', '라이브 3초 넘음 → rejected live-stale');
@@ -183,7 +189,9 @@ async function server() {
   arm = await cmd('u01', 'arm');
   await link();
   ok((await confirm('u01', arm.j.id)).j.state === 'queued', 'arm queued (안 가져감)');
-  const wait = await cmd('u01', 'mission_upload', { items: [] });
+  // 업로드는 서버가 항목·hash 를 검사한다(mission.js) — 계획에서 받은 그대로 쓴다
+  const pl = (await req('POST', '/api/mission/plan', { who: 'u01', body: { title: '본관' } })).j;
+  const wait = await cmd('u01', 'mission_upload', { items: pl.items, hash: pl.hash });
   ok(wait.j.state === 'awaiting_confirm', 'mission_upload → awaiting_confirm (확인 안 함)');
   await sleep(11000);
   ok(await stateOf(arm.j.id) === 'expired', 'arm ttl 10초 지남 → expired');

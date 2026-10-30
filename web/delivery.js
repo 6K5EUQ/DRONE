@@ -498,4 +498,4 @@ function handle(req, res, url) {
   return false;
 }
 
-module.exports = { init, handle, health, judge, hidden, nameFrom, simSnapshot, session, postGuard };
+module.exports = { init, handle, health, judge, hidden, nameFrom, simSnapshot, session, postGuard, CATALOG };

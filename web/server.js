@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const delivery = require('./delivery');
 const cmd = require('./cmd');
+const mission = require('./mission');
 
 const REPO = path.dirname(__dirname);
 const PUBLIC = path.join(__dirname, 'public');
@@ -749,6 +750,9 @@ async function route(req, res) {
   // 웹 → 기체 명령 대기열 (cmd.js). 파이가 롱폴로 가져간다 — 405 차단보다 위
   const cr = cmd.handle(req, res, url);
   if (cr) return cr;
+  // 미션 탭·계획·검증 (mission.js) — 405 차단보다 위
+  const mr = mission.handle(req, res, url);
+  if (mr) return mr;
 
   if (p === '/api/health') {
     return sendJson(req, res, 200, {
@@ -877,6 +881,7 @@ async function main() {
   delivery.init({ dataDir: DATA, env: process.env, send, readBody, log, getLive: () => live });
   cmd.init({ dataDir: DATA, env: process.env, send, readBody, log, getLive: () => live,
              session: delivery.session, postGuard: delivery.postGuard });
+  mission.init({ dataDir: DATA, env: process.env, send, readBody, log, session: delivery.session, postGuard: delivery.postGuard });
   await reconcile();
 
   http.createServer((req, res) => {

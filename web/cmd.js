@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const mission = require('./mission');
 
 let C = null;          // init 이 넘긴 것 — dataDir, env, send, readBody, log, getLive, session, postGuard
 let LOGF = '';
@@ -129,14 +130,15 @@ function queue(c, by) {
 }
 
 /** 위험 명령의 사전조건 — 서버가 가진 라이브 상태(3초 안). 맞으면 null, 아니면 사유 */
-function precheck() {
+function precheck(kind) {
   const L = C.getLive();
   if (!L || !L.state || Date.now() - L.at > LIVE_FRESH_MS) return 'live-stale';
   const d = L.state.d || {};
   if (!(d.fix >= 3)) return 'gps';
   if (!(d.volt >= READY_VOLT)) return 'volt';
-  if (d.armed !== false) return 'armed';
-  return null;
+  // arm 은 꺼진 채로, mission_start 는 시동 뒤에(auto_armed — 순서는 3.6.12 소스 근거, SITL 미검증 🔶)
+  if (kind === 'mission_start') return d.armed === true ? null : 'disarmed';
+  return d.armed === false ? null : 'armed';
 }
 
 // ── 운용자 ──────────────────────────────────────────────────────────
@@ -150,6 +152,8 @@ async function create(req, res) {
   if (typeof kind !== 'string' || !Object.hasOwn(TTL, kind)) return json(req, res, 400, { error: 'kind' });
   if (typeof args !== 'object' || Array.isArray(args)) return json(req, res, 400, { error: 'args' });
   if (kind === 'mode' && !MODES.has(args.mode)) return json(req, res, 400, { error: 'mode' });
+  // 미션 업로드 — 계획 때와 같은 검증을 다시, hash 가 항목과 맞아야 한다 (mission.js)
+  if (kind === 'mission_upload') { const bad = mission.checkUpload(args); if (bad) return json(req, res, 400, bad); }
   if (typeof cid !== 'string' || !/^[\w.:-]{1,64}$/.test(cid)) return json(req, res, 400, { error: 'client_id' });
   sweep();
   const dk = u.id + '\n' + cid, dup = dedup.get(dk);
@@ -179,7 +183,7 @@ async function confirm(req, res, c) {
   sweep();
   if (c.state !== 'awaiting_confirm') return json(req, res, 409, { error: 'state', id: c.id, state: c.state });
   if (PRECHECK.has(c.kind)) {
-    const why = precheck();
+    const why = precheck(c.kind);
     if (why) { move(c, 'rejected', 'server', { reason: why }); return json(req, res, 409, { error: 'precheck', id: c.id, state: c.state, reason: why }); }
   }
   queue(c, u.id);
