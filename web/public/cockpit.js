@@ -1,4 +1,4 @@
-// 콕핏 — 3D 기체 + 실시간 + 부품 + 비행 전 점검.
+// 콕핏 — 3D 기체 + 실시간 + 비행 전 점검.
 //
 // 모델은 web/model/drone01.py(Blender)가 만든 /model/drone01.glb.
 // 좌표: +z 기수, +y 위, 단위 m, 왼쪽 +x. 노드 이름으로 부품을 찾는다 —
@@ -21,7 +21,6 @@ const mins = (s) => s == null ? '—' : s < 60 ? `${Math.round(s)}초` : `${Math
 let S = { live: false, d: {} };   // /api/live/state
 let R = null;                      // 비행 기록 요약
 let tab = null;                    // 아무 탭도 안 고른 것이 기본 — 정보 카드·타일 없이 기체만
-let sel = null;                    // 고른 탑재칸
 let mode = '3d';                   // 3d | map
 // 로그 재생 상태 — 첫 frame() 이 모듈 평가 중에 돌므로 여기서 먼저 만든다
 const pb = { on: false, t: 0, dur: 0, rate: 1, playing: false, last: 0, name: '', timer: 0, seeking: false, when: '', fl: null };
@@ -29,33 +28,8 @@ const pb = { on: false, t: 0, dur: 0, rate: 1, playing: false, last: 0, name: ''
 const linked = () => !!(S.live || S.sim);
 const D = () => (linked() ? (S.d || {}) : {});
 
-// ── 부품 — components/*/README.md 에서 옮긴 요약 ─────────────────────
-const BAYS = {
-  motor: { name: '모터', outside: true, view: 'pwr', rows: [
-    ['모터', 'GT DRONE 3508-380KV × 4'],
-    ['프롭', '12 × 4.5 2엽'],
-    ['회전', '좌전·우후 CW · 우전·좌후 CCW'] ] },
-  battery: { name: '배터리', rows: [
-    ['배터리', '4S 2,900 mAh 70C'],
-    ['위치', '아랫판 밑'] ] },
-  power: { name: 'ESC', rows: [
-    ['ESC', 'GT DRONE EC-X3 30 A × 4'],
-    ['BEC', '없음 (OPTO)'] ] },
-  fc: { name: 'FC', rows: [
-    ['비행제어기', 'Pixhawk 2.4.8 · STM32F427'],
-    ['펌웨어', 'ArduCopter 3.6.12'] ] },
-  gps: { name: 'GPS', outside: true, rows: [
-    ['GPS', 'M8N (u-blox)'],
-    ['컴퍼스', '외장 GPS 모듈'] ] },
-};
-const TAB_INFO = {
-  sum: { name: '제원', bays: ['motor', 'battery', 'power', 'fc', 'gps'], rows: [
-    ['형식', '쿼드 X · S500 계열'], ['프롭', '12 × 4.5'], ['목표 중량', '2 kg 이하'] ] },
-  fly: null,
-  rec: null,
-  pf: null,
-  dlv: null,
-};
+// 기체 부위 — 모델 노드 bay_<k> (점검 탭이 판정 색을 칠한다)
+const BAYS = ['motor', 'battery', 'power', 'fc', 'gps'];
 
 // 점검 묶음 → 기체 부위. 소프트웨어 설정(failsafe·미션 등)은 부위가 없다.
 // 이름은 tools/preflight/preflight.py 의 r.group 과 같아야 한다.
@@ -164,15 +138,11 @@ if (renderer) {
 const rotors = {};          // LF/RF/LB/RB → { node, dir, v, disc }
 let anchors = {};
 const bays = {};            // battery/... → { meshes, fills, edges, a } — 부위 하나가 여러 덩이일 수 있다(모터 4개)
-const skin = [];            // 반투명이 되는 겉면 재질
-let skinT = 0;              // 0 불투명 ~ 1 반투명
 const discMat = new THREE.MeshBasicMaterial({ color: 0x5a5d63, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
 function addDisc(node, R) {
   const d = new THREE.Mesh(new THREE.CircleGeometry(R, 64), discMat.clone());
   d.rotation.x = -Math.PI / 2; node.add(d); return d;
 }
-// 윗판·아랫판 — 칸을 고르면 비친다
-const SKIN = /^(top_plate|bottom_plate|name)/;
 
 new GLTFLoader().load('/model/drone01.glb', (g) => {
   const m = g.scene;
@@ -189,11 +159,6 @@ new GLTFLoader().load('/model/drone01.glb', (g) => {
   m.traverse((o) => {
     if (!o.isMesh) return;
     o.castShadow = true; o.receiveShadow = true;
-    if (SKIN.test(o.name)) {
-      o.material = o.material.clone();
-      o.material.transparent = true;
-      skin.push(o.material);
-    }
   });
   for (const k of ['LF', 'RF', 'LB', 'RB']) {
     const n = m.getObjectByName('rotor_' + k);
@@ -214,7 +179,7 @@ new GLTFLoader().load('/model/drone01.glb', (g) => {
     const b = bays[k] || (bays[k] = { meshes: [], fills: [], edges: [], a: 0 });
     b.meshes.push(mesh); b.fills.push(fillM); b.edges.push(edges.material);
   };
-  for (const k of Object.keys(BAYS)) {
+  for (const k of BAYS) {
     const mesh = m.getObjectByName('bay_' + k);
     if (mesh) addHit(k, mesh);
   }
@@ -243,17 +208,14 @@ new GLTFLoader().load('/model/drone01.glb', (g) => {
 // ── 조작 — 끌면 기체가 돈다, 휠·두 손가락은 거리, 두 번 누르면 제자리, 눌러서 칸 선택 ──
 const VIEWS = {
   intro: { yaw: 4.0, tilt: 0.6, dist: 2.3 },
-  sum: { yaw: 4.0, tilt: 0.55, dist: 1.75 },
   fly: { yaw: 4.0, tilt: 0.55, dist: 1.75 },
-  pwr: { yaw: -2.75, tilt: 0.78, dist: 1.8 },
   rec: { yaw: 4.0, tilt: 0.55, dist: 1.75 },
   pf: { yaw: -2.1, tilt: 0.75, dist: 1.5 },
-  bay: { yaw: -1.25, tilt: 0.62, dist: 0.95 },
 };
 VIEWS.dlv = VIEWS.fly;   // 배송 탭의 3D 시점은 비행과 같게 둔다
 let intro = document.body.classList.contains('intro');
 if (intro && !renderer) { intro = false; document.body.classList.remove('intro'); }
-const cam = { ...VIEWS[intro ? 'intro' : 'sum'], vYaw: 0, vTilt: 0 };
+const cam = { ...VIEWS[intro ? 'intro' : 'fly'], vYaw: 0, vTilt: 0 };
 const goal = { ...cam, on: false };
 const look = new THREE.Vector3(0, 0.02, 0);
 const ptrs = new Map();
@@ -261,20 +223,12 @@ let pinch0 = 0, dist0 = 0, down = null;
 const clampTilt = (t) => Math.max(-Math.PI / 2, Math.min(Math.PI / 2, t));   // ±90° — 음수면 바닥 밑에서 올려다본다
 const clampDist = (d) => Math.max(0.5, Math.min(500, d));   // 500 = 1 km 밖까지 물러나 비행 경로 전체를 본다
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-function pickBay(e) {
-  const r = canvas.getBoundingClientRect();
-  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-  ray.setFromCamera(ndc, camera);
-  const hit = ray.intersectObjects(Object.values(bays).flatMap((b) => b.meshes), false)[0];
-  return hit ? hit.object.userData.bay : null;
-}
 function hitCraft(e) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
   return ray.intersectObject(attitude, true).length > 0;
 }
-let hover = null;
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]);
   down = { x: e.clientX, y: e.clientY };
@@ -285,8 +239,7 @@ canvas.addEventListener('pointermove', (e) => {
   const p = ptrs.get(e.pointerId);
   if (!p) {   // 끌지 않는 중 — 칸 위면 손 모양
     const mouse = e.pointerType === 'mouse';
-    hover = mouse && !intro && tab === 'sum' ? pickBay(e) : null;   // 부위 강조는 부품 탭에서만
-    canvas.style.cursor = (intro ? mouse && fly.t < 0 && hitCraft(e) : hover) ? 'pointer' : '';
+    canvas.style.cursor = intro && mouse && fly.t < 0 && hitCraft(e) ? 'pointer' : '';
     return;
   }
   if (ptrs.size === 1) {
@@ -306,17 +259,15 @@ const up = (e) => {
   // 거의 안 움직였으면 누른 것이다
   if (down && e.type === 'pointerup' && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6) {
     if (intro) { if (hitCraft(e)) launch(); }
-    else if (tab === 'sum') { const k = pickBay(e); if (k) selectBay(k === sel ? null : k); }   // 부품 카드는 부품 탭에서만
   }
   down = null;
 };
 canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
-canvas.addEventListener('pointerleave', () => { hover = null; });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); goal.on = false; cam.dist = clampDist(cam.dist * Math.exp(e.deltaY * 0.001)); }, { passive: false });
 canvas.addEventListener('dblclick', () => setView());
 
 function setView() {
-  const v = VIEWS[intro ? 'intro' : sel ? BAYS[sel].view || 'bay' : tab === 'mis' ? 'fly' : tab || 'sum'], twoPi = Math.PI * 2;
+  const v = VIEWS[intro ? 'intro' : tab === 'mis' || !tab ? 'fly' : tab], twoPi = Math.PI * 2;
   goal.yaw = v.yaw + Math.round((cam.yaw - v.yaw) / twoPi) * twoPi;   // 가까운 쪽으로 돈다
   goal.tilt = v.tilt; goal.dist = v.dist; goal.on = true; cam.vYaw = cam.vTilt = 0;
 }
@@ -330,36 +281,20 @@ function resize() {
 }
 new ResizeObserver(resize).observe(canvas);
 
-// ── 칸 선택 ──────────────────────────────────────────────────────────
-function selectBay(k) {
-  sel = k;
-  setView();
-  renderInfo();
-  renderCalls();
-}
-
-/** 칸마다 지금 칠할 색과 세기. 점검 탭이면 판정 색, 아니면 고른 칸·탭 칸만 파랑. */
+/** 칸마다 지금 칠할 색과 세기. 점검 탭이면 판정 색, 아니면 안 칠한다. */
 function bayLook(k) {
-  if (tab === 'pf' && !sel) {
+  if (tab === 'pf') {
     const lv = pf.bayLevel[k];
     return lv ? { color: LV_COLOR[lv], a: 1 } : { color: 0x3e6ae1, a: 0 };
   }
-  if (sel) return { color: 0x3e6ae1, a: k === sel ? 1 : 0 };
-  if (tab === 'sum') return { color: 0x3e6ae1, a: k === hover ? 0.7 : 0.3 };   // 누를 수 있는 부위를 옅게
   return { color: 0x3e6ae1, a: 0 };
 }
 
 // ── 부위 표시 ────────────────────────────────────────────────────────
-const ROT_DIR = { LF: 'CW', RF: 'CCW', LB: 'CCW', RB: 'CW' };
 const CALLS = {
   // 비행 — 모터마다 부하만. 한쪽으로 쏠리면 바로 보이게 색은 thr 그대로.
   fly: (d) => { const m = d.motors || {}; const f = (k) => m[k] != null ? `${Math.round(m[k])}%` : '—';
     return [['LF', '', f('LF'), thr(m.LF)], ['RF', '', f('RF'), thr(m.RF)], ['LB', '', f('LB'), thr(m.LB)], ['RB', '', f('RB'), thr(m.RB)]]; },
-  // 부품 — 모터 부하와 회전 방향, GPS, 배터리. 회전 방향은 tools/live/drone_live.py MOTOR_PINS (2026-09-16 실측) 기준
-  sum: (d) => { const m = d.motors || {}; const f = (k) => m[k] != null ? `${Math.round(m[k])}% · ${ROT_DIR[k]}` : ROT_DIR[k];
-    return [['LF', '', f('LF'), thr(m.LF)], ['RF', '', f('RF'), thr(m.RF)], ['LB', '', f('LB'), thr(m.LB)], ['RB', '', f('RB'), thr(m.RB)],
-            ['gps', 'GPS', d.sats != null ? `${d.sats}기 · ${num(d.eph, 1)}m` : '—', lvl(d.sats, 8, 5)],
-            ['bat', '배터리', d.volt != null ? `${d.volt.toFixed(1)}V · ${num(d.cur, 1)}A` : '—', lvl(d.batt_pct, 35, 20)]]; },
   rec: () => [],
   pf: () => [],
   dlv: () => [],
@@ -374,8 +309,8 @@ const callEls = new Map();
 const MOTOR_OUT = new Set(['LF', 'RF', 'LB', 'RB']), CALL_OUT = 26;   // 원판 밖에서 라벨 반 폭만큼 더(px)
 const ROTOR_R = 0.1524, tmpW = new THREE.Vector3(), tmpC = new THREE.Vector3(), tmpS = new THREE.Vector3();
 function renderCalls() {
-  let want = sel || mode !== '3d' || !tab ? [] : CALLS[tab](D());
-  if (!sel && mode === '3d' && tab !== 'sum' && tab !== 'fly') {
+  let want = mode !== '3d' || !tab ? [] : CALLS[tab](D());
+  if (mode === '3d' && tab !== 'fly') {
     const m = D().motors || {};
     for (const k of ['LF', 'RF', 'LB', 'RB']) if (thr(m[k])) want.push([k, '', `${Math.round(m[k])}%`, thr(m[k])]);
   }
@@ -629,7 +564,7 @@ function groundStep(dt, ease) {
 const hPos = new THREE.Vector3();
 function placeHome() {
   const el = $('htag'), r = geo.home;
-  const show = r != null && r > 20 && !sel && !dlvTab();   // 배송은 지점 이름표가 기지를 대신 보인다
+  const show = r != null && r > 20 && !dlvTab();   // 배송은 지점 이름표가 기지를 대신 보인다
   if (el.hidden === show) el.hidden = !show;
   if (!show) return;
   homeG.getObjectByName('pad').getWorldPosition(hPos).project(camera);
@@ -834,7 +769,7 @@ function frame() {
   craft.rotation.y = cam.yaw;
   craft.updateMatrixWorld();
   // 고른 칸을 가운데로
-  if (sel && bays[sel] && !BAYS[sel].view) bays[sel].meshes[0].getWorldPosition(lookGoal); else lookGoal.set(0, 0.02 - Math.min(FLOOR - floorY, 1) * 0.25, 0);   // 조금만 내린다 — 더 내리면 기체가 화면 위로 잘린다
+  lookGoal.set(0, 0.02 - Math.min(FLOOR - floorY, 1) * 0.25, 0);   // 조금만 내린다 — 더 내리면 기체가 화면 위로 잘린다
   look.lerp(lookGoal, ease(4));
   // 정보 카드가 기체를 덮을 때만 — 카드 오른쪽 빈 곳으로 화면 중심을 옮기고,
   // 거기에 안 들어가면 물러선다. 기체 반폭 ≈ 0.6·높이/거리 (대각 0.55 m 기준).
@@ -874,12 +809,6 @@ function frame() {
     r.disc.material.color.setHex(THR_COLOR[w]);
     r.disc.material.opacity = Math.min(w ? 0.28 : 0.09, Math.max(0, (r.v - 12) / (w ? 80 : 200)));
   }
-  // 겉면 — 칸을 고르면 비친다
-  skinT += ((sel && !BAYS[sel].outside ? 1 : 0) - skinT) * ease(5);
-  for (const m of skin) {
-    m.opacity = 1 - 0.85 * skinT;
-    m.depthWrite = skinT < 0.5;
-  }
   // 칸 강조
   for (const [k, b] of Object.entries(bays)) {
     const L = bayLook(k);
@@ -895,33 +824,15 @@ function frame() {
 frame();
 
 // ── 정보 카드 ────────────────────────────────────────────────────────
-function rowsHtml(rows) {
-  return rows.map(([k, v]) => `<div class="row"><span>${esc(k)}</span><b>${esc(v).replace(/(\d) (?=[A-Za-z°%])/g, '$1\u00a0')}</b></div>`).join('');
-}
 function renderInfo() {
   const box = $('info');
   if (tab !== 'mis') box.dataset.k = '';   // 미션 칸은 한 번 짜 두고 상태만 고친다 — 다른 탭이 덮으면 다시 짠다
   if (tab === 'dlv') { box.hidden = true; renderDlv(); return; }   // 배송 칸은 왼쪽 패널에 있다
   if (tab === 'mis') { box.hidden = false; misInfo(box); return; }
   if (mode !== '3d') { box.hidden = true; return; }
-  if (sel) {
-    const b = BAYS[sel];
-    box.hidden = false;
-    box.innerHTML = `<div class="ih"><b>${esc(b.name)}</b><button class="x" id="infoX" aria-label="닫기">×</button></div>${rowsHtml(b.rows)}`;
-    $('infoX').onclick = () => selectBay(null);
-    return;
-  }
   if (tab === 'pf') { box.hidden = false; renderPf(); return; }
-  const t = TAB_INFO[tab];
-  if (!t) { box.hidden = true; return; }
-  box.hidden = false;
-  const chips = (t.bays || []).map((k) => `<button class="chip" data-bay="${k}">${esc(BAYS[k].name)}</button>`).join('');
-  box.innerHTML = `<div class="ih"><b>${esc(t.name)}</b></div>${rowsHtml(t.rows)}${chips ? `<div class="chips">${chips}</div>` : ''}`;
+  box.hidden = true;
 }
-$('info').addEventListener('click', (e) => {
-  const c = e.target.closest('[data-bay]');
-  if (c) selectBay(c.dataset.bay);
-});
 
 // ── 탭·타일 ──────────────────────────────────────────────────────────
 // 이동 거리 — 시동 뒤 실제로 움직인 길이(수평). 제자리 GPS 흔들림은 빼려고 0.5 m/s 넘게 움직일 때만 더한다.
@@ -953,16 +864,6 @@ function travelled(d) {
 }
 const dist = (m) => m == null ? ['—', ''] : m >= 1000 ? [(m / 1000).toFixed(2), 'km'] : [m.toFixed(0), 'm'];
 const TILES = {
-  // 부품 — 위성·위치 오차·헤딩, 배터리 잔량·전압·전류·온도
-  sum: (d) => [
-    ['sat', '위성', num(d.sats), '기', lvl(d.sats, 8, 5)],
-    ['pin', '위치 오차', num(d.eph, 1), 'm', lvl(d.eph, 3, 6, false)],
-    ['hdg', '헤딩', num(d.hdg), '°'],
-    ['bat', '잔량', num(d.batt_pct), '%', lvl(d.batt_pct, 35, 20)],
-    ['volt', '전압', num(d.volt, 2), 'V'],
-    ['cur', '전류', num(d.cur, 1), 'A'],
-    ['temp', '온도', num(d.batt_temp, 1), '°C'],
-  ],
   // 비행 중에 볼 것만 — 높이·속도·오르내림·홈까지·남은 배터리
   fly: (d) => [
     ['spd', '대지속도', num(d.groundspeed, 1), 'm/s'],
@@ -991,7 +892,7 @@ function renderTiles() {
 $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   const prev = tab;
-  tab = tab === b.dataset.t ? null : b.dataset.t; sel = null;   // 고른 탭을 다시 누르면 풀린다
+  tab = tab === b.dataset.t ? null : b.dataset.t;   // 고른 탭을 다시 누르면 풀린다
   for (const x of $('tabs').children) x.classList.toggle('on', x.dataset.t === tab);
   setView(); renderTiles(); renderInfo();
   if (prev === 'dlv' && tab !== 'dlv') dlvLeave();
@@ -1181,7 +1082,7 @@ function pfLine(d) {
     pf.state = 'done';
   }
   pfBayLevels();
-  if (tab === 'pf' && !sel) renderPf();
+  if (tab === 'pf') renderPf();
 }
 
 async function pfRun() {
@@ -1214,7 +1115,7 @@ async function pfRun() {
   }
   // 판정 줄(done) 없이 스트림이 끝나면 중간에 끊긴 것이다.
   if (pf.state === 'run') { pf.state = 'done'; if (!pf.verdict && !pf.error) pf.error = '점검 중단'; }
-  if (tab === 'pf' && !sel) renderPf();
+  if (tab === 'pf') renderPf();
 }
 
 // ── 로그 재생 ────────────────────────────────────────────────────────
@@ -1740,7 +1641,7 @@ if (location.hash === '#pf') document.querySelector('[data-t=pf]').click();
 if (location.hash === '#map') pickView('sat');
 if (location.hash === '#dlv') document.querySelector('[data-t=dlv]').click();
 addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { if (!$('modal').hidden) $('modal').hidden = true; else if (!$('pbSheet').hidden) pbSheet(false); else if (sel) selectBay(null); }
+  if (e.key === 'Escape') { if (!$('modal').hidden) $('modal').hidden = true; else if (!$('pbSheet').hidden) pbSheet(false); }
   else if (intro && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); launch(); }   // 좁은 창에서 스페이스가 페이지를 내리지 않게
 });
 
