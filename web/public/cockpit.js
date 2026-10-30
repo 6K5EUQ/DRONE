@@ -1193,7 +1193,7 @@ async function pfRun() {
     if (!(res.headers.get('content-type') || '').includes('ndjson')) {
       let msg = null;
       try { msg = (await res.json()).error; } catch { /* 본문 없음 */ }
-      pf.error = res.status === 409 ? '다른 점검 중' : res.status === 429 ? '잠시 후 재시도' : String(msg || '점검 실패');
+      pf.error = res.status === 409 ? '다른 점검 중' : res.status === 429 ? '잠시 후 재시도' : res.status === 401 ? '로그인 필요' : res.status === 403 ? '권한 없음' : String(msg || '점검 실패');
       pf.state = 'done'; renderPf(); return;
     }
     const reader = res.body.getReader(), dec = new TextDecoder();
@@ -1448,6 +1448,7 @@ function render() {
 
   txt('sat', d.sats == null ? '—' : d.eph != null ? `${d.sats} (${d.eph.toFixed(1)})` : String(d.sats));   // 위성 수 (수평 오차 m)
   txt('piBat', d.pi_batt == null ? '' : d.pi_batt + '%');
+  $('piBat').className = 'num' + (d.pi_batt == null ? '' : d.pi_batt <= 20 ? ' bad' : d.pi_batt <= 30 ? ' warn' : '');
   $('stSat').className = 'st ' + (d.fix != null && d.fix < 3 ? 'bad' : lvl(d.sats, 8, 5));
 
 
@@ -1783,7 +1784,7 @@ function renderMs() {
   const t = msTab();
   $('msBody').innerHTML = !t ? msFcRows() : msEditor(t);
   $('msCmd').innerHTML = ms.login && ms.op
-    ? '<div class="mscmd"><button class="hold" data-h="arm"><i></i><span>ARM</span></button><button class="hold" data-h="auto"><i></i><span>AUTO</span></button>'
+    ? '<div class="mscmd"><button class="hold" data-h="go"><i></i><span>출발</span></button>'
       + '<button data-c="rtl">RTL</button><button data-c="land">LAND</button></div><div class="msline num" id="msLine"></div>' : '';
   msLive();
 }
@@ -1819,8 +1820,7 @@ function msLock(k) {
   const d = D();
   if (!ms.op || pb.on) return true;
   if (k === 'up') return !!d.armed || !msPlanOk(msTab()) || msBusy(ms.up);
-  if (k === 'arm') return !S.live || !!d.armed;
-  if (k === 'auto') return !S.live;
+  if (k === 'go') return !S.live || !!d.armed;
   return false;   // RTL·LAND — 재생 중만 막는다
 }
 function msLive() {
@@ -1834,7 +1834,7 @@ function msLive() {
   const chk = $('msChk');
   if (chk) {
     const p = ms.plan && ms.plan.key === msKey(t) ? ms.plan : null;
-    const h = !t.steps.length || !p ? '' : p.errors.length || p.warnings.length
+    const h = !t.steps.length || !p ? '' : p.reason && !p.ok ? `<div class="msmsg e">${esc(p.reason)}</div>` : p.errors.length || p.warnings.length
       ? p.errors.map((m) => `<div class="msmsg e">${esc(m)}</div>`).join('') + p.warnings.map((m) => `<div class="msmsg w">${esc(m)}</div>`).join('')
       : '<i class="msok"></i>';
     if (chk.innerHTML !== h) chk.innerHTML = h;
@@ -1846,7 +1846,7 @@ function msLive() {
     b.disabled = lock;
     b.classList.toggle('armed', s.st === 'held' || s.st === 'armed');
     b.style.setProperty('--p', (ME.holdFill(s, now) * 100).toFixed(1) + '%');
-    const label = s.st === 'held' || s.st === 'armed' ? '확인' : { up: '업로드', arm: 'ARM', auto: 'AUTO' }[k];
+    const label = s.st === 'held' || s.st === 'armed' ? '확인' : { up: '업로드', go: '출발' }[k];
     const sp = b.querySelector('span'); if (sp.textContent !== label) sp.textContent = label;
   }
   for (const b of document.querySelectorAll('#info [data-c]')) b.disabled = msLock(b.dataset.c);
@@ -1900,14 +1900,15 @@ async function msPlan() {
   const t = msTab(), n = ++ms.planN;
   if (!t || !t.steps.length) { ms.plan = null; msLive(); misSync(); return; }
   const body = ME.planBody(t, S.home), key = JSON.stringify(body);
-  let p = { key, ok: false, items: [], hash: '', errors: [], warnings: [], h: null };
+  let p = { key, reason: '', ok: false, items: [], hash: '', errors: [], warnings: [], h: null };
   ms.inflight = true;
   try {
     const r = await fetch('/api/mission/plan', msJson('POST', body));
     const j = await r.json().catch(() => ({}));
     if (r.status === 401) { ms.inflight = false; ms.login = false; ms.cur = 'fc'; renderMs(); return; }
     const rp = j.report || {};
-    p = { key, ok: !!(r.ok && j.ok), items: Array.isArray(j.items) ? j.items : [], hash: j.hash || '',
+    const why = typeof (j.reason || rp.reason) === 'string' ? String(j.reason || rp.reason).slice(0, 30) : '';
+    p = { key, reason: why, ok: !!(r.ok && j.ok), items: Array.isArray(j.items) ? j.items : [], hash: j.hash || '',
       errors: Array.isArray(rp.errors) ? rp.errors : r.ok ? [] : ['검사 실패'], warnings: Array.isArray(rp.warnings) ? rp.warnings : [], h: rp.h_cruise ?? null };
   } catch { p.errors = ['연결 없음']; }
   ms.inflight = false;
@@ -1950,7 +1951,7 @@ async function msDelTab() {
 
 // 명령 — 만들기(위험 명령은 awaiting_confirm) · 확인 · 취소 · 목록으로 상태 따라가기
 const msCid = () => 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const MS_KIND = { up: 'mission_upload', arm: 'arm', auto: 'mission_start', rtl: 'rtl', land: 'land' };
+const MS_KIND = { up: 'mission_upload', go: 'depart', rtl: 'rtl', land: 'land' };
 async function msCmd(kind, args) {
   ms.err = '';
   try {

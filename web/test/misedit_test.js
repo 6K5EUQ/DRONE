@@ -72,6 +72,7 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   ok(M.cmdLine({ kind: 'arm', state: 'rejected', reason: 'volt' }) === 'ARM · 거부 · 전압', '거부 사유', M.cmdLine({ kind: 'arm', state: 'rejected', reason: 'volt' }));
   ok(M.cmdLine({ kind: 'rtl', state: 'delivered' }) === 'RTL · 전달', '진행 중 한 줄');
   ok(M.cmdLine({ kind: 'mission_start', state: 'done' }) === 'AUTO · 완료', 'AUTO = mission_start');
+  ok(M.cmdLine({ kind: 'depart', state: 'rejected', reason: 'gps' }) === '출발 · 거부 · GPS', '출발 이름', M.cmdLine({ kind: 'depart', state: 'rejected', reason: 'gps' }));
   ok(M.cmdLine({ kind: 'arm', state: 'preempted', reason: 'abcdef012345' }) === 'ARM · 밀림', '밀림 — 밀어낸 id 는 안 보인다', M.cmdLine({ kind: 'arm', state: 'preempted', reason: 'abcdef012345' }));
   ok(M.cmdLine({ kind: 'land', state: 'failed', detail: 'MAV_RESULT 4' }) === 'LAND · 실패 · MAV_RESULT 4', '파이 detail 이 사유', M.cmdLine({ kind: 'land', state: 'failed', detail: 'MAV_RESULT 4' }));
   ok(M.cmdView({ state: 'unknown', reason: 'no-ack' }).reason === '응답 없음' && M.cmdView({ state: 'unknown' }).bad, '결과 모름은 실패 쪽');

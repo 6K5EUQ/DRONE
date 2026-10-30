@@ -92,7 +92,7 @@ export const REASON = {
   'no-ack': '응답 없음', restart: '서버 재시작', login: '로그인 필요', operator: '권한 없음', user: '권한 없음',
   kind: '입력 오류', args: '입력 오류', mode: '입력 오류', client_id: '입력 오류', json: '입력 오류', size: '입력 오류', state: '상태 오류', id: '명령 없음',
 };
-export const CMD_NAME = { mission_upload: '업로드', arm: 'ARM', mission_start: 'AUTO', rtl: 'RTL', land: 'LAND', disarm: 'DISARM', mode: '모드' };
+export const CMD_NAME = { mission_upload: '업로드', arm: 'ARM', mission_start: 'AUTO', depart: '출발', rtl: 'RTL', land: 'LAND', disarm: 'DISARM', mode: '모드' };
 
 /** 명령 하나 → { stage(막대 칸 수, 0~5), label, bad, reason } */
 export function cmdView(c) {

@@ -181,6 +181,9 @@ sudo systemctl enable --now lab-tunnel-drone01
          → rim3 tools/preflight/agent.py :4412 (X-Preflight-Key, Tailscale 주소)
          → preflight.py --stream → FC USB
 ```
+- `/api/preflight`·`/api/preflight/stream` 은 운용자 로그인(배송 쿠키 + `CMD_OPERATORS`)이 있어야 한다 — 비로그인 401, 운용자 아님 403 (2026-10-30).
+- 응답마다 보안 헤더(CSP·HSTS·nosniff·DENY·Referrer-Policy)를 붙인다. 인라인 스크립트는 해시로 허용한다. 상태 ≥ 400 응답은 stdout 한 줄(같은 줄은 10초에 한 번, 횟수 묶음).
+
 
 - 에이전트: rim3 user 유닛 `drone-preflight` ([tools/preflight/drone-preflight.service](../tools/preflight/drone-preflight.service)),
   키는 `~/.config/drone-preflight.env` 의 `DRONE_PREFLIGHT_KEY` = 랩서버 `PREFLIGHT_KEY`

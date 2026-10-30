@@ -169,6 +169,8 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, lpOut .5s ease-i
 .main.mapmode #map { display: block; }
 .main.mapmode #view, .main.mapmode .tabs, .main.mapmode #calls, .main.mapmode .tiles { display: none; }
 .main.mapmode.mis .tabs { display: flex; }
+.main.mapmode.mis .tabs button:not(.on) { background: var(--card); color: var(--ink2); }   /* 지도 위에서 비치지 않게 */
+#piBat.warn { color: var(--warn); } #piBat.bad { color: var(--bad); }
 .main.mapmode .bar { background: linear-gradient(rgba(244,244,246,.92), rgba(244,244,246,0)); }
 #map .leaflet-tile-pane { filter: saturate(.75) brightness(1.04); opacity: .7; }   /* 투명도 30% — 뒤의 밝은 바탕이 비쳐 뿌옇게 */
 /* 배송 — 3D 땅 위 지점 이름표 */

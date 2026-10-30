@@ -43,6 +43,7 @@ const LIVE_PUSH_KEY = process.env.LIVE_PUSH_KEY || '';
 // 아직 에이전트가 없다 — 생기면 PREFLIGHT_AGENTS 가 그 주소(host:port)를 가리켜야 한다.
 // 🔴 비우면 점검이 **막힌 채로** 뜬다. 점검은 읽기 전용이지만 FC 링크를
 //    실제로 쓰므로, 공개 조회와 같은 문으로 두지 않는다.
+const CMD_OPERATORS = new Set(String(process.env.CMD_OPERATORS || '').split(',').map((x) => x.trim()).filter(Boolean));
 const PREFLIGHT_KEY = process.env.PREFLIGHT_KEY || '';
 // 에이전트 후보. 앞에서부터 붙어 보고 먼저 답하는 것을 쓴다.
 // 이름이 아니라 주소를 쓰는 이유: 이 서버는 MagicDNS 가 없는 환경에서도 돈다.
@@ -204,10 +205,39 @@ function dedupe(rows, all) {
   return out;
 }
 
+// ── 보안 헤더 · 오류 로그 ────────────────────────────────────────────
+// 인라인 스크립트는 해시로만 허용한다 (페이지마다 본문에서 뽑는다). 스타일은 지도·SVG 가 인라인을 쓴다.
+const CSP_BASE = ["default-src 'self'", "img-src 'self' data: blob: https://services.arcgisonline.com",
+  "style-src 'self' 'unsafe-inline'", "connect-src 'self' blob: data:", "worker-src 'self' blob:",
+  "font-src 'self' data:", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"];
+function cspFor(html) {
+  const hashes = [...String(html).matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)]
+    .map((m) => `'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'`);
+  return [...CSP_BASE, `script-src 'self' ${hashes.join(' ')}`.trim()].join('; ');
+}
+const SEC_HEADERS = {
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'same-origin',
+  'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",   // HTML 이 아닌 응답
+};
+const errSeen = new Map();   // 같은 줄은 10초에 한 번만 — 그사이 횟수는 다음 줄에 붙는다
+function logErr(req, res, ms) {
+  const path = String(req.url || '').split('?')[0].slice(0, 120);
+  const ip = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '-').slice(0, 45);
+  const key = `${req.method} ${path} ${res.statusCode} ${ip}`, now = Date.now(), e = errSeen.get(key);
+  if (e && now - e.t < 10000) { e.n++; return; }
+  errSeen.set(key, { t: now, n: 0 });
+  if (errSeen.size > 500) for (const [k, v] of errSeen) if (now - v.t > 10000) errSeen.delete(k);
+  log(`${res.statusCode >= 500 ? 'ERR' : 'WARN'} ${req.method} ${path} ${res.statusCode} ${ms}ms ip=${ip}` + (e && e.n ? ` (+${e.n})` : ''));
+}
+
 // ── HTTP 유틸 ────────────────────────────────────────────────────────
 function send(req, res, status, body, type, extra = {}) {
   const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
   const headers = { 'Content-Type': type, 'X-Robots-Tag': 'noindex, nofollow', ...extra };
+  if (/^text\/html/.test(type)) headers['Content-Security-Policy'] = cspFor(buf.toString('utf8'));
 
   // 🔴 `no-cache` 는 "캐시하지 마라" 가 아니라 "쓰기 전에 서버에 물어봐라" 다.
   //    물어보려면 지문이 있어야 하는데 ETag 도 Last-Modified 도 안 보내고
@@ -799,8 +829,13 @@ async function route(req, res) {
   // 비행 전 점검 — 버튼 하나가 FC 를 읽고 GO/NO-GO 를 낸다.
   // 🔴 스트림 쪽은 묶음이 **끝나는 대로** 한 줄씩 나간다. 완료 순서는
   //    정해져 있지 않다 — 자기 데이터가 먼저 온 묶음이 먼저 나간다.
-  if (p === '/api/preflight/stream' && req.method === 'POST') return handlePreflightStream(req, res, url);
-  if (p === '/api/preflight' && req.method === 'POST') return handlePreflight(req, res, url);
+  //    명령과 같은 운용자 로그인이 있어야 한다 — 비로그인 401, 운용자 아님 403.
+  if ((p === '/api/preflight/stream' || p === '/api/preflight') && req.method === 'POST') {
+    const u = delivery.session(req);
+    if (!u) return sendJson(req, res, 401, { error: 'login' });
+    if (!CMD_OPERATORS.has(u.id)) return sendJson(req, res, 403, { error: 'operator' });
+    return p === '/api/preflight' ? handlePreflight(req, res, url) : handlePreflightStream(req, res, url);
+  }
 
   // 라이브 — rim3 가 밀어 올리고(POST), 브라우저가 폴링한다(GET).
   if (p === '/api/live/push' && req.method === 'POST') return handleLivePush(req, res);
@@ -885,6 +920,9 @@ async function main() {
   await reconcile();
 
   http.createServer((req, res) => {
+    for (const [k, v] of Object.entries(SEC_HEADERS)) res.setHeader(k, v);
+    const t0 = Date.now();
+    res.on('finish', () => { if (res.statusCode >= 400) logErr(req, res, Date.now() - t0); });
     route(req, res).catch((e) => {
       log('처리 실패', req.method, req.url, e.message);
       if (!res.headersSent) sendJson(req, res, 500, { error: '서버 오류' });
