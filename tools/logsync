@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""파이에서 한 줄 — FC 로그 중 웹에 없는 것만 받아 drone01.shade-signals.com 에 올린다.
+
+    ~/DRONE/tools/logsync               끄기 → 목록 → 서버 대조 → 받기 → 원복 → 올리기
+    ~/DRONE/tools/logsync --dry-run     FC 에 안 붙는다. 서버 대조 기준(서버에 있는 것)만 보여 준다
+    ~/DRONE/tools/logsync --no-upload   받기만 한다
+
+순서: ① drone-live·drone-livepush·drone-cmd 중 켜져 있던 것을 내린다 ② FC 포트가 빌 때까지
+최대 15초 ③ loglist.py --tsv (종료코드 2 = 목록 불완전 → 중단) ④ 서버 GET /api/logs?all=1 과
+(이름 %08d.BIN, 크기)로 대조 — 없거나 크기가 다른 것만 ⑤ logdl.py 로 하나씩 (0 만 올린다.
+2·3 은 .part 로 남고 올리지 않는다) ⑥ 서비스 원복 후 업로드.
+
+🔴 원복은 어떻게 끝나든 돈다 (예외·Ctrl-C·SIGTERM). 원래 active 였던 유닛만 다시 켠다.
+   tools/live/drone-live off/on 은 쓰지 않는다 — drone-cmd 를 안 다루고, 원래 꺼져 있던 것도 켠다.
+🔴 비밀번호는 ~/.config/drone-upload (chmod 600). curl 에 stdin(-F password=<-)으로 넘긴다 —
+   ps 에 안 나온다. 파일이 없으면 이유를 말하고 업로드만 건너뛴다.
+
+⚠️ FC 로그를 지우면 ID 가 1부터 다시 시작해 같은 이름이 생긴다. 이름이 같아도 크기가 다르면
+   새 로그로 보고 올린다. 서버는 같은 이름이면 `-2`, `-3` 을 붙여 저장하므로(web/server.js
+   handleUpload) 대조할 때 서버 이름의 `-N` 꼬리는 떼고 본다.
+
+환경변수(시험용): LOGSYNC_URL, LOGSYNC_DIR, LOGSYNC_LOGLIST, LOGSYNC_LOGDL, LOGSYNC_PWFILE.
+"""
+import glob
+import json
+import os
+import re
+import shlex
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+PY = os.path.join(REPO, '.venv', 'bin', 'python')
+
+URL = os.environ.get('LOGSYNC_URL', 'https://drone01.shade-signals.com').rstrip('/')
+OUTDIR = os.environ.get('LOGSYNC_DIR') or os.path.join(REPO, 'flights', time.strftime('fc-sync-%Y%m%d'))
+LOGLIST = shlex.split(os.environ.get('LOGSYNC_LOGLIST', '')) or [PY, os.path.join(HERE, 'loglist.py'), '--tsv']
+LOGDL = shlex.split(os.environ.get('LOGSYNC_LOGDL', '')) or [PY, os.path.join(HERE, 'logdl.py')]
+PWFILE = os.environ.get('LOGSYNC_PWFILE') or os.path.expanduser('~/.config/drone-upload')
+
+UNITS = ['drone-live', 'drone-livepush', 'drone-cmd']
+BY_ID = '/dev/serial/by-id/usb-3D_Robotics*v2*-if00'      # tools/fcport.py 와 같은 값
+PORT_WAIT_S = 15
+# 🔴 기본 urllib UA 는 Cloudflare 가 1010 으로 막는다 (cmd_agent.py 와 같은 사정).
+USER_AGENT = 'drone01-logsync/1.0'
+CHILD = None        # 지금 도는 loglist/logdl — 신호로 끝날 때 같이 끝낸다 (FC 포트를 쥔 채 남지 않게)
+
+
+# ── 판정 (FC 없이 시험할 수 있는 부분) ────────────────────────────────
+def log_name(lid):
+    return '%08d.BIN' % lid
+
+
+def parse_tsv(text):
+    """loglist --tsv 출력 → [(id, size)]."""
+    out = []
+    for line in text.splitlines():
+        if line.strip():
+            lid, size = line.split('\t')
+            out.append((int(lid), int(size)))
+    return out
+
+
+def server_index(rows):
+    """서버 목록 → {이름: {크기, …}}. 서버가 이름 충돌 때 붙인 `-N` 꼬리는 뗀다."""
+    idx = {}
+    for r in rows:
+        m = re.fullmatch(r'(\d{8})(?:-\d+)?\.bin', str(r.get('name') or ''), re.I)
+        if m and r.get('size'):
+            idx.setdefault(m.group(1) + '.BIN', set()).add(int(r['size']))
+    return idx
+
+
+def plan(fc, idx):
+    """[(id, size)] → (받을 것, 서버에 이미 있는 것). (이름, 크기)가 같아야 '있음' 이다."""
+    want, have = [], []
+    for lid, size in fc:
+        (have if size in idx.get(log_name(lid), ()) else want).append((lid, size))
+    return want, have
+
+
+def summary(res):
+    """{분류: [id …]} → 분류마다 한 줄. 빈 분류는 안 찍는다."""
+    lines = []
+    for key in ('받음', '건너뜀', '서버에 이미 있음', '불완전', '업로드 실패'):
+        ids = res.get(key) or []
+        if ids:
+            lines.append('%s %d: %s' % (key, len(ids), ' '.join(str(i) for i in ids)))
+    return lines
+
+
+# ── 서비스 ────────────────────────────────────────────────────────────
+def systemctl(*args):
+    return subprocess.run(['systemctl', '--user', *args], capture_output=True, text=True, timeout=30)
+
+
+class Units:
+    """켜져 있던 유닛만 내리고, restore() 에서 그것만 다시 켠다. 두 번 불러도 한 번만 켠다."""
+
+    def __init__(self):
+        self.was = []
+
+    def stop(self):
+        self.was = [u for u in UNITS if systemctl('is-active', '--quiet', u).returncode == 0]
+        if self.was:
+            systemctl('stop', *self.was)
+            print('내림:', ' '.join(self.was))
+
+    def restore(self):
+        was, self.was = self.was, []
+        if was:
+            r = systemctl('start', *was)
+            print('원복:', ' '.join(was) + ('' if r.returncode == 0 else '  ✗ ' + r.stderr.strip()))
+
+
+def fc_holders():
+    """FC tty 를 열고 있는 pid (tools/preflight/agent.py 와 같은 방식)."""
+    hits = glob.glob(BY_ID)
+    if len(hits) != 1:
+        return []
+    dev = os.path.realpath(hits[0])
+    pids = set()
+    for fd in glob.glob('/proc/[0-9]*/fd/*'):
+        try:
+            if os.readlink(fd) == dev:
+                pids.add(int(fd.split('/')[2]))
+        except OSError:
+            continue
+    return sorted(pids)
+
+
+def wait_port():
+    t0 = time.time()
+    while time.time() - t0 < PORT_WAIT_S:
+        pids = fc_holders()
+        if not pids:
+            return True
+        time.sleep(0.5)
+    print('✗ FC 포트를 아직 쥔 프로세스: %s' % ' '.join(map(str, pids)), file=sys.stderr)
+    return False
+
+
+# ── 서버 ──────────────────────────────────────────────────────────────
+def fetch_server():
+    req = urllib.request.Request(URL + '/api/logs?all=1', headers={'User-Agent': USER_AGENT})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def upload(path, name, password):
+    """(분류, 설명). 비밀번호는 stdin 으로만 넘긴다."""
+    with tempfile.NamedTemporaryFile() as resp:
+        r = subprocess.run(
+            ['curl', '-sS', '-A', USER_AGENT, '-o', resp.name, '-w', '%{http_code}',
+             '-F', 'password=<-', '-F', 'file=@%s;filename=%s' % (path, name), URL + '/api/upload'],
+            input=password, capture_output=True, text=True, timeout=600)
+        try:
+            body = json.load(open(resp.name))
+        except ValueError:
+            body = {}
+    code = r.stdout.strip()
+    if code != '200':
+        return '업로드 실패', 'HTTP %s %s' % (code or '-', body.get('error') or r.stderr.strip())
+    if body.get('duplicate'):
+        return '서버에 이미 있음', '내용 같음 (%s)' % body.get('name')
+    note = '' if body.get('name') == name else ' — 서버 이름 %s' % body.get('name')
+    if body.get('error'):
+        note += ' — 서버 %s' % body['error']
+    return '받음', '올림' + note
+
+
+# ── 본체 ──────────────────────────────────────────────────────────────
+def run_fc(cmd, **kw):
+    """FC 에 붙는 자식을 돌린다. 신호로 끝날 때 _die 가 이 자식을 먼저 끝낸다."""
+    global CHILD
+    CHILD = subprocess.Popen(cmd, **kw)
+    out, _ = CHILD.communicate()
+    rc, CHILD = CHILD.returncode, None
+    return rc, out
+
+
+def read_password():
+    try:
+        with open(PWFILE) as f:
+            pw = f.read().strip()
+    except OSError as e:
+        print('⚠️ 업로드 건너뜀 — 비밀번호 파일을 못 읽음: %s (%s)' % (PWFILE, e.strerror))
+        return None
+    if not pw:
+        print('⚠️ 업로드 건너뜀 — 비밀번호 파일이 비었다: %s' % PWFILE)
+        return None
+    return pw
+
+
+def main(argv):
+    dry = '--dry-run' in argv
+    no_up = '--no-upload' in argv
+    bad = [a for a in argv if a not in ('--dry-run', '--no-upload')]
+    if bad:
+        print('쓰기: logsync [--dry-run] [--no-upload]', file=sys.stderr)
+        return 1
+
+    try:
+        idx = server_index(fetch_server())
+    except Exception as e:
+        print('✗ 서버 목록을 못 받음 (%s/api/logs): %s' % (URL, e), file=sys.stderr)
+        return 1
+
+    if dry:
+        print('dry-run — FC 에 안 붙는다. 서버에 있는 FC 로그 (이 이름·크기면 건너뛴다):')
+        for name in sorted(idx):
+            print('  %s  %s' % (name, ' '.join(str(s) for s in sorted(idx[name]))))
+        return 0
+
+    password = None if no_up else read_password()
+    units = Units()
+    res = {}
+    got = []
+    try:
+        units.stop()
+        if not wait_port():
+            return 1
+
+        rc, out = run_fc(LOGLIST, stdout=subprocess.PIPE, text=True)
+        if rc != 0:
+            print('✗ loglist 종료코드 %d — 중단' % rc, file=sys.stderr)
+            return rc
+        want, have = plan(parse_tsv(out), idx)
+        res['서버에 이미 있음'] = [lid for lid, _ in have]
+
+        os.makedirs(OUTDIR, exist_ok=True)
+        for lid, size in want:
+            dest = os.path.join(OUTDIR, log_name(lid))
+            rc, _ = run_fc(LOGDL + [str(lid), str(size), dest])
+            if rc == 0:
+                got.append((lid, dest))
+            elif rc in (2, 3):
+                res.setdefault('불완전', []).append(lid)       # .part 로 남는다. 올리지 않는다
+            else:
+                res.setdefault('건너뜀', []).append(lid)
+                print('ID=%d logdl 종료코드 %d' % (lid, rc), file=sys.stderr)
+    finally:
+        units.restore()
+
+    for lid, dest in got:
+        if password is None:                                    # 비밀번호 없음·--no-upload
+            res.setdefault('받음', []).append(lid)
+        elif password is False:                                 # 앞에서 401 — 더 올리지 않는다
+            res.setdefault('업로드 실패', []).append(lid)
+        else:
+            key, note = upload(dest, log_name(lid), password)
+            print('ID=%d %s' % (lid, note))
+            res.setdefault(key, []).append(lid)
+            if note.startswith('HTTP 401'):
+                password = False
+    if got and not password and not no_up:
+        print('⚠️ 안 올린 것이 있다 — 받은 파일: %s' % OUTDIR)
+
+    print()
+    for line in summary(res):
+        print(line)
+    return 2 if res.get('불완전') or res.get('건너뜀') or res.get('업로드 실패') else 0
+
+
+def _die(signum, _frame):
+    if CHILD and CHILD.poll() is None:
+        CHILD.terminate()
+        try:
+            CHILD.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            CHILD.kill()
+    raise SystemExit(128 + signum)                              # finally 의 원복이 돈다
+
+
+if __name__ == '__main__':
+    sys.stdout.reconfigure(line_buffering=True)
+    for s in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        signal.signal(s, _die)
+    sys.exit(main(sys.argv[1:]))
