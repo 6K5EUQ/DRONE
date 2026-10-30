@@ -63,8 +63,27 @@ while time.time() - t_start < timeout_overall:
     if all(received):
         break
 
-done = sum(received)
-pct = done/len(received)*100 if received else 0
-with open(outpath, 'wb') as f:
-    f.write(data)
-print(f"ID={log_id} 완료: {done}/{len(received)} 청크 ({pct:.1f}%) -> {outpath}")
+def save(data, received, outpath):
+    """다 받았고 머리가 DataFlash 면 outpath 에, 아니면 outpath+'.part' 에 쓴다.
+    0=정상, 2=청크 누락, 3=머리가 DataFlash 매직(A3 95 80)이 아님."""
+    done = sum(received)
+    pct = done/len(received)*100 if received else 0
+    if done < len(received):
+        with open(outpath + '.part', 'wb') as f:
+            f.write(data)
+        print(f"ID={log_id} 불완전: {done}/{len(received)} 청크 ({pct:.1f}%) -> {outpath}.part", file=sys.stderr)
+        return 2
+    if bytes(data[:3]) != b'\xa3\x95\x80':  # web/server.js 의 확인과 같은 값
+        with open(outpath + '.part', 'wb') as f:
+            f.write(data)
+        print(f"ID={log_id} 머리가 DataFlash 가 아님 ({bytes(data[:3]).hex()}) -> {outpath}.part", file=sys.stderr)
+        return 3
+    with open(outpath, 'wb') as f:
+        f.write(data)
+    print(f"ID={log_id} 완료: {done}/{len(received)} 청크 ({pct:.1f}%) -> {outpath}")
+    return 0
+
+rc = save(data, received, outpath)
+if rc:
+    sys.exit(rc)
+m.mav.log_request_end_send(m.target_system, m.target_component)
