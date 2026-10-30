@@ -63,6 +63,11 @@ COPTER_MODE = {
     26: 'AUTOROTATE',
 }
 
+# 착지 판정 — 🔴 3.6.12 는 EXTENDED_SYS_STATE 를 안 보낸다 (SITL 2026-10-30 실측 0건). cmd_fc.py GROUND_* 와 같은 숫자:
+#    상대고도 |alt| < 1.0 m · |climb| < 0.3 m/s · throttle ≤ 10 % 가 2초 넘게 → 지상(1), 아니면 공중(2).
+#    🔶 SITL 실측(지상 thr 0, 호버 34~37)으로 고른 보수값, 실기 미확인
+GROUND_ALT_M, GROUND_CLIMB, GROUND_THR, GROUND_HOLD_S = 1.0, 0.3, 10, 2.0
+
 # GPS_RAW_INT.fix_type
 FIX = {0: 'NO_GPS', 1: 'NO_FIX', 2: '2D', 3: '3D', 4: 'DGPS',
        5: 'RTK_FLOAT', 6: 'RTK_FIXED'}
@@ -279,6 +284,7 @@ class State:
         self.boot = time.time()
         self._seq = 0
         self._last_track = 0.0
+        self._ground_at = None          # 착지 조건이 처음 맞은 시각(monotonic)
         self._soc = None                # {'p0': 시작 잔량 %, 'fc0': 그때 FC 잔량 %, 'fc': 마지막 FC 잔량 %}
         self._boot_ms = None            # 마지막 SYSTEM_TIME.time_boot_ms — 줄면 FC 가 다시 켜진 것
 
@@ -376,6 +382,7 @@ class State:
             d['climb'] = round(msg.climb, 2)
             d['thr'] = msg.throttle
             d['alt_msl'] = round(msg.alt, 2)
+            self._landed(d)
 
         elif t == 'GLOBAL_POSITION_INT':
             d['alt'] = round(msg.relative_alt / 1000.0, 2)
@@ -385,9 +392,13 @@ class State:
             d['vx'] = round(msg.vx / 100.0, 2)
             d['vy'] = round(msg.vy / 100.0, 2)
             d['vz'] = round(msg.vz / 100.0, 2)
+            self._landed(d)
             # lat/lon 0 은 "아직 픽스 없음" 이다. 항적에 넣으면 아프리카 앞바다
-            # 에 점이 찍힌다.
-            if lat or lon:
+            # 에 점이 찍힌다. 🔴 3D fix 전(GPS_RAW_INT.fix_type < 3, 모르면 포함)의 위치는 EKF 가 흘려보낸
+            # 값이다 — 항적에 안 넣고 화면에도 위치 없음(None)으로 낸다
+            if (d.get('fix') or 0) < 3:
+                d['lat'] = d['lon'] = None
+            elif lat or lon:
                 now = time.monotonic()
                 if now - self._last_track >= 1.0:
                     self._last_track = now
@@ -401,12 +412,13 @@ class State:
             d['sats'] = msg.satellites_visible
             d['fix'] = msg.fix_type
             d['fix_s'] = FIX.get(msg.fix_type, str(msg.fix_type))
+            if msg.fix_type < 3:
+                d['lat'] = d['lon'] = None
             # eph 9999 = 값 없음. 그대로 99.99 로 그리면 거짓 정밀도가 된다.
             d['eph'] = None if msg.eph in (0, 65535, 9999) else \
                 round(msg.eph / 100.0, 2)
 
-        elif t == 'EXTENDED_SYS_STATE':
-            d['landed'] = msg.landed_state   # 1 지상 · 2 공중 (화면의 공중/지상 표시)
+        # EXTENDED_SYS_STATE 는 3.6.12 가 안 보낸다 — d['landed'] 는 _landed() 가 만든다 (1 지상 · 2 공중)
 
         elif t == 'EKF_STATUS_REPORT':
             # 🔴 화면은 `ekf_ratio` 를 읽는다 (live.js:584). `ekf` 로 내면
@@ -462,6 +474,19 @@ class State:
         elif t == 'STATUSTEXT':
             self.messages.append({'t': time.time(), 'sev': msg.severity,
                                   'text': msg.text})
+
+    def _landed(self, d):
+        """d['landed'] — GROUND_* 조건이 GROUND_HOLD_S 넘게 이어지면 1, 아니면 2. 값이 다 오기 전엔 None."""
+        alt, climb, thr = d.get('alt'), d.get('climb'), d.get('thr')
+        if alt is None or climb is None or thr is None:
+            return
+        now = time.monotonic()
+        if abs(alt) < GROUND_ALT_M and abs(climb) < GROUND_CLIMB and thr <= GROUND_THR:
+            if self._ground_at is None:
+                self._ground_at = now
+        else:
+            self._ground_at = None
+        d['landed'] = 1 if self._ground_at is not None and now - self._ground_at >= GROUND_HOLD_S else 2
 
     # ── 송신 ──────────────────────────────────────────────────────
     def snapshot(self, since=None, want_track=True):

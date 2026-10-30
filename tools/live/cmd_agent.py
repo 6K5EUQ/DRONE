@@ -14,6 +14,12 @@
 
 🔴 live 에서는 롱폴을 LIVE_WAIT_S(2초)로 짧게 건다 — 서버 응답(200·204)이 5초 넘게 없으면
    cmd_fc 의 워치독이 RTL 을 보내기 때문이다. 받은 지 STALE_S(2초) 넘은 명령은 실행하지 않는다.
+   소켓 타임아웃(3초)은 워치독(5초)보다 확실히 짧고, 한 번 실패하면 바로(0.3초 뒤 wait=0) 다시 묻는다 —
+   느린 요청 하나로 RTL 이 나가지 않게.
+
+🔴 live 에서 명령은 일꾼 스레드가 실행하고 주 스레드는 계속 롱폴한다. 실행 중에 온 비상(rtl·land)은
+   기다리지 않고 바로 따로 실행되고, 도는 명령(긴 업로드·depart 기다림)을 멈춘다. 비상이 아닌 것은
+   rejected 'busy'.
 
 🔴 **같은 id 는 두 번 실행하지 않는다.** 받은 id 는 실행 전에 디스크(SEEN_FILE)에 먼저
    남긴다. 재전달·재연결로 같은 id 가 다시 오면 실행 없이 ack 만 보낸다.
@@ -32,6 +38,7 @@ import json
 import os
 import signal
 import sys
+import threading
 import time
 import urllib.parse
 
@@ -44,8 +51,12 @@ WAIT_S = 25
 SOCK_TIMEOUT = WAIT_S + 10
 # live — 응답이 최대 ~2초 간격으로 오게. 워치독(cmd_fc.LINK_GAP_S 5초)보다 한참 짧게. 시간당 ~1,800회
 LIVE_WAIT_S = 2
-LIVE_SOCK_TIMEOUT = LIVE_WAIT_S + 3
+# 🔴 워치독(5초)보다 확실히 짧게 — 2초 롱폴 + 왕복 1초까지. 실패하면 LIVE_BACKOFF_MIN 뒤 wait=0 으로 다시:
+#    느린 요청 하나는 3 + 0.3 + 왕복 < 5초 안에 회복된다. 두 번 잇달아 실패해야 RTL
+LIVE_SOCK_TIMEOUT = LIVE_WAIT_S + 1
+LIVE_BACKOFF_MIN = 0.3
 LIVE_BACKOFF_MAX = 2.0     # live 는 복구를 빨리 알아야 한다
+URGENT = ('rtl', 'land')   # cmd_fc.URGENT 와 같다 — 실행 중에도 바로 들어간다
 # 받은 시각에서 이만큼 지난 명령은 실행하지 않는다 (expired 'stale')
 STALE_S = 2.0
 
@@ -56,6 +67,7 @@ BACKOFF_MAX = 30.0
 # 처리한 id — 한 줄에 하나(`id` 만 있으면 실행 중, `id\t상태\t사유` 면 결과까지 끝남), 최근 SEEN_KEEP 개만.
 SEEN_FILE = os.path.expanduser('~/.local/state/drone-cmd/seen_ids')
 SEEN_KEEP = 500
+SEEN_LOCK = threading.Lock()   # live 는 일꾼·비상 스레드가 같이 쓴다
 
 
 # ── 처리한 id ───────────────────────────────────────────────────────
@@ -132,9 +144,10 @@ class Server:
                 except ValueError:
                     obj = None
                 return r.status, obj
-            except (http.client.HTTPException, OSError):
+            except (http.client.HTTPException, OSError) as e:
                 self.close()
-                if attempt:
+                # 타임아웃은 다시 걸지 않는다 — 같은 롱폴을 한 번 더 기다리면 워치독 여유(5초)를 넘긴다
+                if attempt or isinstance(e, TimeoutError):
                     raise
         raise RuntimeError('unreachable')
 
@@ -152,14 +165,17 @@ def handle(srv, cmd, got_at, seen, run=execute):
     """명령 하나 — 중복·만료를 보고, 아니면 execute. ack 를 보내고 한 줄 남긴다."""
     cid, kind = str(cmd.get('id', '')), str(cmd.get('kind', '?'))
     mav_result = None
-    if cid in seen:
-        # 다시 왔다 — 실행하지 않는다. 결과를 알면 같은 결과를 다시 알리고,
-        # 모르면(실행 중 죽었다) unknown
-        state, detail = seen[cid] or ('unknown', 'duplicate')
-    else:
-        # 🔴 실행 전에 먼저 남긴다 — 실행 중 죽어도 다시 오면 실행하지 않게
-        seen[cid] = None
-        seen_save(seen)
+    with SEEN_LOCK:
+        dup = cid in seen
+        if dup:
+            # 다시 왔다 — 실행하지 않는다. 결과를 알면 같은 결과를 다시 알리고,
+            # 모르면(실행 중 죽었다) unknown
+            state, detail = seen[cid] or ('unknown', 'duplicate')
+        else:
+            # 🔴 실행 전에 먼저 남긴다 — 실행 중 죽어도 다시 오면 실행하지 않게
+            seen[cid] = None
+            seen_save(seen)
+    if not dup:
         try:
             ttl = max(0.0, float(cmd.get('ttl_ms', 0)) / 1000.0)
         except (TypeError, ValueError):
@@ -180,13 +196,50 @@ def handle(srv, cmd, got_at, seen, run=execute):
             state, detail = 'expired', 'stale'
         else:
             state, detail, mav_result = run(cmd, progress)
-        seen[cid] = (state, detail)
-        seen_save(seen)
+        with SEEN_LOCK:
+            seen[cid] = (state, detail)
+            seen_save(seen)
     body = {'state': state, 'detail': detail}
     if mav_result is not None:
         body['mav_result'] = mav_result
     status, _ = srv.request('POST', '/api/cmd/%s/ack' % urllib.parse.quote(cid, safe=''), body)
     print('%s %s → %s (%s) ack %d' % (kind, cid, state, detail, status), flush=True)
+
+
+def busy(cmd, progress):
+    return 'rejected', 'busy', None
+
+
+class Dispatch:
+    """live — 명령마다 스레드. 일꾼은 하나, 비상(rtl·land)은 일꾼이 돌아도 따로 바로 실행한다."""
+
+    def __init__(self, url, key, fc, srv, seen):
+        self.url, self.key, self.fc, self.srv, self.seen = url, key, fc, srv, seen
+        self.worker = None
+
+    def _thread(self, cmd, got_at):
+        srv = Server(self.url, self.key, LIVE_SOCK_TIMEOUT)    # 스레드마다 연결 하나 — http.client 는 공유 못 한다
+        try:
+            handle(srv, cmd, got_at, self.seen, self.fc.run)
+        except (http.client.HTTPException, OSError) as e:
+            print('%s %s ack 못 보냄 (%s)' % (cmd.get('kind'), cmd.get('id'), e), flush=True)
+        finally:
+            srv.close()
+
+    def __call__(self, cmd, got_at):
+        kind = str(cmd.get('kind', ''))
+        if self.fc.flush:
+            return handle(self.srv, cmd, got_at, self.seen, self.fc.run)   # 바로 rejected 'watchdog'
+        running = self.worker is not None and self.worker.is_alive()
+        if running and kind not in URGENT:
+            return handle(self.srv, cmd, got_at, self.seen, busy)
+        t = threading.Thread(target=self._thread, args=(cmd, got_at), daemon=True)
+        t.start()
+        if kind not in URGENT:
+            self.worker = t
+        elif cmd.get('preempts'):
+            # 서버가 밀어낸 명령 — 비상은 cmd_fc 에서 도는 명령을 어차피 멈춘다
+            print('%s %s — 밀어냄: %s' % (kind, cmd.get('id'), ','.join(map(str, cmd['preempts']))), flush=True)
 
 
 def main():
@@ -212,13 +265,14 @@ def main():
     if args.live != (os.environ.get('DRONE_CMD_LIVE') == '1'):
         print('live 는 --live 와 DRONE_CMD_LIVE=1 이 둘 다 있어야 켜진다 — dry-run 으로 돈다', flush=True)
     seen = seen_load()
-    fc, run, wait, bmax = None, execute, WAIT_S, BACKOFF_MAX
+    fc, dispatch, wait, bmin, bmax = None, None, WAIT_S, BACKOFF_MIN, BACKOFF_MAX
     if live:
         import cmd_fc       # 같은 폴더 — live 일 때만 불러온다
         fc = cmd_fc.Fc(args.bridge)
         fc.start()
-        run, wait, bmax = fc.run, LIVE_WAIT_S, LIVE_BACKOFF_MAX
+        wait, bmin, bmax = LIVE_WAIT_S, LIVE_BACKOFF_MIN, LIVE_BACKOFF_MAX
         srv = Server(args.url, args.key, LIVE_SOCK_TIMEOUT)
+        dispatch = Dispatch(args.url, args.key, fc, srv, seen)
         print('명령 대기열: %s  (🔴 live — FC 다리 %s)' % (args.url, args.bridge), flush=True)
     else:
         srv = Server(args.url, args.key)
@@ -230,7 +284,9 @@ def main():
         try:
             # 워치독 뒤에는 서버에 쌓인 것부터 비운다 — wait=0 으로 받아 전부 rejected('watchdog'), 204 면 끝
             flushing = fc is not None and fc.flush
-            status, obj = srv.request('GET', '/api/cmd/next?wait=%d' % (0 if flushing else wait))
+            # live 에서 방금 실패했으면 wait=0 — 붙는지만 빨리 본다 (워치독 여유 안에)
+            quick = flushing or (fc is not None and backoff)
+            status, obj = srv.request('GET', '/api/cmd/next?wait=%d' % (0 if quick else wait))
             got_at = time.monotonic()
             if fc is not None and status in (200, 204):
                 fc.server_ok()      # 🔴 성공 응답은 200·204 만 — 오류·타임아웃·401/403·5xx 는 아니다
@@ -241,7 +297,7 @@ def main():
                 if not warned_key:
                     print('서버가 거절했다 (%d) — 키가 맞나?' % status, flush=True)
                     warned_key = True
-                backoff = min(bmax, max(BACKOFF_MIN, backoff * 2))
+                backoff = min(bmax, max(bmin, backoff * 2))
             elif status >= 400:
                 raise OSError('HTTP %d' % status)
             else:
@@ -250,13 +306,16 @@ def main():
                     warned_key = warned_net = False
                 backoff = 0.0
                 if status == 200 and isinstance(obj, dict) and obj.get('id'):
-                    handle(srv, obj, got_at, seen, run)
+                    if dispatch:
+                        dispatch(obj, got_at)
+                    else:
+                        handle(srv, obj, got_at, seen)
                 # 204 는 찍지 않고 바로 다시 건다
         except (http.client.HTTPException, OSError) as e:
             if not warned_net:
                 print('서버에 못 닿는다 (%s) — 계속 시도한다' % e, flush=True)
                 warned_net = True
-            backoff = min(bmax, max(BACKOFF_MIN, backoff * 2))
+            backoff = min(bmax, max(bmin, backoff * 2))
         if backoff:
             time.sleep(backoff)
 

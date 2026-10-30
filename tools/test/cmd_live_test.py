@@ -4,7 +4,7 @@
     .venv/bin/python tools/test/cmd_live_test.py
 
 포트: HTTP 4404(가짜 서버)·4405·4406(drone_live), UDP 14565(에이전트)·14566·14567(drone_live 다리).
-seen_ids 는 임시 HOME 에만 쓴다. 자식은 SIGTERM 으로 끝낸다. ~2분.
+seen_ids 는 임시 HOME 에만 쓴다. 자식은 SIGTERM 으로 끝낸다. ~4분.
 """
 import http.client
 import json
@@ -60,6 +60,7 @@ def until(f, t=8.0):
 class Q:
     cmds, acks, polls = [], [], []      # polls: (시각, wait, status)
     down = False
+    slow = 0                            # 이만큼의 GET 은 8초 붙잡는다 (느린 요청 하나)
     n = 0
     gen = 0                             # 에이전트를 바꿀 때 올린다 — 죽은 에이전트의 롱폴이 명령을 가로채지 않게
     lock = threading.Lock()
@@ -82,8 +83,16 @@ class H(BaseHTTPRequestHandler):
             pass                        # 에이전트가 끊었다 (끊김 시험·SIGTERM)
 
     def do_GET(self):                   # noqa: N802
+        if Q.slow > 0:
+            Q.slow -= 1
+            time.sleep(8)
+            return self._send(204)
+        t_in = time.monotonic()
         while Q.down:                   # LTE 끊김 흉내 — 응답 없이 붙잡는다
             time.sleep(0.05)
+        if time.monotonic() - t_in > 3.0:
+            # 에이전트는 소켓 타임아웃(3초)으로 이미 끊고 다시 물었다 — 진짜 서버(cmd.js)처럼 이 요청엔 안 준다
+            return self._send(204)
         wait = float(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('wait', ['0'])[0])
         end = time.monotonic() + wait
         gen = Q.gen
@@ -166,6 +175,10 @@ def wait_poll():
     until(lambda: len(Q.polls) > n, 5)
 
 
+def cmds(fc, since=0.0):
+    return [m.command for m in fc.got('COMMAND_LONG', since)]
+
+
 def main():
     srv = ThreadingHTTPServer(('127.0.0.1', HTTP_PORT), H)
     srv.daemon_threads = True
@@ -205,6 +218,14 @@ def main():
     cmd_agent.handle(S(), {'id': 'fresh0000000', 'kind': 'rtl', 'ttl_ms': 30000}, time.monotonic(), {},
                      run=lambda c, p: called.append('run') or ('done', None, 0))
     ok('run' in called, '방금 받은 것은 실행')
+    import cmd_fc
+    ok(cmd_agent.LIVE_SOCK_TIMEOUT + cmd_agent.LIVE_BACKOFF_MIN + 1.0 < cmd_fc.LINK_GAP_S,
+       '소켓 타임아웃 + 재시도 < 워치독 여유', (cmd_agent.LIVE_SOCK_TIMEOUT, cmd_fc.LINK_GAP_S))
+    g = [type('G', (), {'command': 16, 'frame': 3, 'x': 352000000, 'y': 1285000000, 'z': z})() for z in (0, 30.29, 12.69)]
+    its = [{'cmd': 16, 'frame': 3, 'lat': 35.2, 'lon': 128.5, 'alt': a} for a in (0, 30.3, 12.7)]
+    ok(not cmd_fc.compare(its, g), '되읽기 고도 1 cm 차이(cm 버림)는 일치', cmd_fc.compare(its, g))
+    g[1].z = 30.27
+    ok(cmd_fc.compare(its, g), '3 cm 차이는 불일치')
 
     # ── live ────────────────────────────────────────────────────
     print('— live: 하트비트·롱폴 간격', flush=True)
@@ -243,21 +264,26 @@ def main():
     ok(arms and all(m.param1 == 1 and m.param2 == 0 for m in arms), 'arm 프레임 param1=1 param2=0 (21196 아님)',
        [(m.param1, m.param2) for m in arms])
 
-    print('— 시동 중 미션 업로드 거부 · disarm 사전조건', flush=True)
+    print('— 시동 중 미션 업로드 거부 · disarm 사전조건 (EXTENDED_SYS_STATE 없이 고도·상승·스로틀로)', flush=True)
     ok(run('mission_upload', {'items': []}).get('detail') == 'armed', '시동 중 mission_upload → rejected armed')
-    fc.landed = 2
+    fc.air()
     time.sleep(1.3)
-    ok(run('disarm').get('detail') == 'not-landed', '공중 → disarm rejected not-landed')
-    fc.landed = 1
-    time.sleep(1.3)
-    ok(run('disarm').get('state') == 'done', '지상 → disarm done')
+    ok(run('disarm').get('detail') == 'not-landed', '공중(10 m, thr 40) → disarm rejected not-landed')
+    fc.alt, fc.thr = 0.3, 35            # 땅 가까이지만 스로틀이 호버
+    time.sleep(2.5)
+    ok(run('disarm').get('detail') == 'not-landed', '0.3 m · thr 35 → not-landed')
+    fc.ground()
+    time.sleep(1.0)
+    ok(run('disarm').get('detail') == 'not-landed', '지상 조건 1초 → 아직 not-landed (2초 이어져야)')
+    time.sleep(1.5)
+    ok(run('disarm').get('state') == 'done', '지상 2초 → disarm done')
     ok(run('mission_start').get('detail') == 'disarmed', '꺼진 채 mission_start → rejected disarmed')
 
     print('— 미션 업로드 + 되읽기 대조', flush=True)
     items = [{'seq': 0, 'cmd': 16, 'frame': 3, 'lat': 35.2, 'lon': 128.5, 'alt': 0, 'p1': 0},
              {'seq': 1, 'cmd': 22, 'frame': 3, 'lat': 35.2, 'lon': 128.5, 'alt': 30.0, 'p1': 0},
              {'seq': 2, 'cmd': 16, 'frame': 3, 'lat': 35.2012345, 'lon': 128.5054321, 'alt': 30.3, 'p1': 0},
-             {'seq': 3, 'cmd': 19, 'frame': 3, 'lat': 35.2012345, 'lon': 128.5054321, 'alt': 12.7, 'p1': 5},
+             {'seq': 3, 'cmd': 19, 'frame': 3, 'lat': 35.2012345, 'lon': 128.5054321, 'alt': 4.18, 'p1': 5},
              {'seq': 4, 'cmd': 21, 'frame': 3, 'lat': 35.2012345, 'lon': 128.5054321, 'alt': 0, 'p1': 0}]
     cid = give('mission_upload', {'items': items, 'hash': 'x'})
     r = final(cid)
@@ -271,6 +297,96 @@ def main():
     ok(r.get('state') == 'failed' and 'mismatch' in str(r.get('detail')), '불일치(1e-7) → failed mismatch', r)
     fc.corrupt = False
     ok(run('mission_upload', {'items': [{'cmd': 99}]}).get('state') == 'rejected', '모양이 틀린 items → rejected')
+    ok(abs(fc.mission[3].z - 4.17) < 1e-4 if fc.mission else False, 'FC 는 4.18 을 4.17 로 저장 (float32·cm 버림) — 그래도 done',
+       fc.mission[3].z if fc.mission else None)
+
+    print('— 업로드 재전송 거짓 실패', flush=True)
+    fc.dup_req = True
+    r = run('mission_upload', {'items': items, 'hash': 'x'})
+    ok(r.get('state') == 'done', '요청 중복 → 중복 항목 INVALID_SEQUENCE 무시 → done', r)
+    fc.dup_req = False
+    fc.drop_ack = 1
+    r = final(give('mission_upload', {'items': items, 'hash': 'x'}), 20)
+    ok(r.get('state') == 'done' and str(r.get('detail')).startswith('verified'), '마지막 ACK 잃음 → 되읽기로 done', r)
+
+    print('— depart (검증된 업로드만)', flush=True)
+    fc.corrupt = True
+    run('mission_upload', {'items': items, 'hash': 'h1'})
+    fc.corrupt = False
+    ok(run('depart', {'hash': 'h1'}).get('detail') == 'not-verified', '실패한 업로드 뒤 → rejected not-verified')
+    up = lambda: run('mission_upload', {'items': items, 'hash': 'h1'}).get('state') == 'done'
+    ok(up(), '업로드 h1')
+    ok(run('depart', {'hash': 'h2'}).get('detail') == 'not-verified', '다른 hash → not-verified')
+    ok(run('depart', {}).get('detail') == 'not-verified', 'hash 없음 → not-verified')
+    fc.mode = 2
+    time.sleep(1.3)
+    ok(run('depart', {'hash': 'h1'}).get('detail') == 'mode', 'ALT_HOLD → rejected mode')
+    fc.mode = 5
+    time.sleep(1.3)
+    fc.reboot()
+    time.sleep(1.0)
+    ok(run('depart', {'hash': 'h1'}).get('detail') == 'not-verified', 'FC 재부팅(time_boot_ms 줄어듦) → not-verified')
+    ok(up(), '다시 업로드')
+    fc._request(0)                      # 다른 GCS 가 올리는 중 (FC 가 요청을 낸다)
+    time.sleep(0.5)
+    ok(run('depart', {'hash': 'h1'}).get('detail') == 'not-verified', '다른 업로드 보임 → not-verified')
+    ok(up(), '다시 업로드')
+    fc.mission.pop()                    # FC 미션 개수가 달라짐
+    ok(run('depart', {'hash': 'h1'}).get('detail') == 'not-verified', 'FC 개수 다름 → not-verified')
+    ok(up(), '다시 업로드')
+    fc.reject = {300}
+    t0 = time.monotonic()
+    r = run('depart', {'hash': 'h1'})
+    ok(r.get('state') == 'failed' and r.get('detail') == 'start-fc', 'MISSION_START 거부 → failed start-fc', r)
+    ok(fc.armed is False and [m.param1 for m in fc.got('COMMAND_LONG', t0) if m.command == 400] == [1, 0],
+       '그때 땅에서 바로 disarm', [(m.command, m.param1) for m in fc.got('COMMAND_LONG', t0)])
+    fc.reject = set()
+    time.sleep(1.3)
+    t0 = time.monotonic()
+    cid = give('depart', {'hash': 'h1'})
+    r = final(cid, 20)
+    ok(r.get('state') == 'done' and r.get('detail') == 'airborne', 'depart → done airborne', r)
+    ok(len([a for a in Q.acks if a['id'] == cid and a['state'] == 'fc_ack']) == 1, 'depart 중간 fc_ack 한 번')
+    cl = [m for m in fc.got('COMMAND_LONG', t0) if m.command in (400, 300)]
+    ok([m.command for m in cl] == [400, 300] and cl[0].param1 == 1 and cl[0].param2 == 0, 'arm(param2 0) → MISSION_START',
+       [(m.command, m.param1, m.param2) for m in cl])
+    at = [a for (a, m) in fc.rx if a >= t0 and m.get_type() == 'COMMAND_LONG' and m.command in (400, 300)]
+    ok(len(at) == 2 and at[1] - at[0] < 2.0, 'arm 뒤 2초 안에 MISSION_START (DISARM_DELAY 10 s 안쪽)', at)
+    ok(fc.mode == 3 and fc.armed, 'AUTO·시동')
+    ok(run('mission_start', {'hash': 'zz'}).get('detail') == 'not-verified', 'mission_start 다른 hash → not-verified')
+    ok(run('mission_start', {'hash': 'h1'}).get('state') == 'done', 'mission_start 검증 hash → done')
+    ok(run('land').get('state') == 'done', 'land')
+    fc.ground()
+    fc.armed = False
+    fc.mode = 5
+    time.sleep(1.3)
+
+    print('— 실행 중 비상 — depart 기다림을 끊고 land 가 바로', flush=True)
+    mark = len(ag.lines)
+    fc.takeoff = False                  # 이륙 안 됨 → depart 가 TAKEOFF_S 기다린다
+    cid = give('depart', {'hash': 'h1'})
+    ok(until(lambda: fc.armed and fc.mode == 3, 8), 'depart: AUTO 까지')
+    b = give('mode', {'mode': 'loiter'})
+    ok(final(b).get('detail') == 'busy', '실행 중 다른 명령 → rejected busy', final(b))
+    t0 = time.monotonic()
+    e = give('land')
+    r = final(e)
+    ok(r.get('state') == 'done' and fc.mode == 9, '실행 중 land → done', r)
+    ok(time.monotonic() - t0 < 4.0, 'land 가 depart 를 안 기다림', time.monotonic() - t0)
+    r = final(cid, 15)
+    ok(r.get('state') == 'failed' and r.get('detail') == 'interrupted', 'depart → failed interrupted', r)
+    ok(not any('조종사가 가져감' in l for l in ag.lines[mark:]), '비상 land 는 조종사로 안 셈', ag.lines[mark:])
+    fc.armed = False
+    fc.mode = 5
+    time.sleep(1.3)
+    ok(up(), '업로드')
+    r = final(give('depart', {'hash': 'h1'}), 20)
+    ok(r.get('state') == 'failed' and r.get('detail') == 'no-takeoff', '이륙 안 보임 → failed no-takeoff', r)
+    ok(run('land').get('state') == 'done', 'land')
+    fc.takeoff = True
+    fc.armed = False
+    fc.mode = 5
+    time.sleep(1.3)
 
     print('— 모드·rtl·land', flush=True)
     r = run('mode', {'mode': 'guided'})
@@ -289,13 +405,18 @@ def main():
 
     print('— 워치독 (AUTO·GUIDED 시동 중에만)', flush=True)
     ok(run('arm').get('state') == 'done', 'arm')
-    fc.landed = 2
+    fc.air()
     ok(run('mode', {'mode': 'guided'}).get('state') == 'done', 'guided')
     t0 = time.monotonic()
     time.sleep(10)
     ok(rtl_count(fc, t0) == 0, '정상 2초 간격 204 10초 → RTL 없음')
     gaps = [b - a for (a, *_), (b, *_) in zip(Q.polls, Q.polls[1:]) if a >= t0]
     ok(gaps and max(gaps) < 3.0, '응답 간격 < 3초', gaps)
+    wait_poll()
+    t0 = time.monotonic()
+    Q.slow = 1                          # 다음 GET 하나가 8초 붙잡힌다 — 소켓 타임아웃 뒤 바로 다시
+    time.sleep(7)
+    ok(rtl_count(fc, t0) == 0 and fc.mode == 4, '느린 요청 하나 → RTL 없음', (rtl_count(fc, t0), fc.mode))
     wait_poll()
     t0 = time.monotonic()
     Q.down = True
@@ -305,18 +426,19 @@ def main():
     ok(rtl_count(fc, t0) == 0 and fc.mode == 4, '4초 끊김 → RTL 없음', (rtl_count(fc, t0), fc.mode))
     q0 = len(Q.cmds)
     wait_poll()
-    fc.ignore_rtl = 2
+    fc.ignore_rtl = 1
     t0 = time.monotonic()
     Q.down = True
     ok(until(lambda: rtl_count(fc, t0) >= 1, 9), '6초 끊김 → RTL')
     first = [at for (at, m) in fc.rx if at >= t0 and m.get_type() == 'COMMAND_LONG' and m.command == 20]
-    ok(first and 5.0 <= first[0] - t0 <= 6.5, 'RTL 은 5초 넘어서', first[0] - t0 if first else None)
+    ok(first and 4.9 <= first[0] - t0 <= 6.5, 'RTL 은 5초 넘어서 (폴 기록·틱 0.2초 오차)', first[0] - t0 if first else None)
     ok(until(lambda: fc.mode == 6, 6), 'RTL 확인')
     n = rtl_count(fc, t0)
-    ok(n == 3, 'RTL 재전송 (1초 간격, 확인되면 멈춤) — 3번', n)
+    ok(n == 2, 'RTL 재전송 (1초 간격, 확인되면 멈춤) — 2번', n)
     first = [at for (at, m) in fc.rx if at >= t0 and m.get_type() == 'COMMAND_LONG' and m.command == 20]
     gaps = [b - a for a, b in zip(first, first[1:])]
     ok(gaps and all(0.8 <= g <= 1.5 for g in gaps), '재전송 간격 ~1초', gaps)
+    ok(MAV.MAV_CMD_NAV_LAND not in cmds(fc, t0), 'RTL 이 되면 LAND 안 보냄')
     old = give('mode', {'mode': 'guided'})   # 끊긴 사이 쌓인 명령
     hb_down = [m for m in fc.got('HEARTBEAT', t0 + 5.5) if m.get_srcSystem() == 255]
     ok(not hb_down, '끊긴 동안 GCS 하트비트 멈춤', len(hb_down))
@@ -329,6 +451,37 @@ def main():
     ok(until(lambda: any(m.get_srcSystem() == 255 for m in fc.got('HEARTBEAT', time.monotonic() - 1.5)), 4),
        '복구 뒤 GCS 하트비트 다시')
     del q0
+
+    print('— 워치독 RTL 거부 → LAND · 복구되면 재전송 멈춤', flush=True)
+    ok(run('mode', {'mode': 'guided'}).get('state') == 'done', 'guided')
+    fc.reject = {20}
+    mark = len(ag.lines)
+    wait_poll()
+    t0 = time.monotonic()
+    Q.down = True
+    ok(until(lambda: fc.mode == 9, 12), 'RTL 거부(ACK FAILED) → LAND')
+    r_at = [a for (a, m) in fc.rx if a >= t0 and m.get_type() == 'COMMAND_LONG' and m.command == 20]
+    l_at = [a for (a, m) in fc.rx if a >= t0 and m.get_type() == 'COMMAND_LONG' and m.command == 21]
+    ok(r_at and l_at and l_at[0] - r_at[0] < 1.5, 'ACK 거부면 곧바로 LAND', (r_at[:1], l_at[:1]))
+    ok(not any('조종사가 가져감' in l for l in ag.lines[mark:]), '워치독 LAND 는 조종사로 안 셈', ag.lines[mark:])
+    Q.down = False
+    fc.reject = set()
+    ok(until(lambda: any('대기열 비움 끝' in l for l in ag.lines[-5:]), 6), '복구')
+    time.sleep(1)
+    ok(run('mode', {'mode': 'guided'}).get('state') == 'done', 'guided')
+    fc.ignore_rtl = 99                  # RTL 을 받기만 하고 안 바꾼다
+    wait_poll()
+    t0 = time.monotonic()
+    Q.down = True
+    ok(until(lambda: rtl_count(fc, t0) >= 1, 9), '끊김 → RTL')
+    Q.down = False
+    time.sleep(5)
+    ok(rtl_count(fc, t0) <= 2 and MAV.MAV_CMD_NAV_LAND not in cmds(fc, t0) and fc.mode == 4,
+       '복구 뒤 RTL 재전송 멈춤·LAND 없음', (rtl_count(fc, t0), cmds(fc, t0), fc.mode))
+    ok(run('mode', {'mode': 'loiter'}).get('state') == 'done' and fc.mode == 5, '복구 뒤 운용자 모드 그대로')
+    time.sleep(2)
+    ok(fc.mode == 5, '워치독이 덮지 않음')
+    fc.ignore_rtl = 0
 
     print('— 조종사 개입', flush=True)
     fc.ch5 = 1900                       # 모드 스위치
@@ -343,17 +496,20 @@ def main():
     Q.down = False
     ok(rtl_count(fc, t0) == 0, '조종사가 가져간 뒤 워치독은 모드 안 바꿈')
     ok(run('land').get('detail') == 'pilot', '잠금 중 land 도 rejected pilot')
-    fc.landed, fc.armed = 1, False      # 착지
+    fc.ground()
+    fc.armed = False                    # 착지
     time.sleep(1.3)
     r = run('mode', {'mode': 'loiter'})
     ok(r.get('state') == 'done', '착지 뒤 잠금 풀림', r)
     ok(run('arm').get('state') == 'done', 'arm')
-    fc.landed = 2
+    fc.air()
     time.sleep(1.3)
     fc.mode = 2                         # 에이전트가 안 시킨 모드
     time.sleep(1.3)
     ok(run('mode', {'mode': 'guided'}).get('detail') == 'pilot', '안 시킨 모드 전환 → rejected pilot')
-    fc.landed, fc.armed = 1, False
+    fc.ground()
+    fc.armed = False
+    ok(until(lambda: any('잠금 풂' in l for l in ag.lines[-3:]), 4), '착지 판정으로 잠금 풂')
     time.sleep(1.3)
 
     ok(not fc.got('RC_CHANNELS_OVERRIDE'), 'RC_CHANNELS_OVERRIDE 0건')
@@ -373,6 +529,23 @@ def main():
     ok({m.get_type() for m in fc.got()} == {'REQUEST_DATA_STREAM'}, '보낸 것은 REQUEST_DATA_STREAM 뿐',
        {m.get_type() for m in fc.got()})
     ok(http_status(DL_HTTP, 'POST', '/api/state') in (501, 405), 'HTTP POST 안 받음')
+    dd = lambda: json.loads(http_get(DL_HTTP, '/api/state') or '{}')
+    ok(dd().get('d', {}).get('lat') == 35.2, '3D fix → 위치', dd().get('d', {}).get('lat'))
+    time.sleep(2.5)
+    ok(dd().get('d', {}).get('landed') == 1, '지상 2초 → landed 1 (EXTENDED_SYS_STATE 없이)', dd().get('d', {}).get('landed'))
+    fc.air()
+    time.sleep(0.6)
+    ok(dd().get('d', {}).get('landed') == 2, '공중 → landed 2', dd().get('d', {}).get('landed'))
+    fc.fix = 2
+    time.sleep(0.6)
+    n0 = dd().get('track_n')
+    time.sleep(2.5)
+    s1 = dd()
+    ok(s1.get('d', {}).get('lat') is None and s1.get('d', {}).get('lon') is None, 'fix 2 → 위치 없음(None)', s1.get('d', {}).get('lat'))
+    ok(s1.get('track_n') == n0, 'fix 2 → 항적 안 늘어남', (n0, s1.get('track_n')))
+    fc.fix = 3
+    time.sleep(2.5)
+    ok(dd().get('track_n', 0) > n0 and dd().get('d', {}).get('lat') == 35.2, 'fix 3 → 다시 위치·항적')
     ok(not any('[bridge]' in l for l in dl.lines), '다리 안 열림')
     kill(dl)
     fc.close()
@@ -408,7 +581,8 @@ def main():
     time.sleep(1)
     r = run('mission_upload', {'items': items, 'hash': 'x'})
     ok(r.get('state') == 'done', '다리 거쳐 미션 업로드 + 대조 done', r)
-    ok(run('arm').get('state') == 'done', '다리 거쳐 arm done')
+    r = final(give('depart', {'hash': 'x'}), 20)
+    ok(r.get('state') == 'done' and r.get('detail') == 'airborne', '다리 거쳐 depart done', r)
     kill(ag)
     kill(dl)
     fc.close()

@@ -145,6 +145,12 @@ const server = async () => { const s = start(process.execPath, [path.join(WEB, '
   ag = agent(`http://127.0.0.1:${FAKE_CMD_PORT}`, KEY);
   ok(await until(() => acks.length >= 5), '결과 없는 id ack');
   ok(acks[4] && acks[4].state === 'unknown' && acks[4].detail === 'duplicate', '결과 없이 id 만 있으면 unknown', JSON.stringify(acks[4]));
+  // depart(args.hash)·비상의 preempts 도 dry-run 에서는 실행 없이 거부만
+  give.push({ id: 'cccccccccccc', kind: 'depart', args: { hash: 'd906b2c6ff4adfc5' }, ttl_ms: 30000 },
+            { id: 'dddddddddddd', kind: 'land', args: {}, ttl_ms: 30000, preempts: ['cccccccccccc'] });
+  ok(await until(() => acks.length >= 7), 'depart·land ack');
+  ok(acks[5] && acks[5].id === 'cccccccccccc' && acks[5].state === 'rejected' && acks[5].detail === 'dry-run', 'depart → rejected dry-run', JSON.stringify(acks[5]));
+  ok(acks[6] && acks[6].id === 'dddddddddddd' && acks[6].state === 'rejected' && acks[6].detail === 'dry-run', 'preempts 있는 land → rejected dry-run', JSON.stringify(acks[6]));
   await stop(ag);
   fake.closeAllConnections(); fake.close();
 
