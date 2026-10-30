@@ -97,7 +97,7 @@ const server = async () => { const s = start(process.execPath, [path.join(WEB, '
   const rj = hist(c.j.id).find((l) => l.to === 'rejected') || {};
   ok(rj.from === 'delivered' && rj.by === 'pi' && rj.detail === 'dry-run', 'delivered → rejected, detail dry-run', JSON.stringify(rj));
   ok(await until(() => ag.out.some((l) => l.includes(c.j.id) && l.includes('rejected') && l.includes('ack 200'))), '에이전트 한 줄 로그', JSON.stringify(ag.out));
-  ok(fs.readFileSync(SEEN, 'utf8').split('\n').includes(c.j.id), 'seen_ids 에 남김');
+  ok(fs.readFileSync(SEEN, 'utf8').split('\n').some((l) => l.split('\t')[0] === c.j.id), 'seen_ids 에 남김');
   ok(!ag.out.some((l) => /204/.test(l)), '204 는 안 찍는다');
 
   console.log('— (4) 서버 끊김 후 복구');
@@ -129,7 +129,7 @@ const server = async () => { const s = start(process.execPath, [path.join(WEB, '
   ag = agent(`http://127.0.0.1:${FAKE_CMD_PORT}`, KEY);
   ok(await until(() => acks.length >= 3), 'ack 3건', JSON.stringify(acks));
   ok(acks[0] && acks[0].state === 'rejected' && acks[0].detail === 'dry-run', '첫 번째 → rejected dry-run', JSON.stringify(acks[0]));
-  ok(acks[1] && acks[1].id === 'aaaaaaaaaaaa' && acks[1].state !== 'rejected' && acks[1].detail === 'duplicate', '같은 id 재전달 → 실행 없이 ack(duplicate)', JSON.stringify(acks[1]));
+  ok(acks[1] && acks[1].id === 'aaaaaaaaaaaa' && acks[1].state === 'rejected' && acks[1].detail === 'dry-run', '같은 id 재전달 → 실행 없이 같은 결과(rejected dry-run) 재응답', JSON.stringify(acks[1]));
   ok(acks[2] && acks[2].state === 'expired', 'ttl 0 → expired', JSON.stringify(acks[2]));
   ok(uas.size === 1 && uas.has('drone01-cmdagent/1.0'), 'User-Agent', [...uas].join());
   await stop(ag);
@@ -137,7 +137,14 @@ const server = async () => { const s = start(process.execPath, [path.join(WEB, '
   give.push({ id: 'aaaaaaaaaaaa', kind: 'rtl', args: {}, ttl_ms: 30000 });
   ag = agent(`http://127.0.0.1:${FAKE_CMD_PORT}`, KEY);
   ok(await until(() => acks.length >= 4), '재시작 후 ack');
-  ok(acks[3] && acks[3].detail === 'duplicate', '재시작 후에도 같은 id 재실행 없음', JSON.stringify(acks[3]));
+  ok(acks[3] && acks[3].state === 'rejected' && acks[3].detail === 'dry-run', '재시작 후에도 같은 결과 재응답(재실행 없음)', JSON.stringify(acks[3]));
+  await stop(ag);
+  // 결과 없이 id 만 남은 경우(실행 중 죽음) → unknown
+  fs.appendFileSync(SEEN, 'bbbbbbbbbbbb\n');
+  give.push({ id: 'bbbbbbbbbbbb', kind: 'rtl', args: {}, ttl_ms: 30000 });
+  ag = agent(`http://127.0.0.1:${FAKE_CMD_PORT}`, KEY);
+  ok(await until(() => acks.length >= 5), '결과 없는 id ack');
+  ok(acks[4] && acks[4].state === 'unknown' && acks[4].detail === 'duplicate', '결과 없이 id 만 있으면 unknown', JSON.stringify(acks[4]));
   await stop(ag);
   fake.closeAllConnections(); fake.close();
 
