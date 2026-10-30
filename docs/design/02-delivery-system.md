@@ -128,8 +128,15 @@ seq 3  LAND      목적지
 
 ## 5. 안전 — P3 전에 정할 것
 
-- 🔴 **failsafe 재설계.** 지금 `FS_THR_ENABLE=1`·`FS_GCS_ENABLE=1` 은 AUTO 중에도 RTL 이다(params 09-21).
-  조종기 사거리 밖 목적지, LTE 지연에서 미션이 끊긴다. 🔶 3.6 의 "AUTO 면 계속" 값 확인 필요
+- 🔴 **failsafe 재설계.** 지금 `FS_THR_ENABLE=1`·~~`FS_GCS_ENABLE=1`~~ 은 AUTO 중에도 RTL 이다(params 09-21).
+  조종기 사거리 밖 목적지, ~~LTE 지연~~에서 미션이 끊긴다. 🔶 3.6 의 "AUTO 면 계속" 값 확인 필요
+  - ⚠️ **무효 (2026-10-30) — `FS_GCS_ENABLE` 부분.** 3.6.12 의 GCS failsafe 는 AUTO 에서 걸리지 않는다.
+    이유: ArduCopter 3.6 브랜치 `events.cpp` 의 `failsafe_gcs_check()` 는 `rc_override_active` 이거나
+    GUIDED 모드일 때만 GCS 하트비트를 검사한다. 타임아웃은 5 초 고정(`config.h` 의 `FS_GCS_TIMEOUT_MS` 5000) —
+    `FS_GCS_TIMEOUT` 파라미터는 4.x 부터다. — 소스 확인, SITL 미검증 🔶
+  - 올바른 서술: AUTO 중 RTL 로 끊는 것은 `FS_THR_ENABLE=1`(조종기 신호 상실) 쪽이다. AUTO 미션 중 LTE 지연·GCS 링크
+    단절은 3.6.12 에서 failsafe 를 일으키지 않는다 — 반대로 **링크가 끊겨도 미션이 계속된다**는 뜻이라, 이 기체 쪽
+    보호 장치가 따로 필요하다. GUIDED 로 명령을 보낼 경우에는 5 초 GCS failsafe 가 걸린다. 🔶 SITL 미검증
 - 🔴 배터리 failsafe 임계 4S 정정 (00-progress #4)
 - 지오펜스 켜기 — 교내 범위
 - 착륙 지점에 사람이 있을 때 — 착륙 직전 정지·확인 절차(사람 확인 버튼 등) 🔶 미정
