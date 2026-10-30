@@ -58,6 +58,7 @@ let cid = 0;
 const upload = (items, hash) => req('POST', '/api/cmd', { who: 'u01', body: { kind: 'mission_upload', args: { items, hash }, client_id: 'm' + (++cid) } });
 const has = (errs, re) => errs.some((e) => re.test(e));
 const BASE = CATALOG.find((p) => p.base);
+const r1 = (v) => Math.round(v * 10) / 10;
 
 (async () => {
   console.log('— 정규화·hash (모듈)');
@@ -136,6 +137,52 @@ const BASE = CATALOG.find((p) => p.base);
   const far = mission.check([{ seq: 0, cmd: 16, frame: 3, lat: BASE.lat, lon: BASE.lon, alt: 0, p1: 0 },
     { seq: 1, cmd: 22, frame: 3, lat: BASE.lat, lon: BASE.lon, alt: 20, p1: 0 }, { seq: 2, cmd: 21, frame: 3, lat: BASE.lat, lon: BASE.lon, alt: 0, p1: 0 }]);
   ok(!far.errors.length && !far.warnings.length, '기지 이착륙만 — 오류·경고 없음', JSON.stringify(far));
+
+  console.log('— 착륙은 마지막에만');
+  ok(has(bad((c) => { c[2].cmd = 21; }), /2번 항목: 착륙\(21\)은 마지막/), '중간 21 거부');
+  x = await plan('u01', { steps: [{ k: 'takeoff', alt: 20 }, { k: 'land' }, { k: 'takeoff', alt: 20 }, { k: 'land' }] });
+  ok(x.s === 400 && has(x.j.errors, /1번 절차: 착륙\(land·rtl\)은 마지막/), '절차 중간 land → 400 + 사유', JSON.stringify(x.j));
+  x = await plan('u01', { steps: [{ k: 'takeoff', alt: 20 }, { k: 'rtl' }, { k: 'hover', sec: 5 }] });
+  ok(x.s === 400 && has(x.j.errors, /1번 절차: 착륙/), '절차 중간 rtl → 400');
+  ok((await req('PUT', '/api/mission/tabs/t9', { who: 'u01', body: { name: 'x', steps: [{ k: 'land' }, { k: 'land' }] } })).s === 400, '중간 land 탭 저장 400');
+
+  console.log('— 고도 하한 — 지면 여유·이륙·호버·0 m');
+  const MAIN = CATALOG.find((q) => q.name === '본관');   // 기지보다 5.9 m 낮다
+  const down = (alt) => mission.check(mission.toItems([{ k: 'takeoff', alt: 20 }, { k: 'goto', lat: MAIN.lat, lon: MAIN.lon, alt: 20 },
+    { k: 'goto', alt }, { k: 'land' }], BASE));
+  const dmh = (await plan('u01', { title: '본관' })).j.report.ground.dest_minus_home_m;
+  ok(dmh < -5, '본관 지반이 기지보다 낮다', String(dmh));
+  ok(!down(r1(dmh + 5.1)).errors.length, `목적지 지면 위 5 m 넘음 → 음수 상대고도(${r1(dmh + 5.1)}) 통과`, JSON.stringify(down(r1(dmh + 5.1)).errors));
+  ok(has(down(r1(dmh + 4)).errors, /3번 항목: 고도 .* 지면 위 5 m/), '지면 위 4 m → 거부');
+  const DO = CATALOG.find((q) => q.name === '화영운동장');   // 기지보다 28.7 m 높다
+  ok(has(mission.check(mission.toItems([{ k: 'takeoff', alt: 20 }, { k: 'goto', lat: DO.lat, lon: DO.lon, alt: 30 }, { k: 'land' }], BASE)).errors, /2번 항목: 고도 30 m/),
+    '높은 목적지 위 30 m (지면 위 1 m) → 거부');
+  ok(has(bad((c) => { c[1].alt = 1.5; }), /이륙 고도 1.5 m — 2 m/), '이륙 1.5 m 거부');
+  const hov = (p1) => mission.check(mission.toItems([{ k: 'takeoff', alt: 20 }, { k: 'hover', sec: 5 }, { k: 'land' }], BASE).map((o) => (o.cmd === 19 ? { ...o, p1 } : o))).errors;
+  ok(has(hov(0), /호버 0 초/) && has(hov(-3), /호버 -3 초/) && has(hov(121), /호버 121 초/) && !hov(120).length, '호버 p1 0·음수·121 거부, 120 통과');
+  ok(has(bad((c) => { c[2].p1 = 30; }), /p1 30 — 호버\(19\) 밖/), '경유 p1 ≠ 0 거부');
+  ok(has(bad((c) => { c[3].alt = 0; }), /3번 항목: 고도 0 m/), '경유 alt 0 거부');
+  ok(has(bad((c) => { c[3].alt = 0.004; }), /고도 0 m/), '경유 alt 0.004 (cm 로 0) 거부');
+  // 기지보다 10 m 이상 낮은 곳이면 0 이 합법 범위에 들어온다 — 생성기는 0.1 로 민다
+  const LOW = { lat: 35.18077, lon: 128.558911 };   // 기지 동쪽, 지반 ~3 m (기지 34.5 m)
+  const z = mission.toItems([{ k: 'takeoff', alt: 20 }, { k: 'goto', lat: BASE.lat, lon: BASE.lon, alt: 0 }, { k: 'goto', alt: -0.04 }, { k: 'land' }], LOW);
+  ok(z[2].alt === 0.1 && z[3].alt === 0.1 && z[0].alt === 0 && z[4].alt === 0, 'toItems — 경유 0 → 0.1 m, 홈·착륙은 0', JSON.stringify(z.map((o) => o.alt)));
+
+  console.log('— 고도 상한 — 생성 거부');
+  x = await plan('u01', { title: '화영운동장', home: LOW });
+  ok(x.s === 200 && x.j.ok === false && x.j.error === 'h_max' && x.j.reason === '고도 상한 초과' && x.j.h_m > 60 && x.j.h_max === 60 &&
+    x.j.items.length === 0 && /고도 상한 초과 — H [\d.]+ m > 60 m/.test(x.j.report.errors[0]), '상한 넘는 H → ok:false + reason + h_m', JSON.stringify(x.j));
+
+  console.log('— 사유에 큰 입력을 되돌리지 않는다');
+  const huge = 'x'.repeat(5000);
+  let e = bad((c) => { c[2].lat = huge; });
+  ok(e.length && e.every((t) => t.length < 120), '숫자 아닌 큰 문자열 → 잘린 사유', String(e[0]).length);
+  e = bad((c) => { c[2][huge] = 1; });
+  ok(e.every((t) => t.length < 120), '큰 키 이름 → 잘린 사유');
+  e = mission.check(Array.from({ length: 2000 }, () => ({ seq: 'a' })));
+  ok(e.errors.length <= 20, '사유 수 상한 20', String(e.errors.length));
+  x = await upload(Array.from({ length: 30 }, (_, i) => ({ seq: i, cmd: huge.slice(0, 1500) })), 'x');
+  ok(x.s === 400 && JSON.stringify(x.j).length < 4000, 'cmd.js 업로드 거부도 짧다', String(JSON.stringify(x.j).length));
 
   console.log('— 탭 CRUD 권한');
   const tab = { name: '본관 왕복', steps: [{ k: 'takeoff', alt: 30 }, { k: 'goto', lat: 35.180747, lon: 128.554772, alt: 30 }, { k: 'land' }] };

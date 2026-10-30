@@ -150,6 +150,82 @@ async function server() {
   arm = await cmd('u01', 'arm');
   await link({ armed: true });
   ok((await confirm('u01', arm.j.id)).j.reason === 'armed', '이미 시동 → rejected armed');
+  console.log('— 미션 시작 hash — 마지막으로 done 된 업로드');
+  const pl = (await req('POST', '/api/mission/plan', { who: 'u01', body: { title: '본관' } })).j;
+  x = await cmd('u01', 'mission_start');
+  ok(x.s === 409 && x.j.error === 'upload' && x.j.reason === 'no-mission', '업로드 없음 → mission_start 409 no-mission', JSON.stringify(x.j));
+  ok((await cmd('u01', 'depart')).j.reason === 'no-mission', '업로드 없음 → depart 409 no-mission');
+  // 업로드 한 바퀴 — 확인 → 가져감 → done
+  const upDone = async (items, hash) => {
+    const u = await cmd('u01', 'mission_upload', { items, hash });
+    await confirm('u01', u.j.id);
+    const g = await next(0);
+    return { u, g };
+  };
+  let up1 = await cmd('u01', 'mission_upload', { items: pl.items, hash: pl.hash });
+  ok((await cmd('u01', 'depart')).j.reason === 'upload-pending', '확인 기다리는 업로드 → upload-pending');
+  await confirm('u01', up1.j.id);
+  ok((await next(0)).j.id === up1.j.id, '업로드 delivered');
+  ok((await cmd('u01', 'mission_start')).j.reason === 'upload-pending', '결과 기다리는 업로드 → upload-pending');
+  await ack(up1.j.id, 'failed', { detail: 'timeout' });
+  ok((await cmd('u01', 'depart')).j.reason === 'upload-failed', '마지막 업로드 failed → upload-failed');
+  let { u: up2, g } = await upDone(pl.items, pl.hash);
+  ok(g.j.id === up2.j.id && (await ack(up2.j.id, 'done')).s === 200, '두 번째 업로드 done');
+  x = await cmd('u01', 'mission_start', { hash: 'ffffffffffffffff' });
+  ok(x.s === 409 && x.j.reason === 'mission-changed' && x.j.hash === pl.hash, '화면 hash 가 다르면 → mission-changed + 지금 hash');
+  x = await cmd('u01', 'depart', { hash: pl.hash, junk: 'x'.repeat(100) });
+  ok(x.s === 201 && x.j.state === 'awaiting_confirm', 'depart → awaiting_confirm (확인 필요)', JSON.stringify(x.j));
+  let dc = (await list()).find((c) => c.id === x.j.id);
+  ok(JSON.stringify(dc.args) === JSON.stringify({ hash: pl.hash }), 'depart args = {hash} 서버가 채움 (다른 키 버림)', JSON.stringify(dc.args));
+  await link({ armed: true });
+  ok((await confirm('u01', x.j.id)).j.reason === 'armed', '이미 시동 → depart rejected armed');
+  x = await cmd('u01', 'depart');
+  await link({ volt: 13.5 });
+  ok((await confirm('u01', x.j.id)).j.reason === 'volt', 'depart 전압 13.5 V → rejected volt');
+  const dep = await cmd('u01', 'depart');
+  // 확인 전에 다른 미션이 올라가면 확인에서 거부
+  const pl2 = (await req('POST', '/api/mission/plan', { who: 'u01', body: { title: '도서관' } })).j;
+  ({ u: up2, g } = await upDone(pl2.items, pl2.hash));
+  await ack(up2.j.id, 'done');
+  await link();
+  x = await confirm('u01', dep.j.id);
+  ok(x.s === 409 && x.j.reason === 'mission-changed', '확인 사이 미션이 바뀜 → rejected mission-changed', JSON.stringify(x.j));
+  const dep2 = await cmd('u01', 'depart');
+  await link();
+  x = await confirm('u01', dep2.j.id);
+  ok(x.s === 200 && x.j.state === 'queued', '꺼진 채 depart 확인 → queued');
+  g = await next(0);
+  ok(g.j.id === dep2.j.id && g.j.kind === 'depart' && g.j.args.hash === pl2.hash && g.j.ttl_ms > 55000, '파이가 받는 depart — args.hash · ttl 60초', JSON.stringify(g.j));
+
+  console.log('— 비상 — 결과를 기다리는 명령이 있어도 rtl·land 는 바로');
+  // depart 가 전달돼 ack 가 없다 (잃어버림)
+  const dis = await cmd('u01', 'disarm');
+  ok((await next(0)).s === 204, 'depart 결과 대기 중엔 disarm 을 안 내준다');
+  const e1 = await cmd('adm', 'rtl');
+  ok(e1.j.state === 'queued' && await stateOf(dis.j.id) === 'preempted', 'rtl → 전달 전 disarm 은 preempted');
+  dc = (await list()).find((c) => c.id === dep2.j.id);
+  ok(dc.state === 'unknown' && dc.reason === 'preempted:' + e1.j.id, '전달된 depart → unknown (preempted:rtl id)', JSON.stringify(dc));
+  t0 = Date.now(); g = await next(0);
+  ok(g.s === 200 && g.j.id === e1.j.id && JSON.stringify(g.j.preempts) === JSON.stringify([dep2.j.id]) && Date.now() - t0 < 1000,
+    'rtl 즉시 전달 + preempts = [depart id]', JSON.stringify(g.j));
+  ok((await ack(dep2.j.id, 'done')).s === 409, '밀려난 depart 의 늦은 ack → 409');
+  const e2 = await cmd('adm', 'land');
+  g = await next(0);
+  ok(g.j.id === e2.j.id && !g.j.preempts, 'rtl 결과 대기 중에도 land 즉시 (비상은 밀어내지 않음)', JSON.stringify(g.j));
+  ok(await stateOf(e1.j.id) === 'delivered', 'rtl 은 그대로 delivered');
+  const ld = await cmd('u01', 'mode', { mode: 'loiter' });
+  ok((await next(0)).s === 204, '비상 결과 대기 중엔 비상 아닌 것은 안 내준다');
+  await ack(e1.j.id, 'done'); await ack(e2.j.id, 'done');
+  ok((await next(0)).j.id === ld.j.id, '비상이 끝나면 다음');
+  await ack(ld.j.id, 'done');
+  // 밀려난 업로드는 결과를 모른다 → 미션 시작 막힘
+  const up3 = await cmd('u01', 'mission_upload', { items: pl.items, hash: pl.hash });
+  await confirm('u01', up3.j.id); await next(0);
+  await cmd('adm', 'land'); await next(0);
+  ok(await stateOf(up3.j.id) === 'unknown' && (await cmd('u01', 'depart')).j.reason === 'upload-failed', '비상에 밀린 업로드(unknown) → depart upload-failed');
+  for (const c of await list()) if (c.state === 'delivered') await ack(c.id, 'done');
+  ({ u: up2 } = await upDone(pl.items, pl.hash)); await ack(up2.j.id, 'done');
+
   arm = await cmd('u01', 'mission_start');
   await link({ fix: 2, armed: true });
   ok((await confirm('u01', arm.j.id)).j.reason === 'gps', 'fix 2 → rejected gps');
@@ -159,6 +235,8 @@ async function server() {
   arm = await cmd('u01', 'mission_start');
   await link({ armed: true });
   ok((await confirm('u01', arm.j.id)).j.state === 'queued', '시동 뒤 mission_start → queued');
+  ok((await list()).find((c) => c.id === arm.j.id).args.hash === pl.hash, 'mission_start 도 args.hash');
+  await req('POST', `/api/cmd/${arm.j.id}/cancel`, { who: 'u01', body: {} });
   arm = await cmd('u01', 'arm');
   await link(); await sleep(3200);
   ok((await confirm('u01', arm.j.id)).j.reason === 'live-stale', '라이브 3초 넘음 → rejected live-stale');
@@ -190,7 +268,6 @@ async function server() {
   await link();
   ok((await confirm('u01', arm.j.id)).j.state === 'queued', 'arm queued (안 가져감)');
   // 업로드는 서버가 항목·hash 를 검사한다(mission.js) — 계획에서 받은 그대로 쓴다
-  const pl = (await req('POST', '/api/mission/plan', { who: 'u01', body: { title: '본관' } })).j;
   const wait = await cmd('u01', 'mission_upload', { items: pl.items, hash: pl.hash });
   ok(wait.j.state === 'awaiting_confirm', 'mission_upload → awaiting_confirm (확인 안 함)');
   await sleep(11000);

@@ -35,10 +35,15 @@ const KEEP = 200;                  // 메모리에 남길 명령 수 (목록용)
 
 // 명령 종류 — 이 목록 밖은 400. ttl 은 queued 된 때부터 센다.
 // 🔶 disarm 의 ttl 은 정해지지 않아 arm 과 같은 10초로 두었다.
-const TTL = { arm: 10e3, disarm: 10e3, mode: 30e3, rtl: 30e3, land: 30e3, mission_upload: 60e3, mission_start: 60e3 };
+// depart = 파이가 arm + mission_start 를 한 번에 (같은 이름으로 파이 에이전트가 구현). ttl 은 mission_start 와 같다.
+const TTL = { arm: 10e3, disarm: 10e3, mode: 30e3, rtl: 30e3, land: 30e3, mission_upload: 60e3, mission_start: 60e3, depart: 60e3 };
 const MODES = new Set(['auto', 'guided', 'loiter', 'alt_hold', 'rtl', 'land']);
-const DANGER = (c) => ['arm', 'mission_start', 'mission_upload'].includes(c.kind) || (c.kind === 'mode' && c.args.mode === 'auto');
-const PRECHECK = new Set(['arm', 'mission_start']);
+const DANGER = (c) => ['arm', 'mission_start', 'mission_upload', 'depart'].includes(c.kind) || (c.kind === 'mode' && c.args.mode === 'auto');
+const PRECHECK = new Set(['arm', 'mission_start', 'depart']);
+// 미션을 시작하는 명령 — args.hash 는 서버가 채운다(마지막으로 done 된 mission_upload 의 hash)
+const STARTS = new Set(['mission_start', 'depart']);
+// 비상 명령 — 다른 명령이 전달돼 결과를 기다리는 중이어도 바로 내준다
+const EMERG = new Set(['rtl', 'land']);
 
 // 상태 — 전달 전 / 전달 뒤(결과 대기) / 끝
 const BEFORE = new Set(['created', 'awaiting_confirm', 'queued']);
@@ -129,14 +134,30 @@ function queue(c, by) {
   wake();
 }
 
+/** FC 에 올라가 있을 미션 — 가장 최근에 끝난 mission_upload 가 done 이면 { hash }, 아니면 { reason }.
+ *  진행 중인 업로드가 있으면 upload-pending, 마지막 시도가 failed·unknown(밀려남 포함)이면 upload-failed.
+ *  FC 에 닿지 않은 것(취소·만료·거부·전달 전 밀려남)은 FC 미션을 안 바꾸므로 건너뛴다.
+ *  🔶 대기열이 메모리뿐이라 재시작 뒤에는 no-mission — 다시 올려야 한다 */
+function uploaded() {
+  const ups = cmds.filter((c) => c.kind === 'mission_upload');
+  if (ups.some((c) => BEFORE.has(c.state) || FLIGHT.includes(c.state))) return { reason: 'upload-pending' };
+  const tried = ups.filter((c) => ['done', 'failed', 'unknown'].includes(c.state));
+  if (!tried.length) return { reason: 'no-mission' };
+  const last = tried.reduce((a, b) => (a.updated >= b.updated ? a : b));
+  return last.state === 'done' ? { hash: last.args.hash } : { reason: 'upload-failed' };
+}
+
 /** 위험 명령의 사전조건 — 서버가 가진 라이브 상태(3초 안). 맞으면 null, 아니면 사유 */
-function precheck(kind) {
+function precheck(c) {
+  const kind = c.kind;
+  // 확인 사이에 미션이 바뀌었으면 거부 — 만들 때 채운 hash 와 지금 FC 에 있을 미션이 같아야 한다
+  if (STARTS.has(kind)) { const m = uploaded(); if (m.reason) return m.reason; if (m.hash !== c.args.hash) return 'mission-changed'; }
   const L = C.getLive();
   if (!L || !L.state || Date.now() - L.at > LIVE_FRESH_MS) return 'live-stale';
   const d = L.state.d || {};
   if (!(d.fix >= 3)) return 'gps';
   if (!(d.volt >= READY_VOLT)) return 'volt';
-  // arm 은 꺼진 채로, mission_start 는 시동 뒤에(auto_armed — 순서는 3.6.12 소스 근거, SITL 미검증 🔶)
+  // arm·depart 는 꺼진 채로, mission_start 는 시동 뒤에(auto_armed — 순서는 3.6.12 소스 근거, SITL 미검증 🔶)
   if (kind === 'mission_start') return d.armed === true ? null : 'disarmed';
   return d.armed === false ? null : 'armed';
 }
@@ -158,16 +179,30 @@ async function create(req, res) {
   sweep();
   const dk = u.id + '\n' + cid, dup = dedup.get(dk);
   if (dup && find(dup.id)) { const c = find(dup.id); return json(req, res, 200, { id: c.id, state: c.state }); }
+  let a = args;
+  if (STARTS.has(kind)) {
+    // 미션 시작 — hash 는 서버가 채운다. 화면이 hash 를 주면 그것과 같아야 한다(본 미션 ≠ FC 미션 막이)
+    const m = uploaded();
+    if (m.reason) return json(req, res, 409, { error: 'upload', reason: m.reason });
+    if (args.hash != null && args.hash !== m.hash) return json(req, res, 409, { error: 'upload', reason: 'mission-changed', hash: m.hash });
+    a = { hash: m.hash };
+  }
 
   const now = Date.now();
-  const c = { id: crypto.randomBytes(6).toString('hex'), kind, args, by: u.id, client_id: cid, state: 'created',
+  const c = { id: crypto.randomBytes(6).toString('hex'), kind, args: a, by: u.id, client_id: cid, state: 'created',
               created: now, updated: now, confirm_by: null, expires: null };
-  logLine({ id: c.id, to: 'created', by: u.id, kind, args, client_id: cid });
+  logLine({ id: c.id, to: 'created', by: u.id, kind, args: a, client_id: cid });
   cmds.push(c);
   dedup.set(dk, { id: c.id, at: now });
-  if (kind === 'rtl' || kind === 'land') {
-    // 비상 명령 — 아직 전달 안 된 앞 명령은 밀어낸다(preempted). 전달된 것은 이미 파이 손에 있다
-    for (const o of cmds) if (o !== c && BEFORE.has(o.state)) move(o, 'preempted', u.id, { reason: c.id });
+  if (EMERG.has(kind)) {
+    // 비상 명령 — 아직 전달 안 된 앞 명령은 밀어낸다(preempted). 전달돼 결과를 기다리는 비상 아닌 명령은
+    // 결과를 모르므로 unknown(밀려남)으로 끝내고, 파이에게 preempts 로 알린다 — 잃어버린 ack 가 비상을 막지 않게
+    c.preempts = [];
+    for (const o of cmds) {
+      if (o === c) continue;
+      if (BEFORE.has(o.state)) move(o, 'preempted', u.id, { reason: c.id });
+      else if (FLIGHT.includes(o.state) && !EMERG.has(o.kind)) { move(o, 'unknown', u.id, { reason: 'preempted:' + c.id }); c.preempts.push(o.id); }
+    }
     queue(c, u.id);
   } else if (DANGER(c)) move(c, 'awaiting_confirm', u.id, { confirm_by: now + CONFIRM_MS });
   else queue(c, u.id);
@@ -183,7 +218,7 @@ async function confirm(req, res, c) {
   sweep();
   if (c.state !== 'awaiting_confirm') return json(req, res, 409, { error: 'state', id: c.id, state: c.state });
   if (PRECHECK.has(c.kind)) {
-    const why = precheck(c.kind);
+    const why = precheck(c);
     if (why) { move(c, 'rejected', 'server', { reason: why }); return json(req, res, 409, { error: 'precheck', id: c.id, state: c.state, reason: why }); }
   }
   queue(c, u.id);
@@ -208,16 +243,21 @@ function list(req, res) {
 }
 
 // ── 파이 ────────────────────────────────────────────────────────────
-/** 내줄 명령 — 앞 명령이 끝났을 때만, 가장 먼저 queued 된 것 */
+/** 내줄 명령 — 비상(rtl·land)은 바로, 나머지는 앞 명령이 끝났을 때만. 가장 먼저 queued 된 것 */
 function nextCmd() {
-  if (cmds.some((c) => FLIGHT.includes(c.state))) return null;
   const q = cmds.filter((c) => c.state === 'queued');
-  return q.length ? q.reduce((a, b) => (a.updated <= b.updated ? a : b)) : null;
+  const first = (a) => (a.length ? a.reduce((x, y) => (x.updated <= y.updated ? x : y)) : null);
+  const e = first(q.filter((c) => EMERG.has(c.kind)));
+  if (e) return e;
+  if (cmds.some((c) => FLIGHT.includes(c.state))) return null;
+  return first(q);
 }
 function give(req, res, c) {
   move(c, 'delivered', 'pi');
   // 남은 시간만 준다 — 파이가 받은 시각에 더해 판정한다 (서버·파이 시계 차이 회피)
-  json(req, res, 200, { id: c.id, kind: c.kind, args: c.args, ttl_ms: Math.max(0, c.expires - Date.now()) });
+  // preempts — 비상 명령이 밀어낸, 파이가 아직 하고 있을 수 있는 명령 id (그만두라는 뜻)
+  json(req, res, 200, { id: c.id, kind: c.kind, args: c.args, ttl_ms: Math.max(0, c.expires - Date.now()),
+    ...(c.preempts && c.preempts.length ? { preempts: c.preempts } : {}) });
 }
 /** 기다리는 롱폴에 줄 것이 생겼으면 앞에서부터 하나씩 */
 function wake() {

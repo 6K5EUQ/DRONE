@@ -35,6 +35,17 @@ const T_MAX = 240;             // 예상 비행시간 상한 s (4분) — 운영
 const ALLOWED = new Set([16, 19, 21, 22]);
 const KEYS = ['alt', 'cmd', 'frame', 'lat', 'lon', 'p1', 'seq'];
 const MAX_TABS = 50, MAX_STEPS = 28;
+// 고도 하한 — 🔶 운영값, 실비행 검증 전.
+//   경유(16)·호버(19)의 상대고도 ≥ (그 점 지반 − 홈 지반) + WP_CLEAR. 목적지가 홈보다 낮으면 음수도 된다.
+//   WP_CLEAR 5 m 는 자동 생성의 착륙 전 경유(지면 위 CLEAR 10 m)보다 낮게 — 사람이 짠 절차의 바닥값이다.
+//   DSM 이 나무·건물을 다 담지 못하므로 순항은 따로 MARGIN 25 m 를 쓴다(자동 생성).
+const WP_CLEAR = 5;
+const TKOFF_MIN = 2;           // 이륙(22) 상대고도 하한 m — 🔶 운영값
+const HOVER_MAX = 120;         // 호버(19) p1 초 상한 — 🔶 운영값 (T_MAX 240 초의 절반)
+// 3.6.12 는 경유 alt 0 을 「지금 고도 유지」로 읽는다(mode_auto.cpp do_nav_wp → target_loc.alt == 0 이면 현재 고도).
+// alt 는 cm 정수로 저장되므로 |alt| < ALT_ZERO 를 0 으로 본다. 생성기는 0 이 되면 +0.1 m 로 민다
+const ALT_ZERO = 0.05;
+const MAX_ERRORS = 20;         // 응답에 싣는 사유 수 상한
 
 // 속도 — params_20261012-1258_live-usb.param (이전 기체 잔재값, 이 기체에서 검증 안 됨 🔶)
 //   WPNAV_SPEED 500 cm/s, WPNAV_SPEED_UP 250, WPNAV_SPEED_DN 150, LAND_SPEED 50, LAND_ALT_LOW 1000 cm, LAND_SPEED_HIGH 0(=DN)
@@ -83,6 +94,8 @@ function pathMax(a, b) {
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 const r1 = (v) => Math.round(v * 10) / 10;
 const r7 = (v) => Math.round(v * 1e7) / 1e7;
+/** 사유에 넣는 입력값 — 길면 자른다 (큰 문자열을 그대로 되돌려 주지 않게) */
+const clip = (v) => { const t = String(v); return t.length > 24 ? t.slice(0, 24) + '…' : t; };
 function dist(a, b) {
   const R = 6371000, k = Math.PI / 180;
   const dLat = (b.lat - a.lat) * k, dLon = (b.lon - a.lon) * k;
@@ -112,8 +125,8 @@ function check(items) {
   items.forEach((it, i) => {
     if (!it || typeof it !== 'object' || Array.isArray(it)) { errors.push(`${i}번 항목: 객체가 아니다`); shapeOk = false; return; }
     const extra = Object.keys(it).filter((k) => !KEYS.includes(k));
-    if (extra.length) errors.push(`${i}번 항목: 모르는 키 ${extra.join('·')}`);
-    for (const k of KEYS) if (!num(it[k])) { errors.push(`${i}번 항목: ${k} 가 숫자가 아니다 (${it[k]})`); shapeOk = false; }
+    if (extra.length) errors.push(`${i}번 항목: 모르는 키 ${clip(extra.join('·'))}`);
+    for (const k of KEYS) if (!num(it[k])) { errors.push(`${i}번 항목: ${k} 가 숫자가 아니다 (${clip(it[k])})`); shapeOk = false; }
     if (!shapeOk) return;
     if (it.seq !== i) errors.push(`${i}번 항목: seq ${it.seq} — 순서대로 0부터`);
     if (!ALLOWED.has(it.cmd)) errors.push(`${i}번 항목: 명령 ${it.cmd} 는 허용 안 됨 (16·19·21·22 만)`);
@@ -121,11 +134,17 @@ function check(items) {
     if (!(it.lat >= -90 && it.lat <= 90 && it.lon >= -180 && it.lon <= 180)) errors.push(`${i}번 항목: 좌표 범위 밖 (${it.lat}, ${it.lon})`);
     else if (dist(base, it) > RADIUS_M) errors.push(`${i}번 항목: 기지에서 ${Math.round(dist(base, it))} m — ${RADIUS_M} m 이내만`);
     if (it.alt > H_MAX) errors.push(`${i}번 항목: 고도 ${it.alt} m — ${H_MAX} m 이하`);
+    if (it.cmd === 19 && !(it.p1 > 0 && it.p1 <= HOVER_MAX)) errors.push(`${i}번 항목: 호버 ${it.p1} 초 — 0 초 초과 ${HOVER_MAX} 초 이하`);
+    else if (it.cmd !== 19 && it.p1 !== 0) errors.push(`${i}번 항목: p1 ${it.p1} — 호버(19) 밖에서는 0`);
   });
-  if (!shapeOk) return out;
+  if (!shapeOk) { out.errors = errors.slice(0, MAX_ERRORS); return out; }
   if (items[0].cmd !== 16 || items[0].alt !== 0) errors.push('0번 항목: 홈 자리(16, alt 0)가 아니다');
   if (items[1].cmd !== 22) errors.push('첫 항목(1번)이 이륙(22)이 아니다');
   if (items[items.length - 1].cmd !== 21) errors.push('마지막 항목이 착륙(21)이 아니다');
+  // 착륙(21)은 마지막에만 — 3.6.12 는 중간 착륙이 땅에 닿으면 곧바로 다음 항목으로 다시 떠오른다
+  // (mode_auto.cpp verify_land ~1568 이 착지에서 끝나 다음 명령으로). 착륙 뒤 이어 가는 미션은 짜지 않는다
+  for (let i = 1; i < items.length - 1; i++) if (items[i].cmd === 21) errors.push(`${i}번 항목: 착륙(21)은 마지막 항목에만`);
+  if (items[1].cmd === 22 && items[1].alt < TKOFF_MIN) errors.push(`1번 항목: 이륙 고도 ${items[1].alt} m — ${TKOFF_MIN} m 이상`);
 
   // 지반 — 출발(홈)·목적지(마지막 착륙)·경로 최고
   const home = items[0], dest = items[items.length - 1];
@@ -137,6 +156,16 @@ function check(items) {
     outside = outside || s.out;
   }
   if (outside) warnings.push('지형 데이터 밖 좌표가 있다 — 지반을 모른다');
+  // 경유·호버 — 그 점 지면 위 WP_CLEAR 이상, 정확히 0 은 안 됨(3.6.12 「고도 유지」)
+  for (let i = 1; i < items.length; i++) {
+    const it = items[i];
+    if (it.cmd !== 16 && it.cmd !== 19) continue;
+    if (Math.abs(it.alt) < ALT_ZERO) { errors.push(`${i}번 항목: 고도 0 m — 3.6 은 「지금 고도 유지」로 읽는다`); continue; }
+    const g = ground(it.lat, it.lon);
+    if (g == null || g0 == null) { errors.push(`${i}번 항목: 지반을 몰라 지면 여유를 못 잰다`); continue; }
+    const min = r1(g - g0 + WP_CLEAR);
+    if (it.alt < min - 1e-9) errors.push(`${i}번 항목: 고도 ${it.alt} m — 그 점 지면 위 ${WP_CLEAR} m(${min} m) 이상`);
+  }
   if (g0 != null && gD != null && gD > g0) warnings.push(`목적지 지반이 출발보다 ${r1(gD - g0)} m 높다`);
   out.ground = {
     home_m: g0 == null ? null : r1(g0), dest_m: gD == null ? null : r1(gD),
@@ -166,6 +195,7 @@ function check(items) {
   out.est_s = Math.round(t);
   out.h_cruise = r1(Math.max(...items.map((it) => it.alt)));
   if (t > T_MAX) errors.push(`예상 비행시간 ${Math.round(t)} 초 — ${T_MAX} 초(4분) 이하`);
+  out.errors = errors.slice(0, MAX_ERRORS);
   return out;
 }
 
@@ -183,13 +213,19 @@ function stepErrors(steps) {
     if (s.k === 'goto' && !(num(s.lat) && num(s.lon))) e.push(`${i}번 절차: 경유 좌표가 없다`);
     if (s.k === 'hover' && !(num(s.sec) && s.sec > 0)) e.push(`${i}번 절차: 호버 초(sec)가 없다`);
     if ((s.lat == null) !== (s.lon == null)) e.push(`${i}번 절차: lat·lon 은 같이 준다`);
+    // 착륙(land·rtl 의 21)은 마지막 절차만 — 중간 착륙은 3.6.12 에서 곧바로 다시 뜬다 (check 참고)
+    if ((s.k === 'land' || s.k === 'rtl') && i !== steps.length - 1) e.push(`${i}번 절차: 착륙(land·rtl)은 마지막 절차에만`);
   });
-  return e;
+  return e.slice(0, MAX_ERRORS);
 }
-/** 좌표·고도를 생략한 절차는 바로 앞 위치·고도를 이어 쓴다 */
+/** 좌표·고도를 생략한 절차는 바로 앞 위치·고도를 이어 쓴다. 경유·호버 alt 가 0 이 되면 0.1 m 로 민다(ALT_ZERO) */
 function toItems(steps, home) {
   const items = [];
-  const add = (cmd, p, alt, p1 = 0) => items.push({ seq: items.length, cmd, frame: 3, lat: r7(p.lat), lon: r7(p.lon), alt: r1(alt), p1 });
+  const add = (cmd, p, alt, p1 = 0) => {
+    let a = r1(alt);
+    if ((cmd === 16 || cmd === 19) && items.length && Math.abs(a) < ALT_ZERO) a = 0.1;
+    items.push({ seq: items.length, cmd, frame: 3, lat: r7(p.lat), lon: r7(p.lon), alt: a === 0 ? 0 : a, p1 });
+  };
   add(16, home, 0);
   let pos = home, alt = 0;
   for (const s of steps) {
@@ -204,13 +240,15 @@ function toItems(steps, home) {
   return items;
 }
 
-/** 배송 지점 자동 생성 — 이륙 → 순항 → 도착 상공 → 지면 위 CLEAR → 착륙. { steps, ground } 또는 { error } */
+/** 배송 지점 자동 생성 — 이륙 → 순항 → 도착 상공 → 지면 위 CLEAR → 착륙. { steps, ground } 또는 { error }.
+ *  H 가 H_MAX 를 넘으면 { error: 'h_max', h_m } — 깎지 않는다(여유 MARGIN 이 안전 규칙) */
 function autoSteps(title, home) {
   const p = CATALOG.find((c) => c.name === title);
   if (!p) return { error: 'title' };
   const g0 = ground(home.lat, home.lon), gD = ground(p.lat, p.lon), path = pathMax(home, p);
   if (g0 == null || gD == null || path.out) return { error: 'terrain' };
   const H = Math.ceil((Math.max(path.max - g0, gD - g0) + MARGIN) * 10) / 10;
+  if (H > H_MAX) return { error: 'h_max', h_m: H };
   const low = r1(gD - g0 + CLEAR);
   return {
     steps: [{ k: 'takeoff', alt: H }, { k: 'goto', lat: p.lat, lon: p.lon, alt: H },
@@ -309,6 +347,11 @@ async function plan(req, res) {
   if (steps == null) {
     if (typeof b.title !== 'string') return json(req, res, 400, { error: 'steps' });
     const a = autoSteps(b.title, home);
+    // 고도 상한 초과 — 쓸 수 없는 계획을 내주지 않는다. 화면은 report.errors[0] 또는 reason 을 그린다
+    if (a.error === 'h_max') {
+      return json(req, res, 200, { ok: false, error: 'h_max', reason: '고도 상한 초과', h_m: a.h_m, h_max: H_MAX, items: [], steps: [],
+        report: { errors: [`고도 상한 초과 — H ${a.h_m} m > ${H_MAX} m`], warnings: [] } });
+    }
     if (a.error) return json(req, res, 400, { error: a.error });
     ({ steps, auto } = a);
   }
