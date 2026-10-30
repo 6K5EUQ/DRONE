@@ -533,9 +533,13 @@ def main():
     ok(dd().get('d', {}).get('lat') == 35.2, '3D fix → 위치', dd().get('d', {}).get('lat'))
     time.sleep(2.5)
     ok(dd().get('d', {}).get('landed') == 1, '지상 2초 → landed 1 (EXTENDED_SYS_STATE 없이)', dd().get('d', {}).get('landed'))
+    fc.armed = True
     fc.air()
-    time.sleep(0.6)
+    time.sleep(1.2)
     ok(dd().get('d', {}).get('landed') == 2, '공중 → landed 2', dd().get('d', {}).get('landed'))
+    fc.armed = False
+    time.sleep(1.2)
+    ok(dd().get('d', {}).get('landed') == 1, '시동 꺼짐 → landed 1 (고도 흔들려도)', dd().get('d', {}).get('landed'))
     fc.fix = 2
     time.sleep(0.6)
     n0 = dd().get('track_n')

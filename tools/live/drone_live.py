@@ -481,6 +481,11 @@ class State:
         if alt is None or climb is None or thr is None:
             return
         now = time.monotonic()
+        # 시동이 꺼져 있으면 지상이다 — 홈 없이 GPS 만 잡히면 상대고도가 수십 m 로 흔들린다 (2026-10-30 실기 21 m)
+        if d.get('armed') is False:
+            self._ground_at = None
+            d['landed'] = 1
+            return
         if abs(alt) < GROUND_ALT_M and abs(climb) < GROUND_CLIMB and thr <= GROUND_THR:
             if self._ground_at is None:
                 self._ground_at = now
