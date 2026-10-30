@@ -8,6 +8,7 @@
 //    를 그대로 그린다 (임계값은 preflight.py 한 곳).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as ME from '/misedit.js';
 
 const $ = (id) => document.getElementById(id);
 const txt = (id, s) => { const e = $(id); if (e && e.textContent !== s) e.textContent = s; };
@@ -362,6 +363,7 @@ const CALLS = {
   rec: () => [],
   pf: () => [],
   dlv: () => [],
+  mis: () => [],
 };
 // 모터 부하 판정 — 좌측 계기판(모터 그림)과 3D 기체 위(라벨·로터 원판)가 **같은 함수**를 쓴다.
 // 기준은 /live 와 같다: 한 모터가 70% 넘으면 노랑, 80% 넘으면 빨강.
@@ -898,6 +900,7 @@ function rowsHtml(rows) {
 }
 function renderInfo() {
   const box = $('info');
+  if (tab !== 'mis') box.dataset.k = '';   // 미션 칸은 한 번 짜 두고 상태만 고친다 — 다른 탭이 덮으면 다시 짠다
   if (tab === 'dlv') { box.hidden = true; renderDlv(); return; }   // 배송 칸은 왼쪽 패널에 있다
   if (tab === 'mis') { box.hidden = false; misInfo(box); return; }
   if (mode !== '3d') { box.hidden = true; return; }
@@ -978,6 +981,7 @@ const TILES = {
   ],
   pf: () => [],
   dlv: () => [],
+  mis: () => [],
 };
 function renderTiles() {
   html('tiles', mode !== '3d' || !tab ? '' : TILES[tab](D()).map(([ic, l, v, u, c, on]) =>
@@ -1718,7 +1722,7 @@ $('dlvForm').addEventListener('submit', async (e) => {
   try {
     const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, pw }) });
     $('dlvPw').value = '';
-    if (r.ok) { $('modal').hidden = true; dlv.err = ''; await dlvPoll(); }
+    if (r.ok) { $('modal').hidden = true; dlv.err = ''; if (tab === 'mis') msLoad(); await dlvPoll(); }
     else dlvLoginAsk(LOGIN_ERR[r.status] || '로그인 실패');
   } catch { dlvLoginAsk('연결 없음'); }
   finally { btn.disabled = false; }
@@ -1739,32 +1743,393 @@ addEventListener('keydown', (e) => {
   else if (intro && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); launch(); }   // 좁은 창에서 스페이스가 페이지를 내리지 않게
 });
 
-// ── 미션 탭 — FC 의 현재 미션을 보기만 한다 (S.mission = [[lat, lon, seq, cmd]], S.d.wp_seq). ──
+// ── 미션 탭 ─────────────────────────────────────────────────────────
+// 칩 `FC` 는 FC 의 현재 미션을 보기만 한다 (S.mission = [[lat, lon, seq, cmd]], S.d.wp_seq).
+// 나머지 칩은 서버에 저장한 탭(/api/mission/tabs) — 단계를 고치면 400ms 뒤 /api/mission/plan 이
+// 검사·경로를 돌려준다. 업로드와 비행 명령은 /api/cmd (web/cmd.js) 로만 나간다.
+// 🔴 판정(오류·경고·사전조건)은 서버가 한다. 화면은 받은 것만 그린다.
 const MIS_CMD = { 22: '이륙', 16: '경유', 19: '호버', 21: '착륙' };
-const mis = { layer: null, sig: '', fit: false };
+const mis = { layer: null, sig: '', fit: false, hooked: false };
 const misItems = () => (Array.isArray(S.mission) ? S.mission : []);
+// login: null 모름 · true · false / op: 운용자 (403 을 받으면 false)
+const ms = { login: null, op: true, inflight: false, tabs: [], cur: 'fc', plan: null, planT: 0, planN: 0, saveT: 0, pick: -1, gen: false, genErr: '',
+  delAt: 0, delT: 0, cmds: new Map(), last: null, up: null, cmdT: 0, holds: {}, pend: {}, down: null, tickT: 0, err: '' };
+const msTab = () => ms.tabs.find((t) => t.id === ms.cur) || null;
+const MS_CHEV = (d) => `<svg viewBox="0 0 12 12"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const msJson = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+
 function misInfo(box) {
-  const items = misItems(), cur = S.d && S.d.wp_seq;
-  box.innerHTML = `<div class="ih"><b>미션</b></div>` + (items.length
-    ? items.map((m, i) => `<div class="row"><span class="num">${i + 1}</span><span>${esc(MIS_CMD[m[3]] || String(m[3]))}</span><b class="num">${cur === m[2] ? '● ' : ''}${m[0].toFixed(5)}, ${m[1].toFixed(5)}</b></div>`).join('')
-    : '<div class="row"><span>미션 없음</span></div>');
+  if (box.dataset.k !== 'mis') {
+    box.dataset.k = 'mis';
+    box.innerHTML = '<div class="ih"><b>미션</b><button class="msdot" id="msLogin" hidden aria-label="로그인"></button></div>'
+      + '<div class="chips" id="msChips"></div><div id="msBody"></div><div id="msCmd"></div>';
+    renderMs();
+  } else msLive();
 }
+function msFcRows() {
+  const items = misItems(), cur = S.d && S.d.wp_seq;
+  return items.length
+    ? items.map((m, i) => `<div class="row"><span class="num">${i + 1}</span><span>${esc(MIS_CMD[m[3]] || String(m[3]))}</span><b class="num">${cur === m[2] ? '● ' : ''}${m[0].toFixed(5)}, ${m[1].toFixed(5)}</b></div>`).join('')
+    : '<div class="row"><span>미션 없음</span></div>';
+}
+/** 칩·본문·명령 칸을 새로 그린다 — 구조가 바뀔 때만 (입력 중에는 부르지 않는다) */
+function renderMs() {
+  if (tab !== 'mis' || !$('msBody')) return;
+  const L = ms.login === false;
+  $('msLogin').hidden = !L;
+  html('msChips', ms.login ? `<button class="chip${ms.cur === 'fc' ? ' on' : ''}" data-tab="fc">FC</button>`
+    + ms.tabs.map((t) => `<button class="chip${ms.cur === t.id ? ' on' : ''}" data-tab="${esc(t.id)}">${esc(t.name || '—')}</button>`).join('')
+    + (ms.op ? '<button class="chip" data-tab="+" aria-label="탭 추가">+</button>' : '') : '');
+  const t = msTab();
+  $('msBody').innerHTML = !t ? msFcRows() : msEditor(t);
+  $('msCmd').innerHTML = ms.login && ms.op
+    ? '<div class="mscmd"><button class="hold" data-h="arm"><i></i><span>ARM</span></button><button class="hold" data-h="auto"><i></i><span>AUTO</span></button>'
+      + '<button data-c="rtl">RTL</button><button data-c="land">LAND</button></div><div class="msline num" id="msLine"></div>' : '';
+  msLive();
+}
+function msEditor(t) {
+  const ro = ms.op ? '' : ' disabled';
+  const rows = t.steps.map((s, i) => {
+    const f = ME.FIELDS[s.k], has = s.lat != null;
+    const sel = `<select data-f="k"${ro}>${ME.KINDS.map((k) => `<option value="${k}"${k === s.k ? ' selected' : ''}>${ME.KIND_NAME[k]}</option>`).join('')}</select>`;
+    const inp = (k, ph, u) => `<label class="msv"><input data-f="${k}" type="number" step="any" inputmode="decimal" placeholder="${ph}" value="${s[k] ?? ''}"${ro}><small>${u}</small></label>`;
+    return `<div class="msr" data-i="${i}"><span class="num">${i + 1}</span>${sel}`
+      + (f.includes('alt') ? inp('alt', '고도', 'm') : f.includes('sec') ? inp('sec', '시간', '초') : '<span class="msv"></span>')
+      + (f.includes('xy') ? `<button class="mspin${has ? ' set' : ''}${ms.pick === i ? ' on' : ''}" data-a="pick" aria-label="좌표"${ro}><svg class="i"><use href="#i-pin"/></svg></button>` : '<span class="mspin"></span>')
+      + (ms.op ? `<button class="msi" data-a="up" aria-label="위로"${i ? '' : ' disabled'}>${MS_CHEV('M3 7.5l3-3 3 3')}</button>`
+        + `<button class="msi" data-a="dn" aria-label="아래로"${i < t.steps.length - 1 ? '' : ' disabled'}>${MS_CHEV('M3 4.5l3 3 3-3')}</button>`
+        + `<button class="msi" data-a="del" aria-label="삭제">${MS_CHEV('M3.5 3.5l5 5M8.5 3.5l-5 5')}</button>` : '')
+      + '</div>';
+  }).join('');
+  return `<div class="msf"><input id="msName" maxlength="40" placeholder="이름" value="${esc(t.name)}"${ro}>`
+      + (ms.op ? `<button class="msb${ms.delAt ? ' warn' : ''}" id="msDel">${ms.delAt ? '확인' : '삭제'}</button>` : '') + '</div>'
+    + (ms.op ? `<div class="msf"><input id="msTitle" maxlength="40" placeholder="장소"><button class="msb" id="msGen"${ms.gen ? ' disabled' : ''}>생성</button></div>`
+      + (ms.genErr ? `<div class="msmsg e">${esc(ms.genErr)}</div>` : '') : '')
+    + `<div class="mss">${rows}</div>`
+    + (ms.op ? `<div class="msadd">${ME.KINDS.map((k) => `<button class="chip" data-add="${k}">${ME.KIND_NAME[k]}</button>`).join('')}</div>` : '')
+    + '<div id="msChk"></div>'
+    + (ms.op ? '<button class="pfgo hold" data-h="up" id="msUp"><i></i><span>업로드</span></button><div id="msUpSt"></div>' : '');
+}
+
+// ── 잠금·진행 — 라이브 값이 올 때마다 (구조는 그대로 두고 상태만) ─────────
+const msKey = (t) => JSON.stringify(ME.planBody(t, S.home));
+const msPlanOk = (t) => !!(t && ms.plan && ms.plan.key === msKey(t) && ms.plan.ok && ms.plan.items.length && !ms.plan.errors.length);
+const msBusy = (id) => { const c = id && ms.cmds.get(id); return !!c && !ME.END.has(c.state); };
+function msLock(k) {
+  const d = D();
+  if (!ms.op || pb.on) return true;
+  if (k === 'up') return !!d.armed || !msPlanOk(msTab()) || msBusy(ms.up);
+  if (k === 'arm') return !S.live || !!d.armed;
+  if (k === 'auto') return !S.live;
+  return false;   // RTL·LAND — 재생 중만 막는다
+}
+function msLive() {
+  if (tab !== 'mis' || !$('msBody')) return;
+  const t = msTab();
+  if (!t && $('msBody').dataset.fc !== JSON.stringify([misItems(), S.d && S.d.wp_seq])) {
+    $('msBody').dataset.fc = JSON.stringify([misItems(), S.d && S.d.wp_seq]); $('msBody').innerHTML = msFcRows();
+  }
+  if (t && t.steps.length && !ms.planT && !ms.inflight && (!ms.plan || ms.plan.key !== msKey(t))) msPlanSoon();   // 홈이 늦게 오면 다시 계획
+  // 검사 — 오류·경고만 글자, 없으면 점 하나
+  const chk = $('msChk');
+  if (chk) {
+    const p = ms.plan && ms.plan.key === msKey(t) ? ms.plan : null;
+    const h = !t.steps.length || !p ? '' : p.errors.length || p.warnings.length
+      ? p.errors.map((m) => `<div class="msmsg e">${esc(m)}</div>`).join('') + p.warnings.map((m) => `<div class="msmsg w">${esc(m)}</div>`).join('')
+      : '<i class="msok"></i>';
+    if (chk.innerHTML !== h) chk.innerHTML = h;
+  }
+  const now = performance.now();
+  for (const b of document.querySelectorAll('#info [data-h]')) {
+    const k = b.dataset.h, s = ms.holds[k] || ME.holdInit();
+    const lock = s.st === 'idle' && msLock(k);
+    b.disabled = lock;
+    b.classList.toggle('armed', s.st === 'held' || s.st === 'armed');
+    b.style.setProperty('--p', (ME.holdFill(s, now) * 100).toFixed(1) + '%');
+    const label = s.st === 'held' || s.st === 'armed' ? '확인' : { up: '업로드', arm: 'ARM', auto: 'AUTO' }[k];
+    const sp = b.querySelector('span'); if (sp.textContent !== label) sp.textContent = label;
+  }
+  for (const b of document.querySelectorAll('#info [data-c]')) b.disabled = msLock(b.dataset.c);
+  // 업로드 진행 — 단계 막대, 실패·거부만 사유
+  const us = $('msUpSt');
+  if (us) {
+    const c = ms.up && ms.cmds.get(ms.up), v = c && ME.cmdView(c);
+    let h = '';
+    if (v && (v.bad || c.state === 'cancelled')) h = `<div class="msmsg e">${esc([v.label, v.reason].filter(Boolean).join(' · '))}</div>`;
+    else if (v && c.state !== 'awaiting_confirm' && c.state !== 'created') h = `<div class="msst">${ME.STAGE_NAME.map((n, i) => `<span class="${i < v.stage ? 'on' : ''}">${n}</span>`).join('')}</div>`;
+    if (us.innerHTML !== h) us.innerHTML = h;
+  }
+  const line = $('msLine');
+  if (line) {
+    const c = ms.last && ms.cmds.get(ms.last), s = ms.err || (c ? ME.cmdLine(c) : '');
+    if (line.textContent !== s) line.textContent = s;
+    line.classList.toggle('bad', !!ms.err || !!(c && ME.cmdView(c).bad));
+  }
+  $('map').classList.toggle('pick', ms.pick >= 0);
+}
+
+// ── 서버 ────────────────────────────────────────────────────────────
+async function msLoad() {
+  try {
+    const r = await fetch('/api/mission/tabs', { cache: 'no-store' });
+    if (r.status === 401) ms.login = false;
+    else if (r.ok) { ms.login = true; ms.tabs = ME.tabsFrom(await r.json()); }
+    else ms.login = null;   // 서버에 아직 없다 — FC 보기만
+  } catch { ms.login = null; }
+  if (ms.cur !== 'fc' && !msTab()) ms.cur = 'fc';
+  if (!ms.login) ms.cur = 'fc';
+  mis.sig = ''; renderMs(); misSync();
+}
+function msSaveSoon(t) { clearTimeout(ms.saveT); ms.saveT = setTimeout(() => msSave(t), 600); }
+async function msSave(t) {
+  try {
+    const r = await fetch('/api/mission/tabs/' + encodeURIComponent(t.id), msJson('PUT', ME.tabBody(t)));
+    if (r.status === 401) { ms.login = false; ms.cur = 'fc'; renderMs(); return; }
+    if (r.status === 403) { ms.op = false; renderMs(); return; }
+    const j = await r.json().catch(() => null);
+    if (r.ok && j && j.rev != null) t.rev = j.rev;
+    else if (!r.ok) msLoad();   // 어긋났으면 서버 것으로 되돌린다
+  } catch { /* 다음 편집 때 다시 */ }
+}
+function msPlanSoon() {
+  clearTimeout(ms.planT);
+  ms.planT = setTimeout(msPlan, 400);
+}
+async function msPlan() {
+  ms.planT = 0;
+  const t = msTab(), n = ++ms.planN;
+  if (!t || !t.steps.length) { ms.plan = null; msLive(); misSync(); return; }
+  const body = ME.planBody(t, S.home), key = JSON.stringify(body);
+  let p = { key, ok: false, items: [], hash: '', errors: [], warnings: [], h: null };
+  ms.inflight = true;
+  try {
+    const r = await fetch('/api/mission/plan', msJson('POST', body));
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { ms.inflight = false; ms.login = false; ms.cur = 'fc'; renderMs(); return; }
+    const rp = j.report || {};
+    p = { key, ok: !!(r.ok && j.ok), items: Array.isArray(j.items) ? j.items : [], hash: j.hash || '',
+      errors: Array.isArray(rp.errors) ? rp.errors : r.ok ? [] : ['검사 실패'], warnings: Array.isArray(rp.warnings) ? rp.warnings : [], h: rp.h_cruise ?? null };
+  } catch { p.errors = ['연결 없음']; }
+  ms.inflight = false;
+  if (n !== ms.planN) return;   // 그사이 또 고쳤다
+  ms.plan = p; msLive(); misSync();
+}
+async function msGen() {
+  const t = msTab(), title = ($('msTitle').value || '').trim();
+  if (!t || !title || ms.gen) return;
+  ms.gen = true; ms.genErr = ''; renderMs();
+  try {
+    const r = await fetch('/api/mission/plan', msJson('POST', { title }));
+    const j = await r.json().catch(() => ({}));
+    const steps = ME.itemsToSteps(j.items);
+    if (r.ok && j.ok && steps.length) {
+      t.steps = steps; if (!t.name) t.name = title;
+      ms.pick = -1; mis.fit = false; msSaveSoon(t); msPlanSoon();
+    } else ms.genErr = ((j.report && j.report.errors) || [])[0] || '생성 실패';
+  } catch { ms.genErr = '연결 없음'; }
+  ms.gen = false; renderMs(); misSync();
+}
+async function msNewTab() {
+  const t = { id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: `미션 ${ms.tabs.length + 1}`, steps: [], rev: 0 };
+  ms.tabs.push(t); ms.cur = t.id; ms.plan = null; ms.pick = -1;
+  renderMs(); msSave(t);
+}
+async function msDelTab() {
+  const t = msTab(); if (!t) return;
+  clearTimeout(ms.delT);
+  if (!ms.delAt) { ms.delAt = Date.now(); ms.delT = setTimeout(() => { ms.delAt = 0; renderMs(); }, 5000); renderMs(); return; }   // 두 번 눌러 지운다
+  ms.delAt = 0;
+  try {
+    const r = await fetch('/api/mission/tabs/' + encodeURIComponent(t.id), { method: 'DELETE' });
+    if (r.status === 403) { ms.op = false; renderMs(); return; }
+    if (!r.ok && r.status !== 404) { renderMs(); return; }
+  } catch { renderMs(); return; }
+  ms.tabs = ms.tabs.filter((x) => x !== t); ms.cur = 'fc'; ms.plan = null; ms.pick = -1;
+  mis.sig = ''; renderMs(); misSync();
+}
+
+// 명령 — 만들기(위험 명령은 awaiting_confirm) · 확인 · 취소 · 목록으로 상태 따라가기
+const msCid = () => 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const MS_KIND = { up: 'mission_upload', arm: 'arm', auto: 'mission_start', rtl: 'rtl', land: 'land' };
+async function msCmd(kind, args) {
+  ms.err = '';
+  try {
+    const r = await fetch('/api/cmd', msJson('POST', { kind, args, client_id: msCid() }));
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { ms.login = false; ms.cur = 'fc'; renderMs(); return null; }
+    if (r.status === 403) { ms.op = false; renderMs(); return null; }
+    if (!r.ok || !j.id) { ms.err = [ME.CMD_NAME[kind], ME.REASON[j.error] || '실패'].join(' · '); msLive(); return null; }
+    const c = { id: j.id, kind, state: j.state, reason: null, detail: null };
+    ms.cmds.set(c.id, c); msCmdPoll();
+    return c;
+  } catch { ms.err = [ME.CMD_NAME[kind], '연결 없음'].join(' · '); msLive(); return null; }
+}
+async function msCmdPost(c, act) {
+  try {
+    const r = await fetch(`/api/cmd/${c.id}/${act}`, msJson('POST', {}));
+    const j = await r.json().catch(() => ({}));
+    if (j.state) c.state = j.state;
+    if (j.reason || (!r.ok && j.error && j.error !== 'state')) c.reason = j.reason || j.error;
+  } catch { if (act === 'confirm') ms.err = [ME.CMD_NAME[c.kind], '연결 없음'].join(' · '); }
+  msCmdPoll(); msLive();
+}
+async function msCmdPoll() {
+  clearTimeout(ms.cmdT);
+  if (tab !== 'mis' || ![...ms.cmds.values()].some((c) => !ME.END.has(c.state))) return;
+  try {
+    const r = await fetch('/api/cmd', { cache: 'no-store' });
+    if (r.ok) {
+      const j = await r.json(), list = Array.isArray(j) ? j : j.cmds || [];
+      for (const x of list) { const c = ms.cmds.get(x.id); if (c) Object.assign(c, { state: x.state, reason: x.reason ?? c.reason, detail: x.detail ?? null }); }
+    }
+  } catch { /* 다음 차례 */ }
+  msLive();
+  ms.cmdT = setTimeout(msCmdPoll, 1000);
+}
+// 길게 누르기 — 1.5초 누르면 서버에 명령을 만들고(확인 대기), 5초 안에 다시 누르면 확인, 지나면 취소
+function msHold(k, ev) {
+  const s0 = ms.holds[k] || ME.holdInit();
+  if (ev === 'down' && s0.st === 'idle' && msLock(k)) return;
+  const { s, out } = ME.holdStep(s0, ev, performance.now());
+  ms.holds[k] = s;
+  if (out === 'hold') {
+    if (k === 'up' && !msPlanOk(msTab())) { ms.holds[k] = ME.holdInit(); return; }
+    const args = k === 'up' ? { items: ms.plan.items, hash: ms.plan.hash } : {};
+    ms.pend[k] = msCmd(MS_KIND[k], args).then((c) => {
+      if (!c) ms.holds[k] = ME.holdInit();
+      else if (k === 'up') ms.up = c.id; else ms.last = c.id;
+      msLive();
+      return c;
+    });
+  } else if (out === 'fire' || out === 'expire') {
+    const p = ms.pend[k]; ms.pend[k] = null;
+    if (p) p.then((c) => { if (c && c.state === 'awaiting_confirm') msCmdPost(c, out === 'fire' ? 'confirm' : 'cancel'); });
+  }
+  if (ev !== 'tick') msTick();
+}
+function msTick() {
+  clearTimeout(ms.tickT);
+  for (const k of Object.keys(ms.holds)) if (ms.holds[k].st !== 'idle') msHold(k, 'tick');
+  msLive();
+  if (Object.values(ms.holds).some((s) => s.st !== 'idle')) ms.tickT = setTimeout(msTick, 50);
+}
+/** 탭을 떠나면 무장을 푼다 — 만들어 둔 확인 대기 명령은 취소 */
+function msHoldReset() {
+  for (const k of Object.keys(ms.holds)) if (ms.holds[k].st === 'held' || ms.holds[k].st === 'armed') { ms.holds[k].t = -1e9; msHold(k, 'tick'); }
+  ms.holds = {};
+}
+
+// ── 입력 ────────────────────────────────────────────────────────────
+$('info').addEventListener('click', (e) => {
+  if (tab !== 'mis') return;
+  if (e.target.closest('#msLogin')) return dlvLoginAsk();
+  const ch = e.target.closest('[data-tab]');
+  if (ch) {
+    if (ch.dataset.tab === '+') return msNewTab();
+    ms.cur = ch.dataset.tab; ms.plan = null; ms.pick = -1; ms.delAt = 0; ms.genErr = '';
+    mis.sig = ''; mis.fit = false; renderMs(); misSync(); if (msTab()) msPlanSoon();
+    return;
+  }
+  if (e.target.closest('#msDel')) return msDelTab();
+  if (e.target.closest('#msGen')) return msGen();
+  const c = e.target.closest('[data-c]');
+  if (c && !c.disabled) {   // RTL·LAND — 한 번 탭
+    msCmd(MS_KIND[c.dataset.c], {}).then((x) => { if (x) { ms.last = x.id; msLive(); } });
+    return;
+  }
+  const t = msTab(); if (!t || !ms.op) return;
+  const add = e.target.closest('[data-add]');
+  if (add) { t.steps.push(ME.newStep(add.dataset.add, t.steps)); renderMs(); msSaveSoon(t); msPlanSoon(); return; }
+  const a = e.target.closest('[data-a]'), row = e.target.closest('.msr');
+  if (!a || !row || a.disabled) return;
+  const i = Number(row.dataset.i);
+  if (a.dataset.a === 'pick') { ms.pick = ms.pick === i ? -1 : i; renderMs(); return; }
+  if (a.dataset.a === 'up') t.steps = ME.moveStep(t.steps, i, -1);
+  else if (a.dataset.a === 'dn') t.steps = ME.moveStep(t.steps, i, 1);
+  else if (a.dataset.a === 'del') t.steps = ME.delStep(t.steps, i);
+  ms.pick = -1; renderMs(); msSaveSoon(t); msPlanSoon(); misSync();
+});
+$('info').addEventListener('input', (e) => {
+  const t = msTab(); if (tab !== 'mis' || !t || !ms.op) return;
+  if (e.target.id === 'msName') { t.name = e.target.value; msSaveSoon(t); const c = document.querySelector(`#msChips [data-tab="${CSS.escape(t.id)}"]`); if (c) c.textContent = t.name || '—'; return; }
+  const row = e.target.closest('.msr'), f = e.target.dataset.f;
+  if (!row || !f || f === 'k') return;
+  const s = t.steps[Number(row.dataset.i)], v = e.target.value;
+  if (v === '' || !Number.isFinite(Number(v))) delete s[f]; else s[f] = Number(v);
+  msSaveSoon(t); msPlanSoon();
+});
+$('info').addEventListener('change', (e) => {
+  const t = msTab(); if (tab !== 'mis' || !t || e.target.dataset.f !== 'k') return;
+  const i = Number(e.target.closest('.msr').dataset.i);
+  t.steps[i] = ME.stepClean({ ...t.steps[i], k: e.target.value });
+  if (ME.FIELDS[t.steps[i].k].includes('alt') && t.steps[i].alt == null) t.steps[i] = { ...ME.newStep(t.steps[i].k, t.steps.slice(0, i)), ...t.steps[i] };
+  renderMs(); msSaveSoon(t); msPlanSoon(); misSync();
+});
+$('info').addEventListener('keydown', (e) => { if (e.target.id === 'msTitle' && e.key === 'Enter') msGen(); });
+$('info').addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('[data-h]'); if (!b || tab !== 'mis') return;
+  ms.down = b.dataset.h;
+  try { b.setPointerCapture(e.pointerId); } catch { /* 터치가 이미 끝났다 */ }
+  msHold(b.dataset.h, 'down');
+});
+$('info').addEventListener('pointerup', (e) => {
+  const b = e.target.closest('[data-h]'), k = ms.down; ms.down = null;
+  if (b && k === b.dataset.h) msHold(k, 'up');
+});
+$('info').addEventListener('pointercancel', () => { const k = ms.down; ms.down = null; if (k) msHold(k, 'cancel'); });
+$('info').addEventListener('contextmenu', (e) => { if (e.target.closest('[data-h]')) e.preventDefault(); });   // 폰의 길게 누르기 메뉴
+
 function misTab() {
   mis.sig = ''; mis.fit = false;
   document.querySelector('.main').classList.toggle('mis', tab === 'mis');
   if (tab === 'mis' && viewMode === '3d') pickView('map');
+  if (tab === 'mis') msLoad();
+  else { ms.pick = -1; msHoldReset(); clearTimeout(ms.cmdT); $('map').classList.remove('pick'); }
   misSync();
 }
 function misSync() {
-  const L = window.L, items = misItems(), cur = S.d && S.d.wp_seq;
+  if (tab === 'mis') msLive();   // 시동·재생 상태가 바뀌면 잠금도 바뀐다
+  const L = window.L, items = misItems(), cur = S.d && S.d.wp_seq, t = msTab();
   if (!lmap || !L || tab !== 'mis') { if (mis.layer && lmap) lmap.removeLayer(mis.layer); mis.sig = ''; return; }
-  const sig = JSON.stringify([items, cur]);
+  if (!mis.hooked) {   // 좌표 넣기 — 고른 단계에 지도에서 누른 자리를 넣는다
+    mis.hooked = true;
+    lmap.on('click', (e) => {
+      const tt = msTab(); if (tab !== 'mis' || !tt || ms.pick < 0 || !tt.steps[ms.pick]) return;
+      Object.assign(tt.steps[ms.pick], { lat: +e.latlng.lat.toFixed(7), lon: +e.latlng.lng.toFixed(7) });
+      ms.pick = -1; renderMs(); msSaveSoon(tt); msPlanSoon(); misSync();
+    });
+  }
+  const plan = t && ms.plan && ms.plan.key === msKey(t) ? ms.plan : null;
+  const sig = JSON.stringify(t ? [t.id, t.steps, plan && plan.items, plan && plan.h] : [items, cur]);
   if (sig === mis.sig) return;
   mis.sig = sig;
   if (!mis.layer) mis.layer = L.layerGroup();
   mis.layer.clearLayers().addTo(lmap);
-  if (items.length > 1) L.polyline(items.map((m) => [m[0], m[1]]), { color: '#3e6ae1', weight: 3, opacity: 0.9, interactive: false }).addTo(mis.layer);
-  items.forEach((m, i) => L.marker([m[0], m[1]], { interactive: false, icon: L.divIcon({ className: 'mk' + (cur === m[2] ? ' cur' : ''), html: `<b>${i + 1}</b>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(mis.layer));
-  if (items.length && !mis.fit) { mis.fit = true; lmap.fitBounds(L.latLngBounds(items.map((m) => [m[0], m[1]])), { padding: [60, 60], maxZoom: 18 }); }
-  misInfo($('info'));
+  const mk = (ll, n, c) => L.marker(ll, { interactive: false, icon: L.divIcon({ className: 'mk' + c, html: `<b>${n}</b>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(mis.layer);
+  let pts;
+  if (!t) {
+    pts = items.map((m) => [m[0], m[1]]);
+    if (pts.length > 1) L.polyline(pts, { color: '#3e6ae1', weight: 3, opacity: 0.9, interactive: false }).addTo(mis.layer);
+    items.forEach((m, i) => mk([m[0], m[1]], i + 1, cur === m[2] ? ' cur' : ''));
+  } else {
+    // 계획 경로(서버 항목) — 좌표가 있는 항목만. 그 위에 단계 번호, 경로 가운데 순항 고도
+    const path = plan ? plan.items.filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lon) && (x.lat || x.lon)).map((x) => [x.lat, x.lon]) : [];
+    if (path.length > 1) {
+      L.polyline(path, { color: '#3e6ae1', weight: 3, opacity: 0.9, interactive: false }).addTo(mis.layer);
+      if (plan.h != null) {
+        let m = path[0], m2 = path[1], best = -1;   // 가장 긴 구간 가운데 — 번호 표지와 안 겹치게
+        for (let i = 1; i < path.length; i++) { const dd = hav(path[i - 1][0], path[i - 1][1], path[i][0], path[i][1]); if (dd > best) { best = dd; m = path[i - 1]; m2 = path[i]; } }
+        L.marker([(m[0] + m2[0]) / 2, (m[1] + m2[1]) / 2], { interactive: false, icon: L.divIcon({ className: 'msalt', html: `<b class="num">${Math.round(plan.h)} m</b>`, iconSize: null }) }).addTo(mis.layer);
+      }
+    }
+    pts = [];
+    t.steps.forEach((s, i) => { if (s.lat != null) { pts.push([s.lat, s.lon]); mk([s.lat, s.lon], i + 1, ''); } });
+    pts.push(...path);
+  }
+  if (pts.length && !mis.fit) {   // 넓은 화면은 왼쪽 위를 미션 칸이 덮는다 — 그 오른쪽에 맞춘다
+    mis.fit = true;
+    const ib = $('info').getBoundingClientRect(), ml = $('map').getBoundingClientRect().left;
+    const left = innerWidth > 900 && ib.width ? Math.max(60, ib.right - ml + 40) : 60;
+    lmap.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [left, 110], paddingBottomRight: [60, 60], maxZoom: 18 });
+  }
 }
