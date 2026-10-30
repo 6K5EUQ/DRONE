@@ -985,14 +985,19 @@ def auto_tags(nav, refused=()):
     return tags
 
 
-def classify(row):
-    """목록 배지. 단정적 문장은 만들지 않는다 — 로그는 '무엇' 만 알고 '왜' 는 모른다."""
+def classify(row, gps_3d=True):
+    """목록 배지. 단정적 문장은 만들지 않는다 — 로그는 '무엇' 만 알고 '왜' 는 모른다.
+
+    `gps_3d` 는 구간 안에 GPS 3D fix(Status>=3)가 한 번이라도 있었는가.
+    """
     if not row.get("armed"):
         return "noarm"
     dur = row.get("duration") or 0
     alt = row.get("alt_max")
     spd = row.get("speed_max")
-    if spd is not None and spd >= 3.0:
+    # 🔴 GPS fix 가 없으면 EKF 수평속도는 IMU 적분 표류다 — 실내 ID17·18 이
+    #    GPS.Spd 0 인데 5.01·3.58 m/s 로 찍혔다 (2026-10-30 실측). 속도로는 flight 를 주지 않는다.
+    if gps_3d and spd is not None and spd >= 3.0:
         return "flight"
     if alt is not None and alt >= 10.0:
         return "flight"          # 실비행
@@ -1061,9 +1066,16 @@ def main():
         "vib_max": rep.get("vib_max"),
         "hw": rep.get("hw"),
     }
-    row["badge"] = classify(row)
+    g, _ = win(log, "GPS", t0, t1)
+    row["badge"] = classify(row, gps_3d=g is not None and stat(g["Status"], np.max, 0) >= 3)
+    # failsafe 가 건 모드 전환은 조종자의 시도가 아니다. FC 는 ERR(FAILSAFE_*) 를 찍고
+    # 같은 루프에서 RTL 을 시도한다 — 거부되면 ERR(FLIGHT_MODE, 6) 이 0.4ms 안에 뒤따른다
+    # (ID13~22 의 ERR(6,1)→ERR(10,6), 2026-10-30 실측). 그 거부는 시도로 세지 않는다.
+    fs_t = [t for t, s, c in log.err
+            if c != 0 and ERR_SUBSYS.get(s, "").startswith("FAILSAFE_")]
     refused = [COPTER_MODE.get(c, "") for t, s, c in log.err
-               if s == ERR_FLIGHT_MODE and t0 <= t <= t1]
+               if s == ERR_FLIGHT_MODE and t0 <= t <= t1
+               and not any(0 <= t - f <= 0.1 for f in fs_t)]
     row["auto"] = auto_tags(rep.get("nav"), refused)
     row["flight"] = flight_key(log, t0, t1)
     row["points"] = log.points
