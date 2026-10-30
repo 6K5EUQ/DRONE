@@ -341,6 +341,16 @@ FC 의 상태를 바꾸는 모든 작업을 남긴다.
   - **FC 시계 = GPS 시각** (`SYSTEM_TIME.time_unix_usec`): 2026-10-12 15:07:24 KST. NTP 로 맞춘 ku PC 시계와의 차이 **약 −0.004 s**
     (수신이 지연돼 쌓여 있던 앞쪽 샘플은 −17~−16 s 로 보이나 수신 시각이 늦은 것이다. 실시간 샘플만 비교). fix 가 있는 GPS 시각은 PC 시계와 수 ms 수준으로 맞았다
   - 이 시계는 전원을 끄면 사라진다 (RTC 배터리 없음) — 비행 중 fix 가 잡혀 있어야 새 로그 파일에 시각이 남는다 🔶
+### 2026-10-30 18:47 — raspb1 USB 직결, 실기 파라미터 재조회 (변경 없음, 읽기만)
+
+- 작업 PC: raspb1 (rim3 에서 SSH). drone-live 만 잠시 정지 후 복구 (livepush·cmd 는 유지)
+- 경로: USB 직결, `tools/fcport.py` 로 연결 (ArduCopter·쿼드 하트비트 확인)
+- 대상: `PARAM_REQUEST_LIST` 만. PARAM_SET·명령 없음
+- 확인: 838개 → `params/params_20261030-184659_live-usb.param`. 10-12 12:58 대비 차이:
+  - 10-12 기록된 변경의 반영: `BATT_LOW_VOLT` 14.4→14.0, `BATT_CRT_VOLT` 14.0→13.2, 나침반 `DEV_ID`/`DEV_ID2`/`EXTERNAL`/`DEC` (GPS·외부 나침반 복구)
+  - 🔶 기록 없는 차이: `SR0_*`(EXTRA1~3, EXT_STAT, POSITION, RAW_CTRL, RAW_SENS, RC_CHAN) 4→10 — 라이브 도구의 스트림 요청이 쓰는 값으로 보이나 미확인
+  - 센서 보정값 흐름: `INS_GYROFFS_X/Y/Z`, `GND_ABS_PRESS`; 카운터: `STAT_BOOTCNT` 11→19, `STAT_RUNTIME`
+
 ---
 
 ## 🔶 아직 기록되지 않은 것 — 이 보드의 과거
