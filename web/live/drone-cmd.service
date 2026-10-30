@@ -1,0 +1,16 @@
+# 파이 user 유닛 — ~/.config/systemd/user/drone-cmd.service
+# drone01.shade-signals.com 의 명령 대기열(/api/cmd/next)을 25초 롱폴로 가져온다.
+# 🔴 dry-run — 받은 명령은 전부 rejected 로 돌려준다. FC 로는 아무것도 안 보낸다.
+# 키: ~/.config/drone-cmd.env 에 CMD_KEY=<서버 .env 의 CMD_KEY 와 같은 값> (CMD_URL 은 선택)
+[Unit]
+Description=DRONE01 command agent (dry-run) <- drone01.shade-signals.com
+After=network-online.target
+
+[Service]
+EnvironmentFile=%h/.config/drone-cmd.env
+ExecStart=%h/DRONE/.venv/bin/python %h/DRONE/tools/live/cmd_agent.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
