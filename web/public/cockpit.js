@@ -539,7 +539,8 @@ function groundStep(dt, ease) {
   const yaw = d.yaw != null ? d.yaw : d.hdg;
   geo.psi += unwrap((on && yaw != null ? yaw : 0) - geo.psi) * k(4);
   // 바닥 — 내려가고, 기수만큼 돌고, 무늬가 흐른다. 멀어질수록 넓게 깔아 화면에 남긴다.
-  const depth = Math.max(0, geo.alt) * G;
+  // [globe] 공간 뷰는 땅에 높낮이가 있다 — 이착륙 때 GPS 고도가 그 자리 지면 아래로 내려가도 기체가 묻히지 않게 지면에서 멈춘다
+  const depth = Math.max(sat.on && on ? gndRel(d.lat, d.lon, hs) : 0, geo.alt) * G;
   floorY = FLOOR - depth;
   world.position.y = -depth;
   world.rotation.y = THREE.MathUtils.degToRad(geo.psi);
@@ -584,63 +585,65 @@ function placeHome() {
   const b = el.querySelector('b'); if (b.innerHTML !== t) b.innerHTML = t;
 }
 
-// ── 위성 바닥 — 지도 버튼. 홈 둘레 위성 타일을 땅과 같은 축척(G)으로 격자 밑에 연하게 깐다.
-// 🔧 조정값 — 보면서 맞춘다.
-const SAT = {
-  opacity: 1.0,           // 0 안 보임 ~ 1 원본
-  zoom: 18,               // 타일 줌 (18 ≈ 0.5 m/px). 비행장은 Esri 에 18 까지만 있다 — 19 는 회색 「없음」 타일
-  tiles: 7,               // 한 변 타일 수 (7 × 256 px ≈ 875 m) — 기체를 따라 다시 깐다
-};
+// ── 공간 — 기체 화면에 브이월드 땅(DEM + 위성사진)·건물을 얹는다 (cockpit-globe.js) [globe]
+// 처음 열 때만 모듈을 불러온다 — 기체 뷰·첫 화면은 그대로 가볍다.
 const SAT_FIELD = [35.1811, 128.5538];   // 링크가 없을 때 가운데 — 비행장 (server.js ADSB_LAT/LON)
-const sat = { on: false, mesh: null, key: '', old: [] };
-function satBuild(lat, lon) {
-  const z = SAT.zoom, n = 2 ** z, N = SAT.tiles, T = 256, rad = Math.PI / 180;
-  const xt = (lon + 180) / 360 * n, yt = (1 - Math.asinh(Math.tan(lat * rad)) / Math.PI) / 2 * n;
-  const x0 = Math.floor(xt) - (N >> 1), y0 = Math.floor(yt) - (N >> 1);
-  const c = document.createElement('canvas'); c.width = c.height = N * T;
-  const g = c.getContext('2d');
-  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const img = new Image(); img.crossOrigin = 'anonymous';
-    img.onload = () => { g.drawImage(img, i * T, j * T); tex.needsUpdate = true; };
-    img.src = `https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y0 + j}/${x0 + i}`;
-  }
-  // 캔버스 가운데의 위경도와 한 변 길이(m)
-  const cx = x0 + N / 2, cy = y0 + N / 2;
-  const cLon = cx / n * 360 - 180, cLat = Math.atan(Math.sinh(Math.PI * (1 - 2 * cy / n))) / rad;
-  const size = N * T * 156543.03392 * Math.cos(lat * rad) / n;
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size * G, size * G),
-    new THREE.MeshBasicMaterial({ map: tex, alphaMap: grid.material.alphaMap, transparent: true, opacity: SAT.opacity, depthWrite: false }));
-  mesh.rotation.set(-Math.PI / 2, 0, Math.PI);   // 이미지 위 = 북(+z), 오른쪽 = 동(-x)
-  mesh.renderOrder = -2;                          // 격자 밑
-  mesh.userData = { lat: cLat, lon: cLon };       // 사진 가운데 — 땅을 따라 옮길 때 쓴다
-  world.add(mesh);
-  return mesh;
+const sat = { on: false };
+// 격자 — 공간 뷰는 땅이 따로 있다
+function satStep() { grid.visible = !sat.on; }
+/** 땅·건물을 놓을 기준 — 홈, 배송 탭은 연결 전에도 기지, 없으면 비행장 */
+function satRef() { return geo.hs || (dlvTab() && dlvRef()) || SAT_FIELD; }
+// 홈(기준) 지면 대비 그 자리 지면 높이(m) — DEM 이 없으면 0
+function gndRel(lat, lon, hs) {
+  const a = demAt(lat, lon), b = demAt(hs[0], hs[1]);
+  return a == null || b == null ? 0 : a - b;
 }
-function satStep() {
-  grid.visible = !sat.on;   // 지도일 때는 격자를 걷어 사진만
-  if (!sat.on) { if (sat.mesh) sat.mesh.visible = false; for (const m of sat.old) m.visible = false; return; }
-  const ref = geo.hs || (dlvTab() && dlvRef()) || SAT_FIELD;   // 배송 탭은 연결 전에도 기지 둘레를 깐다
-  // 사진은 **기체가 있는 곳**을 가운데로 깐다 — 홈 둘레에만 깔면 멀리 날아갔을 때 그 아래가 비었다.
-  // 기체가 있는 타일(줌 18 ≈ 128 m)이 바뀔 때만 다시 받는다. 위치 = 홈 + 땅 좌표(geo).
-  const cLat = ref[0] + geo.n / 111320, cLon = ref[1] + geo.e / (111320 * Math.cos(ref[0] * Math.PI / 180));
-  const n2 = 2 ** SAT.zoom, tx = Math.floor((cLon + 180) / 360 * n2), ty = Math.floor((1 - Math.asinh(Math.tan(cLat * Math.PI / 180)) / Math.PI) / 2 * n2);
-  const key = ref.join(',') + '/' + tx + ',' + ty;
-  if (!sat.mesh || sat.key !== key) {
-    const old = sat.mesh;
-    sat.mesh = satBuild(cLat, cLon); sat.key = key;
-    // 옛 사진은 새 타일이 들어올 시간만큼 밑에 남겨 둔다 — 바로 지우면 한순간 땅이 빈다
-    if (old) {
-      old.renderOrder = -3; sat.old.push(old);
-      setTimeout(() => { world.remove(old); old.material.map.dispose(); old.geometry.dispose(); sat.old = sat.old.filter((m) => m !== old); }, 1500);
-    }
-  }
-  sat.mesh.material.opacity = SAT.opacity;
-  // 이미지 가운데가 홈에서 떨어진 만큼 — 땅 좌표(+z 북, -x 동)로 옮긴다
-  for (const m of [sat.mesh, ...sat.old]) {
-    const nC = (m.userData.lat - ref[0]) * 111320, eC = (m.userData.lon - ref[1]) * 111320 * Math.cos(ref[0] * Math.PI / 180);
-    m.visible = true;
-    m.position.set((geo.e - eC) * G, FLOOR - 0.002, (nC - geo.n) * G);
+const VWORLD_KEY = '5ADF4480-BD49-48FC-963F-1401671F0D38';
+let globe = null, globeLoading = null;   // 첫 frame() 보다 먼저 — 모듈 평가 중에 읽힌다
+function ensureGlobe() {
+  if (globe || globeLoading || !renderer) return;
+  demLoad();   // 땅 높낮이·항적 해발에 DEM 이 필요하다
+  globeLoading = import('/cockpit-globe.js')
+    .then((m) => { globe = m.createGlobe({ parent: world, camera, renderer, G, FLOOR, demAt, key: VWORLD_KEY }); globe.setActive(sat.on); gForce = true; globeFeed(); })
+    .catch((e) => { console.error('[globe] 로드 실패:', e); globeLoading = null; });
+}
+// 지형 — Copernicus GLO-30 (terrain/dem.*, 미션 계획 web/mission.js 와 같은 파일). 처음 쓸 때 받는다
+const DEM = { st: 0, m: null, h: null };   // st 0 안 받음 · 1 받는 중 · 2 있음 · 3 없음
+function demLoad() {
+  if (DEM.st) return;
+  DEM.st = 1;
+  Promise.all([fetch('/terrain/dem.json').then((r) => r.json()), fetch('/terrain/dem.bin').then((r) => r.arrayBuffer())])
+    .then(([m, b]) => { DEM.m = m; DEM.h = new Int16Array(b); DEM.st = 2; gForce = true; globeFeed(); })
+    .catch(() => { DEM.st = 3; });
+}
+// 해발 지면 높이(m) — 격자 밖이면 null. 네 화소를 선형 보간한다
+function demAt(lat, lon) {
+  const m = DEM.m;
+  if (!m) return null;
+  const y = (m.lat0 - lat) / m.step, x = (lon - m.lon0) / m.step;
+  if (!(y >= 0 && x >= 0 && y <= m.rows - 1 && x <= m.cols - 1)) return null;
+  const r = Math.min(Math.floor(y), m.rows - 2), c = Math.min(Math.floor(x), m.cols - 2), fy = y - r, fx = x - c;
+  const h = DEM.h, n = m.cols, i = r * n + c;
+  return ((h[i] * (1 - fx) + h[i + 1] * fx) * (1 - fy) + (h[i + n] * (1 - fx) + h[i + n + 1] * fx) * fy) * m.scale;
+}
+// 항적 — 바뀔 때만 보낸다. gForce 면 한 번 전부 다시 보낸다(뷰 재진입·모듈·DEM 준비 직후).
+// 기체·자세는 기체 화면 그대로라 보낼 것이 없다. 재생 중 항적은 꼬리 궤적(trailStep)이 그린다.
+let gTrkN = 0, gTrkReset = false, gForce = false, gTrk0 = null, gTrkL = null, gTrkH = NaN;
+function globeFeed() {
+  if (!globe || !sat.on) return;
+  const force = gForce; gForce = false;
+  const hs = geo.hs || (Array.isArray(S.home) ? S.home : S.home && S.home.lat != null ? [S.home.lat, S.home.lon] : null);
+  const homeAmsl = hs ? demAt(hs[0], hs[1]) : null;
+  globe.showTrack(!pb.on);
+  if (pb.on) gTrkReset = true;   // 재생이 끝나면 전부 다시
+  // 항적은 새 점만 붙인다 — 앞이 바뀌었으면(새로 받음·앞을 잘라 냄) 또는 홈 해발이 바뀌었으면 전부 다시
+  const n = track.length;
+  if (homeAmsl != null && !pb.on && (force || gTrkReset || n !== gTrkN)) {   // 재생 중에는 숨긴다 — 보내지 않는다
+    const cv = (p) => { const h = homeAmsl + (p[2] || 0), g = demAt(p[0], p[1]); return [p[0], p[1], g == null ? h : Math.max(h, g)]; };   // 지면 아래로 안 내려간다
+    const same = n >= gTrkN && (!gTrkN || (track[0] === gTrk0 && track[gTrkN - 1] === gTrkL));
+    const all = force || gTrkReset || !same || !(Math.abs(homeAmsl - gTrkH) <= 0.1);
+    if (all) globe.setTrack(track.map(cv)); else if (n > gTrkN) globe.addTrack(track.slice(gTrkN).map(cv));
+    gTrkN = n; gTrk0 = track[0]; gTrkL = track[n - 1]; gTrkH = homeAmsl; gTrkReset = false;
   }
 }
 
@@ -703,7 +706,7 @@ function trailBuild(F) {
     tE.set(-rad(r[ix.pitch] ?? 0), 0, rad(r[ix.roll] ?? 0)); tQ.setFromEuler(tE);
     tQ.premultiply(tQy.setFromAxisAngle(yAxis, -rad(r[ix.yaw] ?? r[ix.hdg] ?? 0)));
     const p = tOff.clone().applyQuaternion(tQ);
-    p.x += -(lon - hs[1]) * kE; p.y += alt * G; p.z += (lat - hs[0]) * kN;
+    p.x += -(lon - hs[1]) * kE; p.y += (sat.on ? Math.max(alt, gndRel(lat, lon, hs)) : alt) * G; p.z += (lat - hs[0]) * kN;   // [globe] 공간 뷰는 지면 아래로 안 내려간다
     const last = trail.pts[trail.pts.length - 1];
     if (last && last.distanceToSquared(p) < 1.6e-5) return;   // 거의 안 움직였다 — 점을 늘리지 않는다
     trail.ts.push(i / F.hz); trail.pts.push(p);
@@ -728,7 +731,8 @@ function trailBuild(F) {
 function trailStep() {
   const F = pb.on && pb.fl;
   if (!F || !geo.hs || !anchors.tail || intro) { trailG.visible = false; return; }
-  if (trail.fl !== F) trailBuild(F);
+  const g3 = sat.on ? DEM.st : 0;
+  if (trail.fl !== F || trail.g3 !== g3) { trail.g3 = g3; trailBuild(F); }   // [globe] 공간 뷰를 들고 날 때·지형이 올 때 높이를 다시 굽는다
   // 재생 시각까지 찍힌 점 수
   let lo = 0, hi = trail.ts.length;
   while (lo < hi) { const mid = (lo + hi) >> 1; if (trail.ts[mid] <= pb.t) lo = mid + 1; else hi = mid; }
@@ -767,6 +771,7 @@ function frame() {
     cam.vYaw *= 0.93; cam.vTilt *= 0.88;
   }
   craft.rotation.y = cam.yaw;
+  if (sat.on && globe) globe.place(satRef(), geo.e * G, -geo.n * G);   // [globe] 땅·건물 자리 — 행렬은 아래 한 번에
   craft.updateMatrixWorld();
   // 고른 칸을 가운데로
   lookGoal.set(0, 0.02 - Math.min(FLOOR - floorY, 1) * 0.25, 0);   // 조금만 내린다 — 더 내리면 기체가 화면 위로 잘린다
@@ -788,6 +793,7 @@ function frame() {
   camera.position.set(look.x, look.y + Math.sin(cam.tilt) * dist, look.z + Math.cos(cam.tilt) * dist);
   camera.up.set(0, Math.cos(cam.tilt), -Math.sin(cam.tilt));   // 궤도 접선 — 90° 에서도 안 뒤집힌다
   camera.lookAt(look);
+  if (sat.on && globe) globe.update();   // [globe] 건물 타일
 
   // 실시간 자세 — 기체가 붙어 있을 때만, 없으면 수평으로 돌아온다.
   // 첫 화면은 연결돼 있어도 똑바로 선 기체 — 자세·로터·조종면을 반영하지 않는다
@@ -998,13 +1004,16 @@ async function setMode(m) {
   if (m === 'map') { await ensureMap(); lmap.invalidateSize(); trkHave = 0; track = []; if (!pb.on) pollLive(true); }
   renderTiles(); renderInfo(); resize();
 }
-// 기체 / 지도 / 공간 — 지도는 위에서 내려다본 2D 위성사진, 공간은 기체 화면 바닥에 위성사진을 깐다 (satStep)
+// 기체 / 공간 / 지도 — 공간은 기체 화면에 브이월드 땅·건물을 얹는다 (cockpit-globe.js) [globe], 지도는 위에서 내려다본 2D 위성사진
 const VIEW_ORDER = ['3d', 'sat', 'map'];
 let viewMode = '3d';
 function pickView(v) {
   viewMode = v;
   sat.on = v === 'sat';
+  document.querySelector('.main').classList.toggle('satmode', sat.on);   // [globe]
   if ((v === 'map') !== (mode === 'map')) setMode(v === 'map' ? 'map' : '3d');
+  if (v === 'sat') { gForce = true; trkHave = 0; track = []; ensureGlobe(); if (!pb.on) pollLive(true); }   // [globe] 항적을 받게, 재진입 시 전부 재동기
+  if (globe) globe.setActive(v === 'sat');   // [globe]
   for (const b of document.querySelectorAll('#modes button')) b.classList.toggle('on', b.dataset.m === v);
 }
 $('modes').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) pickView(b.dataset.m); });
@@ -1355,6 +1364,7 @@ function render() {
 
   renderTiles();
   if (mode === 'map') renderMap();
+  if (globe && sat.on) globeFeed();   // [globe]
 }
 
 
@@ -1363,14 +1373,14 @@ async function pollLive(now) {
   clearTimeout(pollTimer);
   if (pb.on) return;            // 재생 중 — 화면은 로그가 채운다
   try {
-    // 지도일 때만 항적을 받는다 — 증분(since)으로, 서버가 앞을 버렸으면 새로 받는다
-    const q = mode === 'map' ? `since=${trkHave}` : 'track=0';
+    // 지도·공간일 때만 항적을 받는다 — 증분(since)으로, 서버가 앞을 버렸으면 새로 받는다
+    const q = mode === 'map' || sat.on ? `since=${trkHave}` : 'track=0';   // [globe]
     // 배송 탭은 배송 기체(서버 시뮬레이션 — 실제 링크 전)를, 다른 탭은 실제 실시간 상태를 본다
     const r = await fetch((tab === 'dlv' ? '/api/delivery/live?' : '/api/live/state?') + q, { cache: 'no-store' });
     if (r.ok) {
       S = await r.json();
-      if (mode === 'map' && Array.isArray(S.track)) {
-        if (S.track_from === trkHave) track.push(...S.track); else track = S.track.slice();
+      if ((mode === 'map' || sat.on) && Array.isArray(S.track)) {   // [globe]
+        if (S.track_from === trkHave) track.push(...S.track); else { track = S.track.slice(); gTrkReset = true; }
         trkHave = S.track_n || track.length;
       }
     }
@@ -1410,11 +1420,11 @@ dlvRoute.visible = false; dlvRoute.frustumCulled = false; dlvG.add(dlvRoute);
 function dlvTab() { return tab === 'dlv'; }   // 함수 선언 — 첫 frame() 이 모듈 평가 중에 돈다
 /** 지점을 놓을 기준 — 연결된 기체의 홈, 없으면 기지 */
 function dlvRef() { if (geo.hs) return geo.hs; const b = dbase(); return b ? [b.lat, b.lon] : null; }
-/** 위경도 → 땅(world) 좌표. 땅은 기체 위치만큼 옮겨져 있다 (groundStep 과 같은 식) */
+/** 위경도 → 땅(world) 좌표. 땅은 기체 위치만큼 옮겨져 있다 (groundStep 과 같은 식). y — 공간 뷰의 지면 높이(기준 지면 대비) */
 function dlvXZ(lat, lon) {
   const r = dlvRef(); if (!r) return null;
   const n = (lat - r[0]) * 111320, e = (lon - r[1]) * 111320 * Math.cos(r[0] * Math.PI / 180);
-  return { x: (geo.e - e) * G, z: (n - geo.n) * G, dist: Math.hypot(n - geo.n, e - geo.e) };
+  return { x: (geo.e - e) * G, z: (n - geo.n) * G, y: sat.on ? gndRel(lat, lon, r) * G : 0, dist: Math.hypot(n - geo.n, e - geo.e) };
 }
 const DLV_ERR = { busy: '진행 중 배송', stage: '단계 아님', nobase: '기지 없음', nofix: 'GPS 없음',
   inuse: '사용 중 지점', off: '운행 중지', nocoord: '좌표 없음', down: '사용 불가', input: '입력 오류', point: '지점 오류', login: '로그인 필요' };
@@ -1427,7 +1437,7 @@ const view = () => dlv.st;
 
 async function dlvEnter() {
   dlv.err = ''; dlv.card = '';
-  dlv.viewPrev = viewMode; pickView('sat');   // 배송은 공간(위성 바닥)으로 연다 — 나가면 원래대로
+  dlv.viewPrev = viewMode; pickView('sat');   // 배송은 공간(브이월드 땅)으로 연다 — 나가면 원래대로
   pollLive(true);                       // 기체를 배송 기체로 바로 바꿔 받는다
   dlvG.visible = true; $('dlvPts').hidden = false;
   document.body.classList.add('dlvmode');
@@ -1480,7 +1490,7 @@ function dlvPlace() {
     const q = dlvXZ(o.lat, o.lon);
     o.g.visible = !!q; o.el.hidden = !q;
     if (!q) continue;
-    o.g.position.set(q.x, FLOOR + 0.003, q.z);
+    o.g.position.set(q.x, FLOOR + 0.003 + q.y, q.z);
     o.g.getWorldPosition(dPos).project(camera);
     let x = (dPos.x + 1) / 2 * w, y = (1 - dPos.y) / 2 * h;
     const behind = dPos.z > 1;
@@ -1501,7 +1511,7 @@ function dlvPlace() {
   dlvRoute.visible = !!(qa && qb && j.phase !== 'landed' && a !== b);
   if (dlvRoute.visible) {
     const P = dlvRoute.geometry.attributes.position;
-    P.setXYZ(0, qa.x, FLOOR + 0.004, qa.z); P.setXYZ(1, qb.x, FLOOR + 0.004, qb.z); P.needsUpdate = true;
+    P.setXYZ(0, qa.x, FLOOR + 0.004 + qa.y, qa.z); P.setXYZ(1, qb.x, FLOOR + 0.004 + qb.y, qb.z); P.needsUpdate = true;
     dlvRoute.computeLineDistances();
   }
 }

@@ -64,6 +64,7 @@ const TYPES = {
   '.ico': 'image/x-icon',
   '.glb': 'model/gltf-binary',
   '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
 };
 
 // ── 캐시 지문 ────────────────────────────────────────────────────────
@@ -207,13 +208,15 @@ function dedupe(rows, all) {
 
 // ── 보안 헤더 · 오류 로그 ────────────────────────────────────────────
 // 인라인 스크립트는 해시로만 허용한다 (페이지마다 본문에서 뽑는다). 스타일은 지도·SVG 가 인라인을 쓴다.
-const CSP_BASE = ["default-src 'self'", "img-src 'self' data: blob: https://services.arcgisonline.com",
-  "style-src 'self' 'unsafe-inline'", "connect-src 'self' blob: data:", "worker-src 'self' blob:",
+// 'wasm-unsafe-eval' — 공간 뷰 건물 타일의 Draco·Basis 디코더(WebAssembly). eval 은 그대로 막힌다
+// 브이월드 — 콕핏 공간 뷰의 위성사진(api)·3D 건물(cdn). 브라우저가 직접 받는다
+const CSP_BASE = ["default-src 'self'", "img-src 'self' data: blob: https://services.arcgisonline.com https://api.vworld.kr https://cdn.vworld.kr",
+  "style-src 'self' 'unsafe-inline'", "connect-src 'self' blob: data: https://api.vworld.kr https://cdn.vworld.kr", "worker-src 'self' blob:",
   "font-src 'self' data:", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"];
 function cspFor(html) {
   const hashes = [...String(html).matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)]
     .map((m) => `'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'`);
-  return [...CSP_BASE, `script-src 'self' ${hashes.join(' ')}`.trim()].join('; ');
+  return [...CSP_BASE, `script-src 'self' 'wasm-unsafe-eval' ${hashes.join(' ')}`.trim()].join('; ');
 }
 const SEC_HEADERS = {
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
@@ -467,7 +470,10 @@ async function serveStatic(req, res, urlPath) {
   const type = TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
   const cache = isHtml ? 'no-store, no-cache, must-revalidate'
     : file.includes(path.sep + 'vendor' + path.sep) ? 'public, max-age=604800' : 'no-cache';
-  send(req, res, 200, buf, type, { 'Cache-Control': cache });
+  // 공간 뷰 KTX2 트랜스코더 워커 — 이 워커만 eval 을 쓴다(Basis embind). 페이지 CSP 는 그대로 막아 둔다
+  const extra = rel === 'cockpit-globe-ktx2.js'
+    ? { 'Content-Security-Policy': "default-src 'none'; script-src blob: 'unsafe-eval' 'wasm-unsafe-eval'" } : {};
+  send(req, res, 200, buf, type, { 'Cache-Control': cache, ...extra });
 }
 
 // ── 라이브 중계 ──────────────────────────────────────────────────────
