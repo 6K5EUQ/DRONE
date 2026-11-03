@@ -102,14 +102,15 @@ body:not(.dlvmode) :is(#dlvSide, #dlvPts) { display: none !important; }   /* 배
 
 /* ── 우: 무대 ── */
 .main { position: relative; min-width: 0; min-height: 0; background: radial-gradient(ellipse 70% 60% at 50% 58%, #fbfbfc 0%, var(--stage) 70%, #e6e6ea 100%); overflow: hidden; }
-.bar { position: absolute; top: 0; left: 0; right: 0; height: 52px; display: flex; align-items: center; gap: 18px; padding: 0 22px; z-index: 3; font-size: 14px; color: var(--ink2); font-weight: 500; }
+.bar { position: absolute; top: 0; left: 0; right: 0; height: 47px; display: flex; align-items: center; gap: 18px; padding: 0 22px;   /* 글자 줄 가운데 23.5px — 위아래 같은 간격 (.tabs top 과 같게) */ background: var(--bg); z-index: 3; font-size: 14px; color: var(--ink2); font-weight: 500; }
 .bar .grow { flex: 1; }
 .bar .st { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .bar .st svg.i { width: 18px; height: 18px; }
 .bar .st.warn { color: var(--warn); } .bar .st.bad { color: var(--bad); }
-.tabs { position: absolute; top: 56px; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; z-index: 3; pointer-events: none; }
-.tabs button { pointer-events: auto; background: none; border: 0; font-size: 15px; font-weight: 500; color: var(--dim); padding: 7px 16px; border-radius: 8px; cursor: pointer; }
-.tabs button.on { background: #fff; color: var(--ink2); font-weight: 600; }
+.tabs { position: absolute; top: 23.5px; left: 50%; transform: translate(-50%, -50%); max-width: calc(100% - 16px); display: flex; gap: 2px; z-index: 3; }
+/* 탭·기체/공간/지도 — 상태줄(위성)처럼 글자만. 고른 것만 진하게 */
+.tabs button, .seg button { background: none; border: 0; font: inherit; font-size: 14px; font-weight: 500; color: var(--dim); padding: 6px 10px; cursor: pointer; white-space: nowrap; flex: none; }
+.tabs button.on, .seg button.on { color: var(--ink2); font-weight: 700; }
 #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 #view.drag { cursor: grabbing; }
 
@@ -162,17 +163,12 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, lpOut .5s ease-i
 @keyframes lpOut { to { opacity: 0; transform: translate(-50%, -50%); filter: blur(10px); } }   /* 제자리에서 흐려지며 사라진다 */
 
 /* 기체 / 공간 / 지도 전환 — 상태줄 왼쪽의 세 칸짜리 스위치 */
-.seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
-.seg button { border: 0; background: none; font-size: 13px; font-weight: 600; color: var(--dim); padding: 5px 14px; border-radius: 6px; cursor: pointer; white-space: nowrap; flex: none; }
-.seg button.on { background: #fff; color: var(--ink2); }
+.seg { display: flex; margin-left: -10px; }   /* 첫 글자를 상태줄 여백에 맞춘다 */
 #map { position: absolute; inset: 0; z-index: 1; display: none; background: #dcdde1; }
 .main.mapmode #map { display: block; }
 .main.mapmode #view, .main.mapmode .tabs, .main.mapmode #calls, .main.mapmode .tiles { display: none; }
 .main.mapmode.mis .tabs { display: flex; }
-.main.mapmode.mis .tabs button:not(.on) { background: var(--card); color: var(--ink2); }   /* 지도 위에서 비치지 않게 */
-.main.satmode .tabs button:not(.on) { background: var(--card); color: var(--ink2); }   /* [globe] 공간 뷰 위성사진·건물 위에서도 */
 #piBat.warn { color: var(--warn); } #piBat.bad { color: var(--bad); }
-.main.mapmode .bar { background: linear-gradient(rgba(244,244,246,.92), rgba(244,244,246,0)); }
 #map .leaflet-tile-pane { filter: saturate(.75) brightness(1.04); opacity: .7; }   /* 투명도 30% — 뒤의 밝은 바탕이 비쳐 뿌옇게 */
 /* 배송 — 3D 땅 위 지점 이름표 */
 #dlvPts { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
@@ -188,7 +184,7 @@ body.launch #logoPlay { animation: lpIn .5s ease-out .35s both, lpOut .5s ease-i
 /* 정보 카드 — 미션·점검 */
 /* 무대와 같은 그리드 칸에 겹쳐 둔다 (무대 안이 아니다 — 모바일에서 패널 뒤로 뺀다) */
 .pane { grid-column: 1; grid-row: 1; } .main { grid-column: 2; grid-row: 1; }
-#info { grid-column: 2; grid-row: 1; align-self: start; justify-self: start; position: relative; margin: 100px 0 0 18px; width: 300px; max-height: calc(100% - 230px); overflow-y: auto; z-index: 3;
+#info { grid-column: 2; grid-row: 1; align-self: start; justify-self: start; position: relative; margin: 65px 0 0 18px; width: 300px; max-height: calc(100% - 195px); overflow-y: auto; z-index: 3;
   background: rgba(237,237,239,.94); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; scrollbar-width: thin; }
 :is(#info, #dlvPane) .ih { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 :is(#info, #dlvPane) .ih b { font-size: 16px; font-weight: 700; flex: 1; }
@@ -276,7 +272,7 @@ button.mspin:hover, .msi:hover:not(:disabled) { color: var(--ink2); }
 .ident .replay { display: none; margin-left: auto; font-style: normal; font-size: 12px; font-weight: 700; color: #fff; background: var(--acc); border-radius: 5px; padding: 2px 8px; white-space: nowrap; }
 .ident .replay i { font-style: normal; font-weight: 500; }
 body.replay .ident .replay { display: inline-block; }
-#pbSheet { position: absolute; left: 18px; top: 100px; width: 420px; max-height: calc(100% - 130px); overflow-y: auto; z-index: 6; scrollbar-width: none;
+#pbSheet { position: absolute; left: 18px; top: 65px; width: 420px; max-height: calc(100% - 95px); overflow-y: auto; z-index: 6; scrollbar-width: none;
   background: rgba(244,244,246,.97); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; box-shadow: 0 10px 30px rgba(23,26,32,.10); }
 #pbSheet::-webkit-scrollbar { display: none; }   /* 스크롤은 되고 막대만 숨긴다 — 오른쪽 둥근 모서리를 덮지 않게 */
 #pbSheet .ih { display: flex; align-items: center; margin-bottom: 6px; }
@@ -353,9 +349,9 @@ body.opened .bar, body.opened .tabs, body.opened .tiles { animation: fadeIn .6s 
   .pbbtn { padding: 5px 9px; }
   #pbBar { left: 10px; right: 10px; gap: 8px; }
   .bar { padding: 0 16px; gap: 12px; font-size: 13px; }
-  .tabs { top: 52px; }
+  .tabs { top: 47px; transform: translateX(-50%); }
   .tabs button { font-size: 14px; padding: 6px 8px; white-space: nowrap; }
-  .tabs { overflow-x: auto; scrollbar-width: none; justify-content: safe center; padding: 0 8px; }   /* 탭이 많아 넘치면 글자를 세로로 접지 말고 옆으로 민다 */
+  .tabs { overflow-x: auto; scrollbar-width: none; }   /* 탭이 많아 넘치면 글자를 세로로 접지 말고 옆으로 민다 */
   .tiles { justify-content: flex-start; overflow-x: auto; bottom: 12px; }
   .main.pbmode .tiles { bottom: 80px; }
   .tile { width: 104px; flex: none; }
