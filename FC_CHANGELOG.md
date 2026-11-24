@@ -351,6 +351,31 @@ FC 의 상태를 바꾸는 모든 작업을 남긴다.
   - 🔶 기록 없는 차이: `SR0_*`(EXTRA1~3, EXT_STAT, POSITION, RAW_CTRL, RAW_SENS, RC_CHAN) 4→10 — 라이브 도구의 스트림 요청이 쓰는 값으로 보이나 미확인
   - 센서 보정값 흐름: `INS_GYROFFS_X/Y/Z`, `GND_ABS_PRESS`; 카운터: `STAT_BOOTCNT` 11→19, `STAT_RUNTIME`
 
+### 2026-11-24 13:39 — rim3 USB 직결, 비행 전 점검·파라미터 재조회 (변경 없음, 읽기만)
+
+- 작업 PC: rim3. drone-live·livepush 는 처음부터 꺼져 있었음
+- 경로: USB 직결, `tools/fcport.py` 로 연결 (ArduCopter·쿼드 하트비트 확인)
+- 대상: `tools/preflight/preflight.py` + `PARAM_REQUEST_LIST`. PARAM_SET·명령 없음
+- 확인: 838개 → `params/params_20261124-133953_live-usb.param`. 10-30 대비 차이:
+  - 🔶 기록 없는 차이: `COMPASS_DEC` −0.135 → **0** (`COMPASS_AUTODEC=1`). 원인 미확인
+  - 🔶 기록 없는 차이: `SR0_*` 10 → 4 (10-12 이전 값으로 복귀), `SR1_PARAMS`·`SR2_PARAMS` 0 → 10
+  - 센서 보정값 흐름: `INS_GYROFFS_X/Y/Z`, `GND_ABS_PRESS`; 카운터: `STAT_BOOTCNT` 19→27, `STAT_RUNTIME` 174246→412422
+  - SD 로그 목록은 ID 22 가 마지막 — 10-30 이후 새 로그 없음
+  - 점검 판정 NO-GO: 배터리 미연결(USB 전원), RC CH1~5 전부 0, GPS fix 1·위성 0 (실내)
+
+### 2026-11-24 14:25 — 가속도계 6면 보정 (QGC, 사용자 수행) `INS_ACCOFFS`·`INS_ACCSCAL`·`AHRS_TRIM_Y` 갱신
+
+- 작업 PC: rim3. QGC 5.1.4 로 사용자가 보정, 이후 QGC 종료하고 `tools/fcport.py` 로 읽음
+- 경로: USB 직결. 보정 전 백업 = `params/params_20261124-133953_live-usb.param`, 보정 후 = `params/params_20261124-142558_live-usb.param`
+- 변경 (이전 → 이후):
+  - `INS_ACCOFFS_X` −0.1334 → 0.0039, `_Y` −0.3066 → −0.3329, `_Z` −0.2974 → −0.0237
+  - `INS_ACCSCAL_X` 0.9833 → 0.9937, `_Y` 0.9969 → 0.9963 (`_Z` 변화 없음)
+  - `AHRS_TRIM_Y` 0.0185 → 0.0101 (수평 보정 여부는 사용자 확인 필요)
+- 이유: 분해·재조립 후 이전 기체의 가속도계 보정값 폐기
+- 부수 변화: `SR0_*`·`SR1/2_PARAMS` 는 QGC 가 스트림 설정을 바꾼 것으로 보임 🔶. `GND_ABS_PRESS`·`INS_GYROFFS`·카운터는 흐름
+- 🔶 미검증: `INS_ACCOFFS_Y` −0.33 은 여전히 큼 — 바닥 수평·면 정지가 충분했는지 모름
+
+
 ---
 
 ## 🔶 아직 기록되지 않은 것 — 이 보드의 과거
